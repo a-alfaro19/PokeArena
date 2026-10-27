@@ -34,3 +34,10 @@ CREATE TABLE IF NOT EXISTS cards (
     idempotency_key VARCHAR(100) UNIQUE,
     created_at TIMESTAMP NOT NULL
 );
+
+-- 4. Tabla principal de localizaciones (Locations)
+CREATE TABLE IF NOT EXISTS locations (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT
+);
