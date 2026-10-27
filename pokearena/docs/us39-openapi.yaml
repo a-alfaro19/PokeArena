@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: PokéArena - US 39 Buscar Carta
-  version: 1.0.0
+  version: 1.0.1
   description: |
     Búsqueda administrativa en la primaria PostgreSQL. Filtros unidos con AND.
     Código y abilityCode son exactos y sensibles a mayúsculas. HAB-000 es Sin Habilidad.
@@ -9,12 +9,17 @@ info:
     Los valores exactos no pueden combinarse con rangos del mismo campo.
     Disparador y efecto son identificadores exactos de metadatos, no un catálogo oficial.
     Sin Habilidad combinado con disparador/efecto no coincide con ninguna carta.
-    Instantánea materializada de filas y metadatos al ejecutar la consulta inicial;
+    Una lectura acotada a pageSize + 1 filas devuelve directamente conjuntos vacíos o de
+    una sola página, sin estado persistido, aun con veinte recorridos ocupados.
+    Si hace falta paginar, la instantánea materializada fija filas y metadatos después del sondeo;
     las inserciones no confirmadas entonces y las posteriores quedan fuera.
     Orden por código con colación C. Un cursor opaco UUID identifica la próxima página,
     queda ligado al sujeto autenticado, filtros exactos y tamaño; repetirlos en cada página.
     Caduca 10 minutos después de iniciar; no se renueva. Sin coincidencias devuelve 200.
-    Límites globales: 20 búsquedas, 20000 filas/búsqueda, 64 MiB de payload activo,
+    Los recorridos se retienen hasta caducar incluso tras su última página para permitir reintentos.
+    En respuestas iniciales completas, expiresAt es informativo y no implica una reserva recuperable.
+    La autenticación ocurre una sola vez antes de validar parámetros, incluidos los repetidos.
+    Límites globales: 20 recorridos retenidos, 20000 filas/búsqueda, 64 MiB de payload activo,
     16 KiB/resultado. Al superar capacidad se rechaza sin truncar. Consulta SQL máxima 5 s.
     Objetivo local: p95 < 1000 ms por página con 10000 cartas, medido sin contención.
     La autenticación de producción está pendiente: acceso denegado por defecto.

@@ -9,15 +9,20 @@ sequenceDiagram
     Web->>App: execute(request, authorization)
     App->>Identity: authenticate(authorization)
     Identity-->>App: sujeto con ADMIN
-    App->>App: validar filtros y tamaño
+    App->>App: validar repeticiones, filtros y tamaño
     App->>Query: search(criteria, pageSize, null, subject)
     Query->>DB: BEGIN y timeout local
-    Query->>DB: intentar bloqueo de admisión y limpiar vencidas
-    Query->>DB: comprobar capacidad y crear cabecera
-    Query->>DB: INSERT SELECT de cartas y habilidades visibles en una sentencia MVCC
-    Note over Query,DB: Orden por código C, copia inmutable de todos los campos
-    Query->>DB: comprobar filas y bytes globales
-    Query->>DB: leer primera página y crear token siguiente si procede
+    Query->>DB: SELECT MVCC de hasta pageSize + 1 payloads acotados
+    alt El conjunto cabe en una página
+        Query->>Query: construir respuesta sin persistir estado ni reservar capacidad
+    else Hace falta paginar
+        Query->>DB: intentar bloqueo de admisión y limpiar vencidas
+        Query->>DB: comprobar capacidad y crear cabecera
+        Query->>DB: INSERT SELECT de cartas y habilidades visibles en una sentencia MVCC
+        Note over Query,DB: Orden por código C, copia inmutable de todos los campos
+        Query->>DB: comprobar filas y bytes globales
+        Query->>DB: leer primera página y crear token siguiente si procede
+    end
     Query->>DB: COMMIT
     Query-->>App: CardSearchPage
     App-->>Web: items, total, expiresAt, nextCursor

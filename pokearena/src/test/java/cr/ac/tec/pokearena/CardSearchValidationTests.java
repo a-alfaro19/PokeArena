@@ -43,7 +43,7 @@ class CardSearchValidationTests {
                 authorization -> Optional.of(new SearchIdentity.Identity("admin", true)));
         for (var values : java.util.List.of(Map.of("pageSize", "0"), Map.of("pageSize", "101"),
                 Map.of("pageSize", "x"), Map.of("cursor", "bad"), Map.of("cursor", "1-1-1-1-1"))) {
-            assertThrows(CardSearchException.class, () -> useCase.execute(new CardSearchRequest(values), "ignored"));
+            assertThrows(CardSearchException.class, () -> useCase.execute(new CardSearchRequest(values.entrySet().stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, entry -> java.util.List.of(entry.getValue())))), "ignored"));
         }
         assertDoesNotThrow(() -> UUID.fromString(UUID.randomUUID().toString()));
     }
@@ -65,9 +65,27 @@ class CardSearchValidationTests {
     }
 
     @Test
+    void repeatedParametersAuthenticateExactlyOnceWithoutQuerying() {
+        // Un contador y una consulta que falla comprueban el orden sin duplicar autenticación.
+        for (var identity : java.util.List.of(Optional.<SearchIdentity.Identity>empty(),
+                Optional.of(new SearchIdentity.Identity("member", false)),
+                Optional.of(new SearchIdentity.Identity("admin", true)))) {
+            var calls = new java.util.concurrent.atomic.AtomicInteger();
+            var useCase = new SearchCardsUseCase((a, b, c, d) -> { throw new AssertionError("No consultar catálogo"); },
+                    token -> { calls.incrementAndGet(); return identity; });
+            var error = assertThrows(CardSearchException.class, () -> useCase.execute(
+                    new CardSearchRequest(Map.of("type", java.util.List.of("FUE", "AGU"))), "token"));
+            var expected = identity.isEmpty() ? CardSearchException.Reason.UNAUTHENTICATED
+                    : identity.get().administrator() ? CardSearchException.Reason.INVALID : CardSearchException.Reason.FORBIDDEN;
+            assertEquals(expected, error.reason());
+            assertEquals(1, calls.get());
+        }
+    }
+
+    @Test
     void authorizationPrecedesSearchValidation() {
         // No autenticar y no autorizar son fallos distinguibles sin tocar la consulta.
-        var request = new CardSearchRequest(Map.of("cost", "bad"));
+        var request = new CardSearchRequest(Map.of("cost", java.util.List.of("bad")));
         var anonymous = new SearchCardsUseCase((a, b, c, d) -> { throw new AssertionError(); }, value -> Optional.empty());
         assertEquals(CardSearchException.Reason.UNAUTHENTICATED,
                 assertThrows(CardSearchException.class, () -> anonymous.execute(request, null)).reason());

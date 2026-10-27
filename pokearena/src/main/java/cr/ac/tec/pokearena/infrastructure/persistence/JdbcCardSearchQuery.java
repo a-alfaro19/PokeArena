@@ -21,6 +21,21 @@ import cr.ac.tec.pokearena.domain.model.CardSearchException.Reason;
 
 @Repository
 public class JdbcCardSearchQuery implements CardSearchQuery {
+    private static final String CATALOG_SELECT = """
+                SELECT c.code,
+                    jsonb_build_object('code', c.code, 'name', c.name,
+                        'largeImageUrl', c.large_image_url, 'smallImageUrl', c.small_image_url,
+                        'imageStatus', c.image_status, 'cost', c.cost, 'power', c.power,
+                        'type', c.type, 'rarity', c.rarity,
+                        'ability', jsonb_build_object('code', c.ability_code,
+                            'name', CASE WHEN c.ability_code = 'HAB-000' THEN 'Sin Habilidad' ELSE a.name END,
+                            'trigger', CASE WHEN c.ability_code <> 'HAB-000' THEN a.trigger_code END,
+                            'effect', CASE WHEN c.ability_code <> 'HAB-000' THEN a.effect_code END,
+                            'parameters', CASE WHEN c.ability_code = 'HAB-000' THEN '{}'::jsonb
+                                ELSE COALESCE(a.parameters, '{}'::jsonb) END))::text AS payload
+                FROM cards c LEFT JOIN abilities a ON a.code = c.ability_code
+                WHERE TRUE
+                """;
     private static final int MAX_ROWS = 20000;
     private static final long MAX_BYTES = 64L * 1024 * 1024;
     private final JdbcTemplate jdbc;
@@ -40,7 +55,7 @@ public class JdbcCardSearchQuery implements CardSearchQuery {
                 // PostgreSQL limita cada sentencia incluso cuando el cliente abandona la solicitud.
                 jdbc.execute("SET LOCAL statement_timeout = '5s'");
                 if (cursor == null) {
-                    return createSnapshot(criteria, pageSize, subject);
+                    return initialPage(criteria, pageSize, subject);
                 }
                 var pages = jdbc.query("SELECT search_id, position FROM card_search_cursors WHERE token = ?",
                         (rs, row) -> new CursorPosition(rs.getObject(1, UUID.class), rs.getInt(2)), cursor);
@@ -52,6 +67,25 @@ public class JdbcCardSearchQuery implements CardSearchQuery {
             // No expone SQL, datos ni detalles del almacenamiento al consumidor.
             throw new CardSearchException(Reason.UNAVAILABLE, "search", "Búsqueda temporalmente no disponible");
         }
+    }
+
+    private CardSearchPage initialPage(CardSearchCriteria criteria, int size, String subject) {
+        // El sondeo lee como máximo una página más una fila, sin reservar un recorrido.
+        List<Object> parameters = new ArrayList<>();
+        String conditions = buildConditions(criteria.values(), parameters);
+        parameters.add(size + 1);
+        String sql = "SELECT CASE WHEN octet_length(payload) <= 16384 THEN payload END FROM ("
+                + CATALOG_SELECT + conditions + " ORDER BY c.code COLLATE \"C\" LIMIT ?) preview";
+        List<String> payloads = jdbc.query(sql, (rs, row) -> rs.getString(1), parameters.toArray());
+        if (payloads.stream().anyMatch(java.util.Objects::isNull)) { throw unavailable(); }
+        if (payloads.size() <= size) {
+            // Sin cursor no se necesitan reintentos de páginas: no se escribe estado temporal.
+            var items = payloads.stream().map(payload -> json.readValue(payload, CardSearchItem.class)).toList();
+            var expires = jdbc.queryForObject("SELECT clock_timestamp() + INTERVAL '10 minutes'", Timestamp.class);
+            return new CardSearchPage(items, items.size(), expires.toInstant(), null);
+        }
+        // La sentencia de materialización, no el sondeo, fija el conjunto de un recorrido paginado.
+        return createSnapshot(criteria, size, subject);
     }
 
     private CardSearchPage createSnapshot(CardSearchCriteria criteria, int size, String subject) {
@@ -69,22 +103,10 @@ public class JdbcCardSearchQuery implements CardSearchQuery {
         List<Object> parameters = new ArrayList<>();
         parameters.add(id);
         String conditions = buildConditions(criteria.values(), parameters);
-        String sql = """
-                INSERT INTO card_search_results(search_id, position, payload)
-                SELECT ?, row_number() OVER (ORDER BY c.code COLLATE "C"),
-                    jsonb_build_object('code', c.code, 'name', c.name,
-                        'largeImageUrl', c.large_image_url, 'smallImageUrl', c.small_image_url,
-                        'imageStatus', c.image_status, 'cost', c.cost, 'power', c.power,
-                        'type', c.type, 'rarity', c.rarity,
-                        'ability', jsonb_build_object('code', c.ability_code,
-                            'name', CASE WHEN c.ability_code = 'HAB-000' THEN 'Sin Habilidad' ELSE a.name END,
-                            'trigger', CASE WHEN c.ability_code <> 'HAB-000' THEN a.trigger_code END,
-                            'effect', CASE WHEN c.ability_code <> 'HAB-000' THEN a.effect_code END,
-                            'parameters', CASE WHEN c.ability_code = 'HAB-000' THEN '{}'::jsonb
-                                ELSE COALESCE(a.parameters, '{}'::jsonb) END))::text
-                FROM cards c LEFT JOIN abilities a ON a.code = c.ability_code
-                WHERE TRUE
-                """ + conditions + " ORDER BY c.code COLLATE \"C\" LIMIT 20001";
+        String sql = "INSERT INTO card_search_results(search_id, position, payload) "
+                + "SELECT ?, row_number() OVER (ORDER BY selected.code COLLATE \"C\"), selected.payload FROM ("
+                + CATALOG_SELECT + conditions
+                + " ORDER BY c.code COLLATE \"C\" LIMIT 20001) selected";
         jdbc.update(sql, parameters.toArray());
         var totals = jdbc.queryForMap("SELECT count(*) AS total, COALESCE(sum(octet_length(payload)), 0) AS bytes FROM card_search_results WHERE search_id = ?", id);
         int total = ((Number) totals.get("total")).intValue();

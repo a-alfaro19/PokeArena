@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.RestController;
 import cr.ac.tec.pokearena.application.dto.CardSearchPage;
 import cr.ac.tec.pokearena.application.dto.CardSearchRequest;
 import cr.ac.tec.pokearena.application.usecase.SearchCardsUseCase;
-import cr.ac.tec.pokearena.domain.model.CardSearchException;
 
 @RestController
 public class CardSearchController {
@@ -22,13 +21,8 @@ public class CardSearchController {
     public ResponseEntity<CardSearchPage> search(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
             @RequestParam MultiValueMap<String, String> parameters) {
-        // Impide que criterios repetidos se pierdan silenciosamente al convertir los parámetros.
-        for (var entry : parameters.entrySet()) {
-            if (entry.getValue().size() != 1) {
-                throw CardSearchException.invalid(entry.getKey(), "El criterio no puede repetirse");
-            }
-        }
-        var page = search.execute(new CardSearchRequest(parameters.toSingleValueMap()), authorization);
+        // Entrega los valores completos para autorizar antes de validar repeticiones.
+        var page = search.execute(new CardSearchRequest(parameters), authorization);
         return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").body(page);
     }
 }

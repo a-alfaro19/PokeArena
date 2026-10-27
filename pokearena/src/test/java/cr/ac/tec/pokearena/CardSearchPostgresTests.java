@@ -6,7 +6,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.sql.DriverManager;
+import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -35,7 +35,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
-@EnabledIfEnvironmentVariable(named = "POKEARENA_TEST_DATABASE_URL", matches = ".+_test(?:\\?.*)?")
+@org.springframework.test.context.ContextConfiguration(initializers = DisposableDatabaseInitializer.class)
+@EnabledIfEnvironmentVariable(named = "POKEARENA_TEST_DATABASE_URL", matches = ".+")
 class CardSearchPostgresTests {
     private static final String ADMIN_TOKEN = UUID.randomUUID().toString();
     private static final String USER_TOKEN = UUID.randomUUID().toString();
@@ -43,12 +44,13 @@ class CardSearchPostgresTests {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     @LocalServerPort int port;
     @Autowired JdbcTemplate jdbc;
+    @Autowired DataSource dataSource;
     @Autowired CardSearchQuery query;
     @Autowired SearchSchemaMigration migration;
 
     @DynamicPropertySource
     static void configuration(DynamicPropertyRegistry registry) {
-        // La URL debe apuntar a una base desechable identificada por el sufijo _test.
+        // El guard de conexiones comprueba el nombre real antes de inicializar el esquema.
         registry.add("spring.datasource.url", () -> System.getenv("POKEARENA_TEST_DATABASE_URL"));
         registry.add("pokearena.search.test-admin-token", () -> ADMIN_TOKEN);
         registry.add("pokearena.search.test-user-token", () -> USER_TOKEN);
@@ -145,8 +147,7 @@ class CardSearchPostgresTests {
     @Test
     void traversesSnapshotDespiteEarlyUncommittedAndLaterInserts() throws Exception {
         // La transacción empieza y escribe antes del snapshot, pero confirma entre páginas.
-        String url = System.getenv("POKEARENA_TEST_DATABASE_URL");
-        try (var connection = DriverManager.getConnection(url, "postgres", "")) {
+        try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
             try (var insert = connection.prepareStatement("INSERT INTO cards SELECT 'PKA-AAA-LATE',name,cost,power,type,rarity,ability_code,large_image_url,small_image_url,image_status,NULL,created_at FROM cards LIMIT 1")) {
                 insert.executeUpdate();
@@ -204,13 +205,57 @@ class CardSearchPostgresTests {
     }
 
     @Test
+    void completedInitialSearchesNeverReserveState() throws Exception {
+        // Más de veinte respuestas vacías y completas no deben consumir capacidad ni dejar filas.
+        for (int i = 0; i < 25; i++) {
+            assertEquals(0, search("name=not-present").get("total").asInt());
+            assertEquals(5, search("").get("total").asInt());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM card_search_snapshots", Integer.class));
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM card_search_results", Integer.class));
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM card_search_cursors", Integer.class));
+        }
+    }
+
+    @Test
+    void completedSearchesWorkAtTraversalCapacityAndLastPageRemainsRetryable() throws Exception {
+        // Ocupa veinte recorridos reales, sin impedir respuestas que no necesitan cursor.
+        String cursor = null;
+        for (int i = 0; i < 20; i++) { cursor = search("pageSize=2").get("nextCursor").asString(); }
+        int rows = jdbc.queryForObject("SELECT count(*) FROM card_search_results", Integer.class);
+        assertEquals(5, search("").get("total").asInt());
+        assertEquals(0, search("name=not-present").get("total").asInt());
+        assertEquals(20, jdbc.queryForObject("SELECT count(*) FROM card_search_snapshots", Integer.class));
+        assertEquals(rows, jdbc.queryForObject("SELECT count(*) FROM card_search_results", Integer.class));
+        assertEquals(503, request("pageSize=2", ADMIN_TOKEN).statusCode());
+        var second = search("pageSize=2&cursor=" + cursor);
+        String lastCursor = second.get("nextCursor").asString();
+        var last = search("pageSize=2&cursor=" + lastCursor);
+        assertTrue(last.get("nextCursor").isNull());
+        assertEquals(last, search("pageSize=2&cursor=" + lastCursor));
+        assertEquals(second, search("pageSize=2&cursor=" + cursor));
+        assertEquals(20, jdbc.queryForObject("SELECT count(*) FROM card_search_snapshots", Integer.class));
+    }
+
+    @Test
+    void repeatedParametersAreCheckedAfterAuthenticationAndPermissions() throws Exception {
+        // El mismo parámetro repetido distingue identidad, permisos y error de criterio.
+        assertEquals(401, request("type=FUE&type=AGU", null).statusCode());
+        assertEquals(401, request("type=FUE&type=AGU", "invalid").statusCode());
+        assertEquals(403, request("type=FUE&type=AGU", USER_TOKEN).statusCode());
+        var response = request("type=FUE&type=AGU", ADMIN_TOKEN);
+        assertEquals(400, response.statusCode());
+        assertEquals("type", json.readTree(response.body()).get("criterion").asString());
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM card_search_snapshots", Integer.class));
+    }
+
+    @Test
     void limitsCapacityAndRollsBackOversizedSnapshots() throws Exception {
         // Nunca devuelve un catálogo truncado ni retiene snapshots fallidos.
         jdbc.update("INSERT INTO card_search_snapshots(id,owner_id,filters,page_size) SELECT gen_random_uuid(),'test','',50 FROM generate_series(1,20)");
-        assertEquals(503, request("", ADMIN_TOKEN).statusCode());
+        assertEquals(503, request("pageSize=1", ADMIN_TOKEN).statusCode());
         jdbc.execute("TRUNCATE card_search_snapshots CASCADE");
         jdbc.update("UPDATE cards SET large_image_url = repeat('x',17000) WHERE code='PKA-FUE-001'");
-        assertEquals(503, request("", ADMIN_TOKEN).statusCode());
+        assertEquals(503, request("pageSize=1", ADMIN_TOKEN).statusCode());
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM card_search_snapshots", Integer.class));
     }
 
@@ -218,11 +263,11 @@ class CardSearchPostgresTests {
     void rejectsRowAndByteCapacityWithoutKeepingPartialResults() throws Exception {
         // Los límites globales se evalúan dentro de la misma transacción de admisión.
         jdbc.update("INSERT INTO card_search_snapshots(id,owner_id,filters,page_size,payload_bytes) VALUES (?, 'other', '', 50, 67108864)", UUID.randomUUID());
-        assertEquals(503, request("", ADMIN_TOKEN).statusCode());
+        assertEquals(503, request("pageSize=1", ADMIN_TOKEN).statusCode());
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM card_search_snapshots", Integer.class));
         jdbc.execute("TRUNCATE card_search_snapshots CASCADE");
         jdbc.update("INSERT INTO cards(code,name,cost,power,type,rarity,ability_code,large_image_url,small_image_url,image_status,created_at) SELECT 'LIMIT-'||i, 'Capacidad',0,0,'FUE','COMMON','HAB-000','large','small','DISPONIBLE',clock_timestamp() FROM generate_series(1,20001) i");
-        assertEquals(503, request("", ADMIN_TOKEN).statusCode());
+        assertEquals(503, request("pageSize=1", ADMIN_TOKEN).statusCode());
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM card_search_snapshots", Integer.class));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM card_search_results", Integer.class));
     }
@@ -231,11 +276,11 @@ class CardSearchPostgresTests {
     void admissionContentionDoesNotBlockAnExistingTraversal() throws Exception {
         // Otro proceso puede retener el bloqueo; continuar una búsqueda sigue siendo independiente.
         String cursor = search("pageSize=1").get("nextCursor").asString();
-        try (var connection = DriverManager.getConnection(System.getenv("POKEARENA_TEST_DATABASE_URL"), "postgres", "")) {
+        try (var connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
             try (var statement = connection.createStatement()) {
                 statement.execute("SELECT pg_advisory_xact_lock(390039)");
-                assertEquals(503, request("", ADMIN_TOKEN).statusCode());
+                assertEquals(503, request("pageSize=1", ADMIN_TOKEN).statusCode());
                 assertEquals(200, request("pageSize=1&cursor=" + cursor, ADMIN_TOKEN).statusCode());
             }
             connection.rollback();

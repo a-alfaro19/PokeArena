@@ -9,12 +9,13 @@ sequenceDiagram
     Web->>App: execute(request, authorization)
     App->>Identity: authenticate(authorization)
     Identity-->>App: sujeto con ADMIN
-    App->>App: validar criterios
+    App->>App: validar repeticiones y criterios
     App->>Query: search(criteria, pageSize, null, subject)
-    Query->>DB: BEGIN, admitir y crear cabecera
-    Query->>DB: INSERT SELECT con filtros AND
+    Query->>DB: BEGIN y timeout local
+    Query->>DB: SELECT MVCC con filtros AND y LIMIT pageSize + 1
     DB-->>Query: cero filas
-    Query->>DB: guardar total 0, leer página vacía y COMMIT
+    Note over Query,DB: Sin cabecera, filas persistidas, cursor ni reserva de capacidad
+    Query->>DB: COMMIT
     Query-->>App: items [], total 0, nextCursor null
     App-->>Web: CardSearchPage
     Web-->>Admin: 200 con lista vacía

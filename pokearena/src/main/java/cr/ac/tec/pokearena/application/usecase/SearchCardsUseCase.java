@@ -28,7 +28,13 @@ public class SearchCardsUseCase {
         }
 
         // Los controles del recorrido se validan aparte de los filtros del catálogo.
-        var filters = new HashMap<>(request.parameters());
+        var filters = new HashMap<String, String>();
+        request.parameters().forEach((criterion, values) -> {
+            if (values.size() != 1) {
+                throw CardSearchException.invalid(criterion, "El criterio no puede repetirse");
+            }
+            filters.put(criterion, values.getFirst());
+        });
         String sizeValue = filters.remove("pageSize");
         String cursorValue = filters.remove("cursor");
         int pageSize = 50;
