@@ -1,0 +1,21 @@
+sequenceDiagram
+    actor Admin as Administrador
+    participant Web as CardSearchController
+    participant App as SearchCardsUseCase
+    participant Identity as SearchIdentity
+    participant Query as JdbcCardSearchQuery
+    participant DB as PostgreSQL primaria
+    Admin->>Web: GET con filtros válidos incompatibles o sin coincidencias
+    Web->>App: execute(request, authorization)
+    App->>Identity: authenticate(authorization)
+    Identity-->>App: sujeto con ADMIN
+    App->>App: validar repeticiones y criterios
+    App->>Query: search(criteria, pageSize, null, subject)
+    Query->>DB: BEGIN y timeout local
+    Query->>DB: SELECT MVCC con filtros AND y LIMIT pageSize + 1
+    DB-->>Query: cero filas
+    Note over Query,DB: Sin cabecera, filas persistidas, cursor ni reserva de capacidad
+    Query->>DB: COMMIT
+    Query-->>App: items [], total 0, nextCursor null
+    App-->>Web: CardSearchPage
+    Web-->>Admin: 200 con lista vacía

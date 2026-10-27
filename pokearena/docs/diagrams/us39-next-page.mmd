@@ -1,0 +1,25 @@
+sequenceDiagram
+    actor Admin as Administrador
+    participant Web as CardSearchController
+    participant App as SearchCardsUseCase
+    participant Identity as SearchIdentity
+    participant Query as JdbcCardSearchQuery
+    participant DB as PostgreSQL primaria
+    Admin->>Web: GET con cursor, mismos filtros y pageSize
+    Web->>App: execute(request, authorization)
+    App->>Identity: authenticate(authorization)
+    Identity-->>App: sujeto con ADMIN
+    App->>App: validar filtros, tamaño y UUID
+    App->>Query: search(criteria, pageSize, cursor, subject)
+    Query->>DB: BEGIN y buscar cursor persistido
+    Query->>DB: leer cabecera FOR SHARE
+    Query->>Query: verificar sujeto, filtros, tamaño y caducidad
+    Note over Query,DB: No se vuelve a consultar el catálogo mutable
+    Query->>DB: leer resultados por posición con LIMIT
+    opt Quedan resultados
+        Query->>DB: obtener o crear token único de siguiente posición
+    end
+    Query->>DB: COMMIT
+    Query-->>App: CardSearchPage
+    App-->>Web: página y siguiente cursor o null
+    Web-->>Admin: 200, Cache-Control no-store

@@ -1,0 +1,105 @@
+openapi: 3.1.0
+info:
+  title: PokéArena - US 39 Buscar Carta
+  version: 1.0.1
+  description: |
+    Búsqueda administrativa en la primaria PostgreSQL. Filtros unidos con AND.
+    Código y abilityCode son exactos y sensibles a mayúsculas. HAB-000 es Sin Habilidad.
+    Nombre parcial literal sin mayúsculas ni tildes; % y _ no son comodines.
+    Los valores exactos no pueden combinarse con rangos del mismo campo.
+    Disparador y efecto son identificadores exactos de metadatos, no un catálogo oficial.
+    Sin Habilidad combinado con disparador/efecto no coincide con ninguna carta.
+    Una lectura acotada a pageSize + 1 filas devuelve directamente conjuntos vacíos o de
+    una sola página, sin estado persistido, aun con veinte recorridos ocupados.
+    Si hace falta paginar, la instantánea materializada fija filas y metadatos después del sondeo;
+    las inserciones no confirmadas entonces y las posteriores quedan fuera.
+    Orden por código con colación C. Un cursor opaco UUID identifica la próxima página,
+    queda ligado al sujeto autenticado, filtros exactos y tamaño; repetirlos en cada página.
+    Caduca 10 minutos después de iniciar; no se renueva. Sin coincidencias devuelve 200.
+    Los recorridos se retienen hasta caducar incluso tras su última página para permitir reintentos.
+    En respuestas iniciales completas, expiresAt es informativo y no implica una reserva recuperable.
+    La autenticación ocurre una sola vez antes de validar parámetros, incluidos los repetidos.
+    Límites globales: 20 recorridos retenidos, 20000 filas/búsqueda, 64 MiB de payload activo,
+    16 KiB/resultado. Al superar capacidad se rechaza sin truncar. Consulta SQL máxima 5 s.
+    Objetivo local: p95 < 1000 ms por página con 10000 cartas, medido sin contención.
+    La autenticación de producción está pendiente: acceso denegado por defecto.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/cards:
+    get:
+      operationId: searchCards
+      summary: Buscar cartas como administrador
+      security:
+        - bearerAuth: []
+      parameters:
+        - {name: code, in: query, schema: {type: string, minLength: 1, maxLength: 50}}
+        - {name: name, in: query, schema: {type: string, minLength: 1, maxLength: 100}}
+        - {name: cost, in: query, schema: {type: integer, minimum: 0, maximum: 10}}
+        - {name: costMin, in: query, schema: {type: integer, minimum: 0, maximum: 10}}
+        - {name: costMax, in: query, schema: {type: integer, minimum: 0, maximum: 10}}
+        - {name: power, in: query, schema: {type: integer, minimum: -20, maximum: 20}}
+        - {name: powerMin, in: query, schema: {type: integer, minimum: -20, maximum: 20}}
+        - {name: powerMax, in: query, schema: {type: integer, minimum: -20, maximum: 20}}
+        - {name: type, in: query, schema: {type: string, enum: [FUE, AGU, PLA, ELE, PSI, LUC]}}
+        - {name: rarity, in: query, schema: {type: string, enum: [COMMON, UNCOMMON, RARE, LEGENDARY]}}
+        - {name: abilityCode, in: query, schema: {type: string, minLength: 1, maxLength: 50}}
+        - {name: abilityTrigger, in: query, schema: {type: string, minLength: 1, maxLength: 100}}
+        - {name: abilityEffect, in: query, schema: {type: string, minLength: 1, maxLength: 100}}
+        - {name: pageSize, in: query, schema: {type: integer, default: 50, minimum: 1, maximum: 100}}
+        - {name: cursor, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Página de la instantánea (máximo 100 resultados de 16 KiB cada uno).
+          headers:
+            Cache-Control: {schema: {type: string}, description: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CardSearchPage'}
+        '400': {description: Criterio inválido, parámetro desconocido/repetido o cursor incompatible, content: {application/json: {schema: {$ref: '#/components/schemas/SearchError'}}}}
+        '401': {description: Credencial ausente/inválida o proveedor de producción pendiente, content: {application/json: {schema: {$ref: '#/components/schemas/SearchError'}}}}
+        '403': {description: Sujeto autenticado sin rol ADMIN o cursor de otro sujeto, content: {application/json: {schema: {$ref: '#/components/schemas/SearchError'}}}}
+        '410': {description: Cursor desconocido o expirado; iniciar búsqueda nueva, content: {application/json: {schema: {$ref: '#/components/schemas/SearchError'}}}}
+        '503': {description: Capacidad temporal agotada o consulta cancelada; reintentar, content: {application/json: {schema: {$ref: '#/components/schemas/SearchError'}}}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, description: Proveedor real pendiente; solo dev/test admite credenciales configuradas externamente.}
+  schemas:
+    CardSearchPage:
+      type: object
+      required: [items, total, expiresAt, nextCursor]
+      properties:
+        items: {type: array, maxItems: 100, items: {$ref: '#/components/schemas/CardSearchItem'}}
+        total: {type: integer, minimum: 0, maximum: 20000}
+        expiresAt: {type: string, format: date-time}
+        nextCursor: {type: [string, 'null'], format: uuid}
+    CardSearchItem:
+      type: object
+      required: [code, name, largeImageUrl, smallImageUrl, imageStatus, cost, power, type, rarity, ability]
+      properties:
+        code: {type: string}
+        name: {type: string}
+        largeImageUrl: {type: string, description: Referencia existente; puede ser una ruta local no servida por HTTP.}
+        smallImageUrl: {type: string}
+        imageStatus: {type: string}
+        cost: {type: integer}
+        power: {type: integer}
+        type: {type: string, enum: [FUE, AGU, PLA, ELE, PSI, LUC]}
+        rarity: {type: string, enum: [COMMON, UNCOMMON, RARE, LEGENDARY]}
+        ability: {$ref: '#/components/schemas/AbilityDetails'}
+    AbilityDetails:
+      type: object
+      required: [code, name, trigger, effect, parameters]
+      properties:
+        code: {type: [string, 'null']}
+        name: {type: [string, 'null']}
+        trigger: {type: [string, 'null'], description: null para HAB-000 o metadatos aún no definidos.}
+        effect: {type: [string, 'null']}
+        parameters: {type: object, additionalProperties: true}
+    SearchError:
+      type: object
+      required: [code, criterion, message]
+      properties:
+        code: {type: string}
+        criterion: {type: string}
+        message: {type: string}
