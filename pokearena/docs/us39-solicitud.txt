@@ -1,0 +1,136 @@
+Implementa únicamente la US 39: Buscar Carta de PokéArena sobre la base actual del repositorio. Ya tienes el caso general del proyecto y el documento del sprint 1; revísalos junto con este requerimiento.
+
+Antes de modificar archivos, lee AGENTS.md si existe y revisa el código actual. Ya hay implementaciones iniciales de Crear Carta y Crear Ubicación. Reutiliza sus modelos y convenciones, sin completar ni reescribir esas US. Realiza únicamente los ajustes compartidos indispensables para Buscar Carta y explica su motivo.
+
+Trabaja en una rama feature/US-39-buscar-carta basada en main. Si ya estás en una rama de trabajo apropiada, consérvala. No descartes cambios existentes. No hagas push ni merge.
+
+US 39:
+Como administrador quiero buscar cartas en el catálogo completo del juego combinando varios criterios para revisar y balancear el contenido existente.
+
+Criterios de aceptación:
+
+Éxito:
+1. Permitir buscar por:
+   - Código de carta.
+   - Nombre: coincidencia parcial, sin distinguir mayúsculas ni tildes.
+   - Costo.
+   - Poder.
+   - Tipo.
+   - Rareza.
+   - Habilidad por código, incluida Sin Habilidad.
+   - Habilidad por disparador y efecto.
+2. Los filtros se pueden combinar y cada resultado debe cumplir todos los criterios activos simultáneamente.
+3. Costo y poder admiten un valor exacto o un rango.
+4. Cada resultado muestra código, nombre, imagen, estado de la imagen, costo, poder, tipo, rareza y habilidad con sus parámetros.
+5. El tiempo de respuesta y el tamaño de cada respuesta se mantienen acotados con un catálogo de aproximadamente 10 000 cartas, aunque muchas coincidan.
+6. El administrador puede recorrer todos los resultados.
+
+Errores:
+7. Rechazar solicitudes sin credenciales válidas.
+8. Rechazar usuarios autenticados sin rol de administrador con un error distinto del anterior.
+9. Rechazar criterios inválidos indicando el criterio: tipo o rareza inexistente, costo o poder fuera del rango permitido, o mínimo mayor que máximo.
+
+Alternos:
+10. Una combinación sin coincidencias devuelve una lista vacía, no un error.
+11. Una búsqueda sin filtros permite recorrer todo el catálogo bajo los mismos límites de tamaño y tiempo.
+12. El orden es estable durante el recorrido: no aparecen cartas repetidas ni se omiten cartas del conjunto consultado aunque se creen otras simultáneamente.
+13. Una carta recién creada puede tardar algunos segundos en aparecer en los resultados.
+
+Datos compartidos definidos por Crear Carta:
+- Costo: 0 a 10, inclusive.
+- Poder: -20 a 20, inclusive.
+- Tipos: FUE, AGU, PLA, ELE, PSI y LUC.
+- Rarezas existentes en Java: COMMON, UNCOMMON, RARE y LEGENDARY.
+- La habilidad es obligatoria. HAB-000 representa Sin Habilidad.
+- Código de carta único e inmutable, por ejemplo PKA-FUE-001.
+- Card contiene referencias de imagen grande y pequeña, estado de imagen y fecha de creación.
+
+Arquitectura y estándares:
+- Monolito modular con presentación, aplicación, dominio e infraestructura.
+- Dominio independiente de Spring y de detalles de almacenamiento.
+- Controladores traducen HTTP; aplicación coordina; infraestructura ejecuta las consultas.
+- Reutiliza PostgreSQL y el enfoque JdbcTemplate existente.
+- Define un puerto de consulta para Buscar Carta, evitando mezclar su responsabilidad con el procesamiento de imágenes o la creación de cartas.
+- Código e identificadores en inglés; documentación funcional en español.
+- Código sencillo y consistente, sin emojis.
+- Añade comentarios por bloque lógico que expliquen su propósito.
+- DTO de entrada y salida separados del modelo de dominio.
+- Consultas parametrizadas; nunca concatenes valores proporcionados por el usuario.
+- Define y documenta OpenAPI antes de implementar el endpoint.
+- No incluyas secretos en código, ejemplos o logs.
+
+Diseño de la búsqueda:
+- Propón GET /api/v1/cards si no existe una convención posterior que debamos respetar.
+- Código de carta y código de habilidad: coincidencia exacta como decisión inicial documentada.
+- Nombre: búsqueda parcial literal normalizada, sin distinguir mayúsculas ni tildes. Evita que los caracteres % y _ introducidos por el usuario actúen accidentalmente como comodines.
+- Documenta cómo se combinan los filtros de habilidad y qué ocurre con combinaciones incompatibles.
+- Define el comportamiento si se proporciona simultáneamente un valor exacto y un rango del mismo campo.
+- Usa paginación con tamaño por defecto y máximo documentados.
+- Define una estrategia que realmente garantice un recorrido estable ante inserciones concurrentes. No asumas que OFFSET, un timestamp o el máximo identificador bastan: considera transacciones que asignan un identificador antes de que comience la búsqueda y confirman después.
+- El cursor debe validarse y quedar asociado a los filtros y al conjunto de resultados. Documenta su caducidad, si existe.
+- Si utilizas una instantánea materializada o estado de búsqueda, mantenlo fuera de la memoria de una instancia y limita su crecimiento y duración.
+- Si consultas réplicas, considera cómo evitar omisiones por retraso de replicación; para esta implementación puedes usar la primaria y documentar la decisión.
+- No incorpores Redis ni otros servicios si no aportan algo necesario.
+- Define un objetivo medible de rendimiento propio de esta búsqueda. No atribuyas a esta US el límite de 200 ms del RNF que corresponde a consultar partidas.
+- Comprueba índices y comportamiento con unas 10 000 cartas.
+
+Dependencias todavía incompletas:
+1. Habilidades:
+   La tabla actual solo contiene código y nombre. Buscar Carta necesita disparador, efecto y parámetros.
+   Incorpora el contrato y los cambios mínimos de esquema necesarios, conservando los datos existentes y la compatibilidad con Crear Carta.
+   No implementes creación de habilidades ni el motor del juego.
+   No inventes un catálogo oficial. Usa datos de prueba claramente identificados y documenta las definiciones pendientes.
+
+2. Autenticación:
+   Si ya existe seguridad, intégrate con ella.
+   Si no existe, define una interfaz de identidad/autorización y un adaptador de prueba exclusivo de desarrollo/test para verificar 401 y 403.
+   Nunca confíes en un rol enviado libremente por el cliente en producción.
+   En producción, si no hay un proveedor configurado, rechaza el acceso.
+   Explica que el adaptador de pruebas no equivale a autenticación de producción completa.
+
+3. Imágenes:
+   Devuelve las referencias y el estado existentes.
+   No implementes carga de imágenes ni generación o reintentos de miniaturas.
+   Si las referencias actuales son rutas locales no accesibles desde el navegador, documenta esa limitación de integración; no declares resuelto el acceso a imágenes si no lo está.
+
+4. Entorno:
+   El estándar indica Java 21 y el pom recibido configura Java 25.
+   Comprueba el estado actual y evita cambios de versión o dependencias ajenos a esta US salvo que sean necesarios para compilar. Documenta cualquier ajuste.
+
+Persistencia:
+- Usa cambios de esquema versionados y compatibles con una base existente.
+- No elimines tablas ni datos.
+- No asumas que CREATE TABLE IF NOT EXISTS actualiza columnas de tablas ya creadas.
+- No modifiques el flujo de Crear Carta salvo un ajuste indispensable y documentado para compartir datos o garantizar el recorrido estable.
+
+Pruebas necesarias:
+- Cada filtro individual.
+- Combinación de filtros con AND.
+- Nombre parcial, diferencias de mayúsculas y tildes.
+- Búsqueda literal con caracteres especiales.
+- Costo y poder exactos, rangos y límites.
+- HAB-000, habilidad por código, disparador y efecto.
+- Resultados con todos los campos requeridos.
+- Sin filtros y sin coincidencias.
+- Tipo, rareza, valores numéricos y rangos inválidos.
+- Solicitudes sin autenticar y sin permisos.
+- Paginación hasta agotar el conjunto.
+- Inserciones concurrentes, incluida una transacción iniciada antes de la búsqueda y confirmada durante el recorrido.
+- Cursores inválidos, expirados o utilizados con filtros distintos, según el contrato.
+- Volumen de aproximadamente 10 000 cartas y límites de respuesta.
+- Integración real con PostgreSQL, sin depender de servicios externos reales.
+- Fronteras de arquitectura pertinentes.
+
+Entregables:
+1. Contrato OpenAPI.
+2. Código de Buscar Carta y ajustes compartidos mínimos.
+3. Pruebas automatizadas.
+4. Instrucciones de configuración, ejecución y ejemplos de consultas.
+5. Diagramas de secuencia editables para los escenarios de éxito, coherentes con el código.
+6. Declaración de uso de IA y prompts utilizados en los diagramas, como exige el sprint.
+7. Registro breve de decisiones de diseño, especialmente paginación y consistencia.
+8. Resumen final con archivos modificados, criterios cubiertos, resultados de comprobaciones y pendientes de integración.
+
+Ejecuta compilación y pruebas disponibles. Si el entorno bloquea alguna comprobación, explica la causa y no la presentes como aprobada. Distingue lo implementado de lo simulado para pruebas y de lo pendiente de otros integrantes.
+
+Avanza con decisiones sencillas y explícitas. No amplíes el alcance a completar Crear Carta, Crear Ubicación, autenticación completa, frontend general ni motor del juego.
