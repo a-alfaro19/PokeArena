@@ -27,51 +27,30 @@
 		<url/>
 	</scm>
 	<properties>
-		<java.version>25</java.version>
+		<java.version>21</java.version>
+		<!-- ArchUnit no lo administra Spring Boot: su versión se fija aquí, con nombre. -->
+		<archunit.version>1.4.1</archunit.version>
 	</properties>
 	<dependencies>
-
+		<!-- Capa API: controladores REST y servidor embebido. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-actuator</artifactId>
+			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter</artifactId>
-		</dependency>
-
+		<!-- Pruebas: JUnit 5, AssertJ y soporte de Spring. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 
+		<!-- Pruebas de arquitectura: reglas de dependencia de la sección 4.2. -->
 		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-web</artifactId>
-		</dependency>
-
-		<dependency>
-        	<groupId>org.springframework.boot</groupId>
-        	<artifactId>spring-boot-starter-jdbc</artifactId>
-    	</dependency>
-
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
-		</dependency>
-
-		<dependency>
-			<groupId>net.coobird</groupId>
-			<artifactId>thumbnailator</artifactId>
-			<version>0.4.20</version>
-		</dependency>
-
-		<dependency>
-			<groupId>org.postgresql</groupId>
-			<artifactId>postgresql</artifactId>
-			<scope>runtime</scope>
+			<groupId>com.tngtech.archunit</groupId>
+			<artifactId>archunit-junit5</artifactId>
+			<version>${archunit.version}</version>
+			<scope>test</scope>
 		</dependency>
 	</dependencies>
 
