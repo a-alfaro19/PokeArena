@@ -56,6 +56,21 @@ $env:DB_URL = "jdbc:postgresql://localhost:55432/pokearena"
 .\mvnw.cmd spring-boot:run
 ```
 
+### Perfil `dev`
+
+Por defecto los logs salen en JSON estructurado (para producción y para buscar por
+`correlationId`). Para desarrollar conviene el perfil `dev`, que los muestra como texto legible
+(`application-dev.properties`). Más adelante este perfil también habilita las credenciales de
+prueba (`POST /api/v1/dev/sesiones`). Se activa con la variable `SPRING_PROFILES_ACTIVE`, en la
+misma ventana donde se arranca la aplicación:
+
+```powershell
+$env:SPRING_PROFILES_ACTIVE = "dev"
+.\mvnw.cmd spring-boot:run
+```
+
+Para volver al formato JSON: `Remove-Item Env:SPRING_PROFILES_ACTIVE`.
+
 Las variables de `$env:` duran solo en esa ventana de PowerShell. Para detener la base:
 `docker compose -f docker-compose.dev.yml down`. Si además agregas `-v`, se borran los
 datos del volumen.

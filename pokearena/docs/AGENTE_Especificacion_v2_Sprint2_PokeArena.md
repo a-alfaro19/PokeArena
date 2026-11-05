@@ -234,7 +234,19 @@ Todas las respuestas de error usan este cuerpo, generado por **un único** `@Res
 | `IDEMPOTENCY_KEY_REQUIRED` | 400 | Falta `Idempotency-Key` |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | Misma clave con contenido distinto |
 
-Nunca devuelvas un error genérico ni el mensaje de una excepción interna. Las excepciones de validación son `DomainException` tipadas, jamás `IllegalArgumentException`.
+**Tipos de protocolo.** Los tipos anteriores son de **dominio** (`domain.error.ErrorType`, los lanza una `DomainException`). Además, la **capa API** (`api.error`) define estos cinco tipos para errores que nacen en el protocolo HTTP y no en el dominio; no existen en `domain` y ningún caso de uso los lanza:
+
+| `type` | `status` | Cuándo |
+|---|---|---|
+| `BAD_REQUEST` | 400 | La solicitud no se puede interpretar (por ejemplo, un cuerpo JSON mal formado) |
+| `NOT_FOUND` | 404 | La ruta no existe |
+| `METHOD_NOT_ALLOWED` | 405 | La ruta existe pero no admite ese método (la respuesta incluye el encabezado `Allow`) |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | El cuerpo viene en un tipo de contenido que la ruta no acepta |
+| `INTERNAL_ERROR` | 500 | Error inesperado: el detalle es un texto fijo y el mensaje interno solo queda en el log, con el `correlationId` |
+
+Regla para las demás excepciones estándar de Spring sin tipo propio: **cualquier otro 4xx se informa como `BAD_REQUEST` (400) y cualquier 5xx como `INTERNAL_ERROR` (500)**, siempre con el mismo formato.
+
+Nunca devuelvas un error genérico ni el mensaje de una excepción interna (el único error genérico permitido es `INTERNAL_ERROR`, y nunca revela su causa). Las excepciones de validación son `DomainException` tipadas, jamás `IllegalArgumentException`.
 
 ### 5.4 Idempotencia
 
