@@ -193,6 +193,7 @@ Los identificadores de Java van en inglés; los mensajes al usuario, en español
 - Sin token o token inválido o vencido: **401** `NOT_AUTHENTICATED`. Token válido sin el rol requerido: **403** `FORBIDDEN`. **Son errores distintos.**
 - **El rol de administrador se asigna por configuración**: la propiedad `app.admin.identities` es una lista de identidades `proveedor:sub` que al iniciar sesión reciben el rol `ADMIN`. Todo el resto recibe `PLAYER`.
 - `POST /api/v1/dev/sesiones` emite credenciales de prueba para ADMIN o PLAYER, **solo con el perfil `dev`** (`@Profile("dev")`). Una prueba debe comprobar que con el perfil `prod` no existe (RNF-SEG-10).
+- Las credenciales de prueba **pertenecen a jugadores reales**: `dev/sesiones` crea (o reutiliza) un jugador con proveedor `dev`, por la misma vía que el inicio de sesión (fila en `player` y en `player_identity`, sección 6). Así el `sub` del token siempre es un `player(id)` existente y los datos de prueba (colección, cubos, copias, claves de idempotencia) cumplen las mismas reglas y claves foráneas que los reales.
 
 ### 5.3 Formato único de errores (RNF-API-03)
 
@@ -269,18 +270,21 @@ Una **migración Flyway inicial** con todo el esquema y los datos semilla. Se el
 |---|---|
 | `card_type` | `code` (FUE, AGU, PLA, ELE, PSI, LUC), `name`. Semilla |
 | `rarity` | `code` (`COMMON`, `UNCOMMON`, `RARE`, `LEGENDARY`), `name` (Común, Poco común, Rara, Legendaria). Semilla |
-| `ability` | `code`, `name`, `trigger`, `effect_type`, `parameters` (jsonb), `limited_to_type` (nullable), `evolves_to_card_code` (nullable). **Semilla obligatoria: `HAB-000`, nombre "Sin Habilidad"** |
+| `ability` | `code`, `name`, `trigger`, `effect_type`, `parameters` (jsonb), `limited_to_type` (nullable), `evolves_to_card_code` (nullable), `version`, `active`, `created_at` (la historia "Crear habilidad" está en el backlog: será una entidad de administrador). **Semilla obligatoria: `HAB-000`, nombre "Sin Habilidad"** |
 | `card_type_counter` | `type_code` (PK), `last_number` |
-| `card` | `id` (bigserial), `code` (único e inmutable, `PKA-<TIPO>-<NNN>`), `name`, `name_normalized`, `cost`, `power`, `type_code`, `rarity_code`, `ability_code`, `image_large_url`, `image_small_url`, `image_status` (`READY`, `PENDING_RETRY`), `retry_count`, `available`, `version`, `active`, `created_at` |
-| `location` | `id`, `name`, `description`, `effect_type` (nullable), `effect_parameters` (jsonb), `card_limit` (0 a 5), `extra_energy_mode` (`NONE`, `FIXED`, `PER_CARD`), `extra_energy_amount`, `image_large_url`, `image_small_url`, `image_status`, `retry_count`, `available`, `version`, `active`, `created_at` |
-| `player` | `id` (uuid), `display_name`, `email`, `role` (`PLAYER`, `ADMIN`), `elo` (inicia en 0), `cube_balance` (CHECK ≥ 0), `initial_collection_status` (`PENDING`, `DELIVERED`), `created_at` |
-| `player_identity` | `provider`, `provider_subject`, `player_id`. **Única en `(provider, provider_subject)`** |
+| `card` | `id` (bigserial), `code` (único e inmutable, `PKA-<TIPO>-<NNN>`), `name`, `name_normalized`, `cost`, `power`, `type_code`, `rarity_code`, `ability_code`, `image_large_url`, `image_small_url`, `image_status` (`READY`, `PENDING_RETRY`, `FAILED`), `retry_count`, `available`, `version`, `active`, `created_at` |
+| `location` | `id`, `name`, `description`, `effect_type` (nullable), `effect_parameters` (jsonb), `card_limit` (0 a 5), `extra_energy_mode` (`NONE`, `FIXED`, `PER_CARD`), `extra_energy_amount`, `image_large_url`, `image_small_url`, `image_status` (`READY`, `PENDING_RETRY`, `FAILED`), `retry_count`, `available`, `version`, `active`, `created_at` |
+| `player` | `id` (uuid), `display_name` (nullable), `email` (nullable), `role` (`PLAYER`, `ADMIN`), `elo` (inicia en 0), `cube_balance` (CHECK ≥ 0), `initial_collection_status` (`PENDING`, `DELIVERED`), `created_at` |
+| `player_identity` | `provider` (`google`, y `dev` para las credenciales de prueba), `provider_subject`, `player_id`. **Única en `(provider, provider_subject)`** |
 | `player_card` | `player_id`, `card_code`, `copies` (CHECK > 0). Clave `(player_id, card_code)` |
 | `cube_movement` | `id`, `player_id`, `amount`, `reason` (`INITIAL_GRANT`, ...), `created_at`. Invariante: `cube_balance` = suma de movimientos |
-| `idempotency_key` | ver 5.4 |
+| `idempotency_key` | ver 5.4. `user_id` es clave foránea hacia `player(id)` |
 
 **Reglas del modelo**
 - La identidad del jugador es `(provider, provider_subject)`, **nunca el correo** (el correo puede cambiar en el proveedor). Un segundo proveedor futuro solo agrega filas a `player_identity`.
+- `display_name` y `email` admiten nulo porque Google no siempre los envía. El dominio usa un nombre de respaldo (por ejemplo "Jugador" más un sufijo corto del identificador).
+- **Las credenciales de prueba (`dev/sesiones`) crean jugadores reales** con proveedor `dev`, por la misma vía que el inicio de sesión (fila en `player` y en `player_identity`). Así los datos de prueba (colección, cubos, copias, claves de idempotencia) son consistentes con los reales y cumplen las mismas claves foráneas.
+- `image_status`: `READY` (ambas versiones existen), `PENDING_RETRY` (falló la miniatura y quedan reintentos) y `FAILED` (se agotaron los reintentos). Solo con `READY` la entidad puede estar disponible (`available = true`).
 - `name_normalized` (minúsculas, sin tildes) lo calcula el **dominio** al crear la carta, no una función SQL.
 - Índices de `card`: `code` único, `type_code`, `rarity_code`, `ability_code`, `cost`, `power` y `name_normalized` con índice trigram (`pg_trgm`, GIN). Índice en `player_card(player_id)`.
 - Las imágenes se guardan como **URLs** públicas relativas (por ejemplo `/images/cards/<id>/large.png`), no rutas de disco.
@@ -309,7 +313,7 @@ Misma plantilla en todos: autorizar → idempotencia → validar → ejecutar en
 
 - **Código único `PKA-<TIPO>-<NNN>`** (3 dígitos, consecutivo por tipo). El consecutivo se obtiene **dentro** de la transacción del paso 10 con una sentencia atómica (`UPDATE card_type_counter SET last_number = last_number + 1 WHERE type_code = ? RETURNING last_number`), así no se consume si la transacción revierte. Pasar de 999 es un error de dominio claro.
 - **Ficha de respuesta:** código, nombre, costo, poder, tipo, rareza, imágenes grande y pequeña, estado de imagen, disponibilidad y la habilidad con su nombre, su código y, si está limitada a un tipo, a cuál afecta.
-- **Si falla la miniatura:** la carta se guarda con `available = false` e `image_status = PENDING_RETRY`. Una tarea programada reintenta (máximo configurable, `app.images.max-retries` = 3); al lograrlo pasa a `READY` y disponible. El administrador ve el estado.
+- **Si falla la miniatura:** la carta se guarda con `available = false` e `image_status = PENDING_RETRY`. Una tarea programada reintenta (máximo configurable, `app.images.max-retries` = 3) e incrementa `retry_count` en cada intento; al lograrlo pasa a `READY` y disponible. Si llega al máximo sin lograrlo, pasa a `FAILED` y **sigue no disponible**; la tarea ya no la reintenta. El administrador ve el estado (`PENDING_RETRY` o `FAILED`) en la ficha y en la búsqueda. Lo mismo aplica a las ubicaciones (7.2).
 - **Si el paso 10 falla** después de guardar los archivos, se **borran** esos archivos como compensación (los archivos y la base no comparten transacción).
 - **`EvolutionRules`** (servicio de dominio con pruebas unitarias propias): rechaza una evolución a la misma carta y los ciclos. Como en este sprint no se editan cartas, se prueba directamente. *(Pregunta abierta para el profesor: cómo se dispara en la creación.)*
 
