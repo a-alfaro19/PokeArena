@@ -38,6 +38,30 @@
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 
+		<!-- Persistencia: JdbcTemplate y transacciones (sección 3). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jdbc</artifactId>
+		</dependency>
+
+		<!-- Migraciones: Flyway aplica db/migration al arrancar (sección 6). Desde Flyway 10
+		     el soporte de cada base va en un módulo aparte; este es el de PostgreSQL. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-flyway</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+
+		<!-- Driver JDBC de PostgreSQL: solo se necesita al ejecutar, no al compilar. -->
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
 		<!-- Pruebas: JUnit 5, AssertJ y soporte de Spring. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -52,6 +76,21 @@
 			<version>${archunit.version}</version>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- Pruebas de integración: PostgreSQL real en un contenedor (Testcontainers 2.x,
+		     versión administrada por Spring Boot) y su conexión automática con Spring.
+		     No se usa testcontainers-junit-jupiter: el contenedor compartido se arranca a
+		     mano en PostgresIntegrationTestBase, sin @Testcontainers ni @Container. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -59,6 +98,12 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<!-- Failsafe ejecuta las pruebas de integración (*IT) en la fase verify; Surefire
+			     sigue ejecutando las unitarias (*Test). La configuración viene del parent. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
 			</plugin>
 		</plugins>
 	</build>

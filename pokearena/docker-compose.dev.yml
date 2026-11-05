@@ -1,0 +1,36 @@
+# Propósito: base de datos local para desarrollo, mientras no exista el Docker Compose
+# completo de la sección 12 (Redis, 2 instancias de la API y Nginx llegan en la fase 5).
+# Responsabilidades: levantar SOLO PostgreSQL, con la misma imagen que usan las pruebas
+# (Testcontainers), un volumen para no perder los datos y un healthcheck.
+#
+# Uso (PowerShell, desde la carpeta pokearena):
+#   $env:DB_PASSWORD = "<contraseña local>"
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# La contraseña no tiene valor por defecto: si DB_PASSWORD no está definida, Compose se
+# detiene con un mensaje en lugar de usar una contraseña escrita en el repositorio.
+name: pokearena-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      # Coinciden con los valores locales de application.properties (DB_URL y DB_USERNAME).
+      POSTGRES_DB: pokearena
+      POSTGRES_USER: ${DB_USERNAME:-pokearena}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina la variable de entorno DB_PASSWORD}
+    ports:
+      # Puerto del equipo: 5432 por defecto; DB_PORT lo cambia si ya está ocupado
+      # (por ejemplo, por un PostgreSQL instalado en Windows).
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pokearena-dev-data:/var/lib/postgresql/data
+    healthcheck:
+      # $$ evita que Compose reemplace la variable: la resuelve el contenedor.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pokearena-dev-data:
