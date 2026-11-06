@@ -39,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import cr.ac.tec.pokearena.api.security.PublicRoute;
 import cr.ac.tec.pokearena.api.web.CorrelationIdFilter;
 import cr.ac.tec.pokearena.domain.error.DomainException;
 import cr.ac.tec.pokearena.domain.error.ErrorType;
@@ -325,8 +326,10 @@ class ApiErrorHandlerIT extends PostgresIntegrationTestBase {
     record SampleBody(String name) {
     }
 
+    // Pública: estas pruebas verifican el formato de errores, no la autorización.
     @RestController
     @RequestMapping(BASE_PATH)
+    @PublicRoute
     static class ErrorTestController {
 
         @GetMapping("/dominio/{type}")

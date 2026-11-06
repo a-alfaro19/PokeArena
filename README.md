@@ -42,9 +42,18 @@ docker compose -f docker-compose.dev.yml ps
 $env:DB_URL = "jdbc:postgresql://localhost:5432/pokearena"
 $env:DB_USERNAME = "pokearena"
 
-# 4. Arrancar la aplicación en la misma ventana (usa las variables anteriores).
+# 4. Secreto de firma de las credenciales (obligatorio: sin él la aplicación no arranca).
+#    Genera uno aleatorio de 48 bytes; nunca lo guardes en el repositorio.
+$b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+$env:APP_JWT_SECRET = [Convert]::ToBase64String($b)
+
+# 5. Arrancar la aplicación en la misma ventana (usa las variables anteriores).
 .\mvnw.cmd spring-boot:run
 ```
+
+`APP_JWT_SECRET` firma las credenciales propias (sección 5.2) y debe tener al menos 32 bytes.
+Si cambia, las sesiones abiertas dejan de valer. Las identidades administradoras se configuran
+con `APP_ADMIN_IDENTITIES`, una lista `proveedor:sub` separada por comas.
 
 **Si el puerto 5432 está ocupado** (por ejemplo, por un PostgreSQL instalado en Windows,
 que arranca como servicio), publica la base en otro puerto y apunta la aplicación a él:
@@ -60,13 +69,22 @@ $env:DB_URL = "jdbc:postgresql://localhost:55432/pokearena"
 
 Por defecto los logs salen en JSON estructurado (para producción y para buscar por
 `correlationId`). Para desarrollar conviene el perfil `dev`, que los muestra como texto legible
-(`application-dev.properties`). Más adelante este perfil también habilita las credenciales de
-prueba (`POST /api/v1/dev/sesiones`). Se activa con la variable `SPRING_PROFILES_ACTIVE`, en la
-misma ventana donde se arranca la aplicación:
+(`application-dev.properties`). Este perfil también habilita las credenciales de prueba
+(`POST /api/v1/dev/sesiones`), que no existen con ningún otro perfil. Se activa con la variable
+`SPRING_PROFILES_ACTIVE`, en la misma ventana donde se arranca la aplicación:
 
 ```powershell
 $env:SPRING_PROFILES_ACTIVE = "dev"
 .\mvnw.cmd spring-boot:run
+```
+
+Con el perfil `dev`, se pide un token de administrador o de jugador de prueba (cada rol es
+siempre el mismo jugador real, con proveedor `dev`) y se usa en el encabezado `Authorization`:
+
+```powershell
+$s = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/dev/sesiones `
+  -ContentType "application/json" -Body '{"role":"ADMIN"}'
+$headers = @{ Authorization = "Bearer $($s.accessToken)" }
 ```
 
 Para volver al formato JSON: `Remove-Item Env:SPRING_PROFILES_ACTIVE`.

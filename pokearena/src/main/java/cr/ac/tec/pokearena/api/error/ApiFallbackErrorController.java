@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import cr.ac.tec.pokearena.api.error.ApiErrorCatalog.HttpErrorType;
+import cr.ac.tec.pokearena.api.security.PublicRoute;
 import cr.ac.tec.pokearena.api.web.CorrelationIdFilter;
 import cr.ac.tec.pokearena.domain.error.ErrorType;
 import jakarta.servlet.RequestDispatcher;
@@ -25,8 +26,12 @@ import jakarta.servlet.http.HttpServletRequest;
  * Referencia: secciones 5.3 y 5.6.
  *
  * <p>Al declarar un {@code ErrorController}, Spring Boot no registra su {@code BasicErrorController}.
+ *
+ * <p>Es {@link PublicRoute}: el servidor despacha aquí cualquier error, incluidos los 401 y 403,
+ * y la respuesta de error tiene que poder enviarse aunque la solicitud no traiga credenciales.
  */
 @RestController
+@PublicRoute
 public class ApiFallbackErrorController implements ErrorController {
 
     private static final Logger LOG = LoggerFactory.getLogger(ApiFallbackErrorController.class);
