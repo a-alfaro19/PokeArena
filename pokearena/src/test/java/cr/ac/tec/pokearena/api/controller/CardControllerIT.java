@@ -42,17 +42,15 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import cr.ac.tec.pokearena.application.port.AuthenticatedUser;
-import cr.ac.tec.pokearena.application.port.ImageProcessor;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
-import cr.ac.tec.pokearena.application.port.ValidatedImage;
 import cr.ac.tec.pokearena.application.usecase.PlayerAccountService;
-import cr.ac.tec.pokearena.domain.error.ThumbnailGenerationException;
 import cr.ac.tec.pokearena.domain.model.Card;
 import cr.ac.tec.pokearena.domain.model.Role;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
 import cr.ac.tec.pokearena.infrastructure.persistence.JdbcCardRepository;
 import cr.ac.tec.pokearena.infrastructure.storage.ImageIoProcessor;
+import cr.ac.tec.pokearena.support.FaultyImageProcessor;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
 import cr.ac.tec.pokearena.support.TestImages;
 import cr.ac.tec.pokearena.support.TestPlayers;
@@ -545,29 +543,6 @@ class CardControllerIT extends PostgresIntegrationTestBase {
         @Primary
         FaultyCardRepository faultyCardRepository(JdbcCardRepository real) {
             return new FaultyCardRepository(real);
-        }
-    }
-
-    /** Procesador real que puede simular que la miniatura falla. */
-    static class FaultyImageProcessor implements ImageProcessor {
-        private final ImageProcessor real;
-        volatile boolean failThumbnail;
-
-        FaultyImageProcessor(ImageProcessor real) {
-            this.real = real;
-        }
-
-        @Override
-        public ValidatedImage validate(byte[] content, ImageRules rules) {
-            return real.validate(content, rules);
-        }
-
-        @Override
-        public byte[] generateThumbnail(ValidatedImage image, ImageRules rules) {
-            if (failThumbnail) {
-                throw new ThumbnailGenerationException("Falla simulada de la miniatura", null);
-            }
-            return real.generateThumbnail(image, rules);
         }
     }
 

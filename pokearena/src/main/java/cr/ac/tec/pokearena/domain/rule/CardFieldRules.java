@@ -46,47 +46,23 @@ public final class CardFieldRules {
      */
     public static CardFields validate(String name, String cost, String power, String typeCode, String rarityCode,
             List<CardType> types, List<Rarity> rarities) {
-        String cleanName = requireText(NAME_FIELD, name, "Debe indicar el nombre de la carta.").strip();
-        int validCost = integerInRange(COST_FIELD, "El costo", cost, MIN_COST, MAX_COST);
-        int validPower = integerInRange(POWER_FIELD, "El poder", power, MIN_POWER, MAX_POWER);
+        String cleanName = FieldChecks.requireText(NAME_FIELD, name, "Debe indicar el nombre de la carta.").strip();
+        int validCost = FieldChecks.integerInRange(COST_FIELD, "El costo", cost, MIN_COST, MAX_COST);
+        int validPower = FieldChecks.integerInRange(POWER_FIELD, "El poder", power, MIN_POWER, MAX_POWER);
         CardType type = typeOf(typeCode, types);
         Rarity rarity = rarityOf(rarityCode, rarities);
         return new CardFields(cleanName, NameNormalizer.normalize(cleanName), validCost, validPower, type, rarity);
     }
 
-    private static String requireText(String field, String value, String message) {
-        if (value == null || value.isBlank()) {
-            throw ValidationException.missingField(field, message);
-        }
-        return value;
-    }
-
-    private static int integerInRange(String field, String label, String value, int min, int max) {
-        List<String> allowed = List.of(min + ".." + max);
-        String text = requireText(field, value, label + " es obligatorio.").strip();
-        int number;
-        try {
-            number = Integer.parseInt(text);
-        } catch (NumberFormatException notAnInteger) {
-            throw ValidationException.invalidField(field,
-                    label + " debe ser un número entero entre " + min + " y " + max + ".", allowed);
-        }
-        if (number < min || number > max) {
-            throw ValidationException.invalidField(field,
-                    label + " debe estar entre " + min + " y " + max + ".", allowed);
-        }
-        return number;
-    }
-
     private static CardType typeOf(String code, List<CardType> types) {
-        requireText(TYPE_FIELD, code, "Debe elegir el tipo de la carta.");
+        FieldChecks.requireText(TYPE_FIELD, code, "Debe elegir el tipo de la carta.");
         return types.stream().filter(type -> type.code().equals(code)).findFirst()
                 .orElseThrow(() -> ValidationException.invalidField(TYPE_FIELD,
                         "El tipo '" + code + "' no existe.", types.stream().map(CardType::code).toList()));
     }
 
     private static Rarity rarityOf(String code, List<Rarity> rarities) {
-        requireText(RARITY_FIELD, code, "Debe elegir la rareza de la carta.");
+        FieldChecks.requireText(RARITY_FIELD, code, "Debe elegir la rareza de la carta.");
         return rarities.stream().filter(rarity -> rarity.code().equals(code)).findFirst()
                 .orElseThrow(() -> ValidationException.invalidField(RARITY_FIELD,
                         "La rareza '" + code + "' no existe.", rarities.stream().map(Rarity::code).toList()));
