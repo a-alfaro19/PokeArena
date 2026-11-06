@@ -1,0 +1,259 @@
+<!doctype html>
+<!--
+  Propósito: interfaz web de PokéArena (corrección 1 del profesor; sección 11 de la especificación).
+  Responsabilidades: estructura de la página: barra de sesión, pestañas de administrador (Crear carta,
+  Crear ubicación y Buscar carta), casos de prueba rápidos y panel de respuesta. El comportamiento está
+  en app.js y el diseño en styles.css. Sin frameworks ni bibliotecas externas: todo se sirve desde la
+  misma aplicación, y habla con la API real en el mismo origen.
+  Referencia: sección 11 (solo lo del Sprint 1) y sección 4.1 (la presentación es la interfaz; la API
+  es otra capa).
+-->
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Solo recursos del mismo origen; las imágenes de reemplazo son data: generadas por app.js. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>PokéArena · Consola del administrador</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>PokéArena</h1>
+        <p class="subtitle">Consola del administrador · Sprint 1</p>
+      </div>
+    </div>
+
+    <section class="session" aria-label="Sesión">
+      <div class="session-state">
+        <span class="label">Sesión</span>
+        <span id="session-badge" class="badge badge-none">Sin sesión</span>
+        <span id="session-detail" class="muted"></span>
+      </div>
+      <div id="session-buttons" class="session-buttons" role="group" aria-label="Elegir sesión de prueba">
+        <button type="button" class="btn btn-ghost" data-session="NONE">Sin sesión</button>
+        <button type="button" class="btn btn-ghost" data-session="PLAYER">Jugador</button>
+        <button type="button" class="btn btn-ghost" data-session="ADMIN">Administrador</button>
+      </div>
+      <p id="session-notice" class="notice" hidden>
+        Las sesiones de prueba solo existen con el perfil <code>dev</code>. El ingreso real llegará con
+        el inicio de sesión con proveedor (Sprint 2).
+      </p>
+    </section>
+  </header>
+
+  <main class="layout">
+    <section class="workspace">
+      <nav class="tabs" role="tablist" aria-label="Operaciones del administrador">
+        <button type="button" role="tab" class="tab" id="tab-card" aria-controls="panel-card" aria-selected="true">Crear carta</button>
+        <button type="button" role="tab" class="tab" id="tab-location" aria-controls="panel-location" aria-selected="false">Crear ubicación</button>
+        <button type="button" role="tab" class="tab" id="tab-search" aria-controls="panel-search" aria-selected="false">Buscar carta</button>
+      </nav>
+
+      <!-- ===================================================== Crear carta (2.1.1) -->
+      <section id="panel-card" class="panel" role="tabpanel" aria-labelledby="tab-card">
+        <div class="panel-head">
+          <h2>Crear carta</h2>
+          <p class="muted"><code>POST /api/v1/cartas</code> · Historia 2.1.1 · Requiere rol de administrador</p>
+        </div>
+        <form id="card-form" class="form-grid" novalidate>
+          <label class="field span-2">Nombre
+            <input name="name" type="text" autocomplete="off" placeholder="Charmander">
+          </label>
+          <label class="field"><span class="field-label">Costo <small>0 a 10</small></span>
+            <input name="cost" type="number" step="1" value="3">
+          </label>
+          <label class="field"><span class="field-label">Poder <small>-20 a 20</small></span>
+            <input name="power" type="number" step="1" value="4">
+          </label>
+          <label class="field">Tipo
+            <select name="type" data-options="types"></select>
+          </label>
+          <label class="field">Rareza
+            <select name="rarity" data-options="rarities"></select>
+          </label>
+          <label class="field span-2"><span class="field-label">Habilidad <small>código; HAB-000 es "Sin Habilidad"</small></span>
+            <input name="ability" type="text" autocomplete="off" value="HAB-000">
+          </label>
+          <div class="field span-2">
+            <span>Imagen <small>PNG, JPG o WebP · 5:7 · mínimo 600 × 840 · máximo 5 MB</small></span>
+            <div class="file-row">
+              <input name="image" type="file" accept="image/png,image/jpeg,image/webp">
+              <button type="button" class="btn btn-ghost" data-generate="card">Generar imagen 600 × 840</button>
+            </div>
+            <span class="muted file-note" data-file-note="card">Sin imagen seleccionada.</span>
+          </div>
+          <div class="actions span-2">
+            <button type="submit" class="btn btn-primary">Crear carta</button>
+          </div>
+        </form>
+
+        <div class="quick">
+          <h3>Casos de prueba rápidos</h3>
+          <p class="muted">Cada caso pide su propia sesión de prueba (administrador, salvo que diga otra cosa) y
+            genera sus imágenes con <code>canvas</code> en el tamaño exacto.</p>
+          <div class="quick-grid" data-quick="card"></div>
+        </div>
+      </section>
+
+      <!-- ===================================================== Crear ubicación (2.2.1) -->
+      <section id="panel-location" class="panel" role="tabpanel" aria-labelledby="tab-location" hidden>
+        <div class="panel-head">
+          <h2>Crear ubicación</h2>
+          <p class="muted"><code>POST /api/v1/ubicaciones</code> · Historia 2.2.1 · Requiere rol de administrador</p>
+        </div>
+        <form id="location-form" class="form-grid" novalidate>
+          <label class="field span-2">Nombre
+            <input name="name" type="text" autocomplete="off" placeholder="Volcán Ardiente">
+          </label>
+          <label class="field span-2">Descripción
+            <textarea name="description" rows="2" placeholder="Un volcán que potencia a las cartas de fuego."></textarea>
+          </label>
+          <label class="field"><span class="field-label">Límite de cartas <small>0 a 5</small></span>
+            <input name="cardLimit" type="number" step="1" value="4">
+          </label>
+          <label class="field">Energía extra
+            <select name="extraEnergyMode">
+              <option value="NONE" selected>NONE · sin energía extra</option>
+              <option value="FIXED">FIXED · fija por turno (0 a 3)</option>
+              <option value="PER_CARD">PER_CARD · por carta propia (0 a 2)</option>
+            </select>
+          </label>
+          <label class="field"><span class="field-label">Monto de energía <small data-energy-hint>no aplica con NONE</small></span>
+            <input name="extraEnergyAmount" type="number" step="1" disabled>
+          </label>
+          <label class="field">Efecto
+            <select name="effectCode">
+              <option value="">Sin efecto</option>
+              <option value="TYPE_BONUS">TYPE_BONUS · bonificación por tipo</option>
+              <option value="COST_MODIFIER">COST_MODIFIER · modificador de costo</option>
+              <option value="TURN_RESTRICTION">TURN_RESTRICTION · restricción por turno</option>
+            </select>
+          </label>
+
+          <fieldset class="effect-params span-2" data-effect="TYPE_BONUS" hidden>
+            <legend>Parámetros de TYPE_BONUS</legend>
+            <label class="field">Tipo <select name="tbType" data-options="types"></select></label>
+            <label class="field"><span class="field-label">Monto <small>-5 a 5</small></span><input name="tbAmount" type="number" step="1" value="2"></label>
+          </fieldset>
+          <fieldset class="effect-params span-2" data-effect="COST_MODIFIER" hidden>
+            <legend>Parámetros de COST_MODIFIER</legend>
+            <label class="field"><span class="field-label">Monto <small>-5 a 5</small></span><input name="cmAmount" type="number" step="1" value="-1"></label>
+            <label class="field"><span class="field-label">Tipo afectado <small>opcional</small></span>
+              <select name="cmType" data-options="types" data-empty="Todos los tipos"></select>
+            </label>
+          </fieldset>
+          <fieldset class="effect-params span-2" data-effect="TURN_RESTRICTION" hidden>
+            <legend>Parámetros de TURN_RESTRICTION · turnos en los que no se puede jugar</legend>
+            <div class="turns" data-turns></div>
+          </fieldset>
+
+          <div class="field span-2">
+            <span>JSON del campo <code>effect</code> que se enviará</span>
+            <pre id="effect-preview" class="code small">(sin efecto: el campo no se envía)</pre>
+          </div>
+
+          <div class="field span-2">
+            <span>Imagen <small>PNG, JPG o WebP · 4:3 · mínimo 800 × 600 · máximo 5 MB</small></span>
+            <div class="file-row">
+              <input name="image" type="file" accept="image/png,image/jpeg,image/webp">
+              <button type="button" class="btn btn-ghost" data-generate="location">Generar imagen 800 × 600</button>
+            </div>
+            <span class="muted file-note" data-file-note="location">Sin imagen seleccionada.</span>
+          </div>
+          <div class="actions span-2">
+            <button type="submit" class="btn btn-primary">Crear ubicación</button>
+          </div>
+        </form>
+
+        <div class="quick">
+          <h3>Casos de prueba rápidos</h3>
+          <div class="quick-grid" data-quick="location"></div>
+        </div>
+      </section>
+
+      <!-- ===================================================== Buscar carta (2.1.2) -->
+      <section id="panel-search" class="panel" role="tabpanel" aria-labelledby="tab-search" hidden>
+        <div class="panel-head">
+          <h2>Buscar carta</h2>
+          <p class="muted"><code>GET /api/v1/cartas</code> · Historia 2.1.2 · Requiere rol de administrador ·
+            criterios combinados con AND; los vacíos no se envían</p>
+        </div>
+        <form id="search-form" class="form-grid search-grid" novalidate>
+          <label class="field">Código <input name="code" type="text" autocomplete="off" placeholder="PKA-FUE-001"></label>
+          <label class="field"><span class="field-label">Nombre <small>parcial</small></span><input name="name" type="text" autocomplete="off"></label>
+          <label class="field">Tipo <select name="type" data-options="types" data-empty="Cualquiera"></select></label>
+          <label class="field">Rareza <select name="rarity" data-options="rarities" data-empty="Cualquiera"></select></label>
+          <label class="field">Costo exacto <input name="cost" type="number" step="1"></label>
+          <label class="field">Costo mínimo <input name="costMin" type="number" step="1"></label>
+          <label class="field">Costo máximo <input name="costMax" type="number" step="1"></label>
+          <label class="field"><span class="field-label">Límite <small>1 a 100; vacío = 20</small></span><input name="limit" type="number" step="1"></label>
+          <label class="field">Poder exacto <input name="power" type="number" step="1"></label>
+          <label class="field">Poder mínimo <input name="powerMin" type="number" step="1"></label>
+          <label class="field">Poder máximo <input name="powerMax" type="number" step="1"></label>
+          <label class="field">Habilidad <input name="ability" type="text" autocomplete="off" placeholder="HAB-000"></label>
+          <label class="field">Disparador <input name="abilityTrigger" type="text" autocomplete="off"></label>
+          <label class="field">Efecto de habilidad <input name="abilityEffect" type="text" autocomplete="off"></label>
+          <div class="actions span-all">
+            <button type="submit" class="btn btn-primary">Buscar</button>
+            <button type="reset" class="btn btn-ghost">Limpiar criterios</button>
+          </div>
+        </form>
+
+        <div class="results">
+          <div class="results-head">
+            <h3>Resultados</h3>
+            <span id="results-count" class="muted">Sin búsqueda todavía.</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Miniatura</th><th>Código</th><th>Nombre</th><th>Tipo</th><th>Rareza</th>
+                  <th class="num">Costo</th><th class="num">Poder</th><th>Habilidad</th><th>Imagen</th><th>Disponible</th>
+                </tr>
+              </thead>
+              <tbody id="results-body"></tbody>
+            </table>
+          </div>
+          <button type="button" id="load-more" class="btn btn-ghost load-more" hidden>Cargar más</button>
+        </div>
+
+        <div class="quick">
+          <h3>Casos de prueba rápidos</h3>
+          <div class="quick-grid" data-quick="search"></div>
+        </div>
+      </section>
+    </section>
+
+    <!-- ===================================================== Panel de respuesta -->
+    <aside class="response" aria-label="Respuesta de la última operación" aria-live="polite">
+      <div class="response-head">
+        <h2>Respuesta</h2>
+        <span id="response-status" class="status status-idle">—</span>
+      </div>
+      <p id="response-request" class="request-line muted">Todavía no se envió ninguna solicitud.</p>
+      <dl class="meta">
+        <dt>correlationId</dt><dd id="response-correlation">—</dd>
+        <dt>Idempotency-Key</dt><dd id="response-key">—</dd>
+        <dt>Tiempo</dt><dd id="response-time">—</dd>
+      </dl>
+      <p id="response-expectation" class="expectation" hidden></p>
+      <div class="response-actions">
+        <button type="button" id="repeat-request" class="btn btn-ghost" disabled
+                title="Reenvía la última creación con la misma Idempotency-Key, el mismo contenido y la misma sesión">
+          Repetir con la misma clave
+        </button>
+      </div>
+      <div id="response-images" class="previews" hidden></div>
+      <pre id="response-body" class="code">{}</pre>
+    </aside>
+  </main>
+</body>
+</html>

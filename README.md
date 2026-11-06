@@ -93,6 +93,61 @@ Las variables de `$env:` duran solo en esa ventana de PowerShell. Para detener l
 `docker compose -f docker-compose.dev.yml down`. Si además agregas `-v`, se borran los
 datos del volumen.
 
+## Interfaz web
+
+La interfaz (sección 11 de la especificación) es una sola página en
+`pokearena/src/main/resources/static/` (`index.html`, `app.js` y `styles.css`), sin frameworks ni
+bibliotecas externas. La sirve la misma aplicación y habla con la API real en el mismo origen.
+
+### Levantarla paso a paso (PowerShell, desde la carpeta `pokearena`)
+
+```powershell
+# 1. Base de datos: contraseña local (elige la que quieras; no se guarda en el repositorio).
+$env:DB_PASSWORD = "<contraseña local>"
+docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml ps        # espera a que diga "healthy"
+
+# 2. Conexión de la aplicación (este es el valor por defecto; cámbialo si usas otro puerto).
+$env:DB_URL = "jdbc:postgresql://localhost:5432/pokearena"
+
+# 3. Secreto de firma de las credenciales: obligatorio, al menos 32 bytes, nunca en el repositorio.
+$b = New-Object byte[] 48; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+$env:APP_JWT_SECRET = [Convert]::ToBase64String($b)
+
+# 4. Perfil dev: habilita las sesiones de prueba que usa la barra de sesión de la interfaz.
+$env:SPRING_PROFILES_ACTIVE = "dev"
+
+# 5. Arrancar (en esta misma ventana) y abrir la interfaz en el navegador.
+.\mvnw.cmd spring-boot:run
+Start-Process "http://localhost:8080"
+```
+
+Si el puerto 5432 está ocupado, usa `$env:DB_PORT = "55432"` antes del paso 1 y
+`$env:DB_URL = "jdbc:postgresql://localhost:55432/pokearena"` en el paso 2 (ver arriba).
+
+### Qué tiene
+
+- **Barra de sesión:** "Sin sesión", "Jugador" y "Administrador" piden un token a
+  `POST /api/v1/dev/sesiones`. El token se guarda **solo en memoria**: al recargar la página se
+  vuelve a "Sin sesión". Sin el perfil `dev` ese endpoint no existe (404): la interfaz oculta los
+  botones y avisa que el ingreso real llegará con el inicio de sesión con proveedor (Sprint 2).
+- **Crear carta, Crear ubicación y Buscar carta:** formularios con todos los campos. Tipos y
+  rarezas son listas fijas (las semillas de la base) y la habilidad es un texto con `HAB-000` como
+  valor inicial. "Generar imagen" crea con `canvas` una imagen válida del tamaño exacto. La
+  ubicación arma el JSON del campo `effect` según el tipo de efecto y muestra `NONE` seleccionada
+  por defecto en la energía extra. La búsqueda muestra una tabla con miniatura y estado de imagen,
+  y "Cargar más" pide la página siguiente con el cursor.
+- **Idempotencia:** cada creación genera su `Idempotency-Key` en el navegador
+  (`crypto.randomUUID()`); "Repetir con la misma clave" reenvía la última creación con la misma
+  clave, el mismo contenido y la misma sesión, y debe devolver la misma respuesta.
+- **Panel de respuesta:** método y ruta, código HTTP con color (verde 2xx, naranja 4xx, rojo 5xx),
+  el JSON completo, el `correlationId`, la `Idempotency-Key` y la vista previa de las imágenes. Si
+  una imagen no carga (por ejemplo, las cartas de `scripts/seed-10000-cartas.sql`, cuyas URLs no
+  tienen archivo), se muestra una imagen de reemplazo.
+- **Casos de prueba rápidos:** un botón por cada caso del Sprint 1 de la sección 11. Cada uno pide
+  su propia sesión de prueba (sin cambiar la de la barra), genera sus imágenes y compara la
+  respuesta con lo esperado ("✓ Coincide" o "✗ Se esperaba ...").
+
 ## Estructura de capas
 
 El código vive en `pokearena/src/main/java/cr/ac/tec/pokearena`, organizado en capas
