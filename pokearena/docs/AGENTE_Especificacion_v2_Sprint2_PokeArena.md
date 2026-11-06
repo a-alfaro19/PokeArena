@@ -255,12 +255,14 @@ Nunca devuelvas un error genérico ni el mensaje de una excepción interna (el �
 
 ### 5.4 Idempotencia
 
-- Los `POST` de creación (cartas y ubicaciones) exigen el encabezado `Idempotency-Key`.
+- Los `POST` de creación (cartas y ubicaciones) exigen el encabezado `Idempotency-Key`. Falta o vacío: `IDEMPOTENCY_KEY_REQUIRED`. Se valida después de la autorización (7.1).
+- El **largo máximo de la clave es configurable**: propiedad `app.idempotency.max-key-length`, por defecto **255** caracteres. Una clave más larga es `INVALID_FIELD` (campo `Idempotency-Key`, `allowedValues` `["1..255"]`).
 - Tabla `idempotency_key(key, user_id, endpoint, request_hash, response_status, response_body, created_at)`, única en `(key, user_id, endpoint)`.
 - Misma clave y mismo contenido: devuelve **la respuesta guardada**, sin crear nada ni consumir consecutivo.
 - Misma clave con otro contenido: `IDEMPOTENCY_KEY_REUSED`.
 - La clave se guarda **en la misma transacción** que la entidad creada.
 - Dos solicitudes iguales y simultáneas producen **una sola** entidad y una sola respuesta correcta (no un 500). Una prueba de concurrencia lo comprueba.
+- **Limitación conocida:** las claves guardadas **no vencen**, así que la tabla `idempotency_key` crece con el uso. Una tarea programada que borre las claves antiguas (por ejemplo, de más de 24 horas) queda como mejora futura; no se implementa en este sprint. Se documenta también en el ADR de almacenamiento.
 
 ### 5.5 Paginación única (reemplaza al diseño anterior de instantáneas)
 
@@ -316,9 +318,9 @@ Misma plantilla en todos: autorizar → idempotencia → validar → ejecutar en
 
 | Paso | Qué hace | Error |
 |---|---|---|
-| 1 | La interfaz envía `POST /api/v1/cartas` con datos, imagen y `Idempotency-Key` | `IDEMPOTENCY_KEY_REQUIRED` |
-| 2 | Seguridad: sesión y rol de administrador | 401 / 403 |
-| 3 | El controlador llama al caso de uso | |
+| 1 | La interfaz envía `POST /api/v1/cartas` con datos, imagen, token y `Idempotency-Key` | |
+| 2 | Seguridad: sesión y rol de administrador. Va **antes** de cualquier otra validación, incluida la del encabezado | 401 / 403 |
+| 3 | El controlador valida el encabezado `Idempotency-Key` (presente, no vacío y dentro del largo máximo, ver 5.4) y llama al caso de uso | `IDEMPOTENCY_KEY_REQUIRED` / `INVALID_FIELD` |
 | 4 | Busca una solicitud previa con la clave. Mismo contenido: devuelve la respuesta guardada | `IDEMPOTENCY_KEY_REUSED` |
 | 5 | Valida **todos** los campos: nombre no vacío, costo entero de 0 a 10, poder entero de -20 a 20, tipo y rareza existentes | `INVALID_FIELD` / `MISSING_FIELD` (con `field` y `allowedValues`) |
 | 6 | Valida la habilidad: obligatoria, código existente, reglas de evolución | `MISSING_FIELD`, `UNKNOWN_ABILITY`, `INVALID_EVOLUTION` |
@@ -328,6 +330,7 @@ Misma plantilla en todos: autorizar → idempotencia → validar → ejecutar en
 | 10 | `UnitOfWork`: siguiente consecutivo del tipo, guarda la carta disponible y guarda la clave | revierte todo |
 | 11 | Responde **201** con la ficha | |
 
+- **Orden de los errores de entrada:** primero se autentica y se autoriza, y después se valida el encabezado. Una solicitud sin credenciales recibe **401** `NOT_AUTHENTICATED` aunque además le falte `Idempotency-Key`, y una con credenciales sin el rol recibe **403**: a quien no puede usar la operación no se le informa nada más de ella. Solo una solicitud autorizada sin la clave recibe `IDEMPOTENCY_KEY_REQUIRED`.
 - **Código único `PKA-<TIPO>-<NNN>`** (3 dígitos, consecutivo por tipo). El consecutivo se obtiene **dentro** de la transacción del paso 10 con una sentencia atómica (`UPDATE card_type_counter SET last_number = last_number + 1 WHERE type_code = ? RETURNING last_number`), así no se consume si la transacción revierte. Pasar de 999 es un error de dominio claro.
 - **Ficha de respuesta:** código, nombre, costo, poder, tipo, rareza, imágenes grande y pequeña, estado de imagen, disponibilidad y la habilidad con su nombre, su código y, si está limitada a un tipo, a cuál afecta.
 - **Si falla la miniatura:** la carta se guarda con `available = false` e `image_status = PENDING_RETRY`. Una tarea programada reintenta (máximo configurable, `app.images.max-retries` = 3) e incrementa `retry_count` en cada intento; al lograrlo pasa a `READY` y disponible. Si llega al máximo sin lograrlo, pasa a `FAILED` y **sigue no disponible**; la tarea ya no la reintenta. El administrador ve el estado (`PENDING_RETRY` o `FAILED`) en la ficha y en la búsqueda. Lo mismo aplica a las ubicaciones (7.2).
@@ -336,7 +339,7 @@ Misma plantilla en todos: autorizar → idempotencia → validar → ejecutar en
 
 ### 7.2 Crear ubicación (2.2.1): `CreateLocationUseCase`, Anexo A.2
 
-Mismos pasos 1 a 4, 9, 10 y 11. Cambian estos:
+Mismos pasos 1 a 4, 9, 10 y 11, en el mismo orden: la seguridad (paso 2) va antes de validar `Idempotency-Key` (paso 3), así una solicitud sin credenciales recibe 401 aunque falte la clave. Cambian estos:
 
 | Paso | Qué hace | Error |
 |---|---|---|
