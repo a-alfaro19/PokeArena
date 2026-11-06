@@ -404,7 +404,10 @@ Crear una ubicación solo agrega una fila disponible para partidas **nuevas**; n
 - Parámetro desconocido, o valor exacto combinado con rango del mismo campo: `INVALID_SEARCH_CRITERIA`. Tipo o rareza inexistentes, valores fuera de rango, mínimo mayor que máximo: `INVALID_SEARCH_CRITERIA` con el criterio.
 - **Sin resultados = 200 con lista vacía.** Sin criterios recorre todo el catálogo con la misma paginación.
 - El administrador ve **todas** las cartas, también las no disponibles. Cada resultado incluye código, nombre, imágenes, **estado de imagen**, costo, poder, tipo, rareza, disponibilidad y habilidad con sus parámetros.
-- Usa la caché del catálogo (sección 9) y la misma paginación que el catálogo del jugador.
+- "Todas" incluye también las cartas **desactivadas** (`active = false`): la búsqueda del administrador no filtra por `available` ni por `active`. Solo el catálogo del jugador (8.3) se limita a las disponibles y activas.
+- **Habilidad inexistente:** un `ability` que no coincide con ninguna habilidad responde **200 con lista vacía**, no un error. Las habilidades no son un catálogo cerrado como tipo y rareza (que sí se rechazan con `INVALID_SEARCH_CRITERIA` y sus `allowedValues`); un código que no coincide es simplemente una búsqueda sin resultados. Lo mismo vale para `code`, `abilityTrigger` y `abilityEffect`.
+- **Cursor:** solo se acepta la **forma exacta** que genera el servidor (el último `id` en decimal, sin signo ni ceros a la izquierda, en base64url sin relleno). Otro texto, aunque represente el mismo número (por ejemplo `+5`, `05` o con relleno `=`), es `INVALID_PAGINATION`; así cada posición tiene un solo cursor.
+- Usa la caché del catálogo (sección 9) y la misma paginación que el catálogo del jugador. La **clave de caché se arma con los criterios ya validados y normalizados**, no con el texto de la solicitud: búsquedas equivalentes comparten página, por ejemplo `name=DRAGÓN` y `name=dragon`, o `cost=3` y `costMin=3&costMax=3`.
 
 ---
 
@@ -488,6 +491,7 @@ Estas decisiones se documentan en dos ADRs en la wiki; el código debe respetarl
 - **Clave:** `catalog:v<versión>:<espacio>:<hash de filtros>:<cursor>:<limit>`, donde `<espacio>` separa catálogo de jugador y búsqueda de administrador (ven datos distintos).
 - **Invalidación:** una clave `catalog:version` que se incrementa al crear o cambiar una carta; las claves viejas quedan huérfanas y expiran solas por su vencimiento.
 - **Vencimiento (TTL):** `app.cache.catalog-ttl` = 30 segundos, configurable.
+- **Pendiente para la tarea de Redis:** hoy el puerto `CatalogCache` solo tiene obtener y guardar una página, y su implementación (`NoCatalogCache`) no guarda nada, que es el mismo comportamiento exigido cuando Redis falla. La tarea de Redis agrega la operación **`invalidate()`** al puerto (incrementa `catalog:version`) y la propiedad **`app.cache.catalog-ttl`**, y debe **llamar a `invalidate()` desde Crear carta** (y desde toda operación futura que cambie una carta) después de confirmar la transacción.
 - **Memoria:** Redis con `maxmemory` y política `allkeys-lru`.
 - **Falla de Redis:** se ignora la caché y se consulta la base (nunca error).
 - **Protección contra avalancha:** un bloqueo corto por clave al recalcular una página muy pedida (opcional, solo si hay tiempo).
@@ -509,6 +513,7 @@ Una sola aplicación en `src/main/resources/static/` (`index.html`, `app.js`, `s
 - **Vista de administrador:** pestañas **Crear carta**, **Crear ubicación** y **Buscar carta**, con los formularios y la tabla de resultados con miniatura y estado de imagen y "Cargar más".
 - **Vista de jugador:** panel de bienvenida con el resultado de la colección inicial (mensaje claro si está pendiente) y la vista **Catálogo y mi colección** con filtros de tipo y costo, la casilla "solo mis cartas", la imagen grande de cada carta y las copias.
 - **Panel de respuesta** en cada operación: método, ruta, **código HTTP con color**, el JSON, el `correlationId` y las imágenes en vista previa.
+- **Imagen de reemplazo:** si la URL de una imagen no carga (por ejemplo, las cartas de `scripts/seed-10000-cartas.sql`, cuyas URLs no tienen archivo detrás), la interfaz muestra una imagen de reemplazo en lugar de una imagen rota. Para las demostraciones se crean unas 10 cartas reales desde la interfaz.
 
 **Casos de prueba rápidos** (botones que rellenan y envían, con imágenes generadas con `canvas` en el tamaño exacto):
 
@@ -561,7 +566,8 @@ El pipeline de GitHub Actions ejecuta compilación, todas las pruebas y `oasdiff
 ## 14. Datos semilla
 
 - Migración inicial: 6 tipos, 4 rarezas y la habilidad `HAB-000 "Sin Habilidad"`.
-- `scripts/seed-10000-cartas.sql`: 10,000 cartas válidas (`generate_series`), con rarezas variadas (suficientes Comunes), para pruebas de rendimiento y de colección inicial. Los códigos siguen el mismo formato que la aplicación: consecutivo por tipo con mínimo 3 dígitos y sin máximo (por ejemplo `'PKA-' || tipo || '-' || lpad(n::text, 3, '0')`, que da `PKA-FUE-001` … `PKA-FUE-1667`), y el script deja `card_type_counter.last_number` de cada tipo en su último número, para que la siguiente carta creada por la API no repita un código.
+- `scripts/seed-10000-cartas.sql`: 10,000 cartas válidas (`generate_series`), con rarezas variadas (suficientes Comunes), para pruebas de rendimiento y de colección inicial. Los códigos siguen el mismo formato que la aplicación: consecutivo por tipo con mínimo 3 dígitos y sin máximo (`'PKA-' || tipo || '-' || lpad(n::text, greatest(3, length(n::text)), '0')`, que da `PKA-FUE-001` … `PKA-FUE-999`, `PKA-FUE-1000` … `PKA-FUE-1667`), y el script deja `card_type_counter.last_number` de cada tipo en su último número, para que la siguiente carta creada por la API no repita un código. **No** sirve `lpad(n::text, 3, '0')` sola: `lpad` **corta** los textos más largos que el largo pedido (`lpad('1000', 3, '0')` da `'100'`), así que repetiría códigos a partir de la carta 1000 de cada tipo.
+- El script termina con **`VACUUM ANALYZE card`**, fuera de la transacción porque `VACUUM` no puede ir dentro de una. `ANALYZE` actualiza las estadísticas para que el planificador conozca la cantidad real de filas. `VACUUM` pasa al índice trigram (GIN) las filas que quedaron en su **lista pendiente**: GIN acumula ahí las inserciones para hacerlas rápidas, y mientras no se vacía, el planificador considera caro el índice y lee la tabla completa en la búsqueda por nombre. En una base en uso lo hace autovacuum; en el script se fuerza para medir enseguida. Sin él, la prueba de rendimiento comprobó que la búsqueda por nombre no usaba `idx_card_name_normalized_trgm`.
 - Habilidades de prueba (de evolución, limitadas a un tipo, con disparador) se insertan **solo en los datos de prueba**.
 - Las imágenes de las pruebas se generan por código con los tamaños exactos.
 
