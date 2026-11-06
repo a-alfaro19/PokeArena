@@ -10,10 +10,7 @@ import cr.ac.tec.pokearena.application.port.Clock;
 import cr.ac.tec.pokearena.application.port.ImageProcessor;
 import cr.ac.tec.pokearena.application.port.ImageStorage;
 import cr.ac.tec.pokearena.application.port.StoredImages;
-import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.application.port.ValidatedImage;
-import cr.ac.tec.pokearena.domain.error.IdempotencyConflictException;
-import cr.ac.tec.pokearena.domain.error.ThumbnailGenerationException;
 import cr.ac.tec.pokearena.domain.error.ValidationException;
 import cr.ac.tec.pokearena.domain.model.Ability;
 import cr.ac.tec.pokearena.domain.model.Card;
@@ -49,6 +46,9 @@ import cr.ac.tec.pokearena.domain.rule.ImageRules;
  *   <li><b>Responder</b> (paso 11): la API responde con el status y la ficha.</li>
  * </ol>
  * Cada paso lleva un comentario con su número en la tabla de 7.1 y sus mensajes en el diagrama.
+ * Lo que es idéntico en todas las historias que crean una entidad con imagen (la miniatura que puede
+ * fallar y la transacción con la clave, la compensación y el conflicto) vive en
+ * {@link ImageCreationSteps}; el caso de uso lo llama en el paso que corresponde.
  *
  * <h2>Decisiones</h2>
  * <ul>
@@ -63,29 +63,25 @@ import cr.ac.tec.pokearena.domain.rule.ImageRules;
  */
 public class CreateCardUseCase {
 
-    // Logger de Java (java.lang.System.Logger): la aplicación no depende de Spring ni de una
-    // biblioteca de logs; Spring Boot lo redirige al mismo log JSON.
-    private static final System.Logger LOG = System.getLogger(CreateCardUseCase.class.getName());
-
     private final IdempotencyGuard idempotency;
+    private final ImageCreationSteps imageCreation;
     private final CardCatalogRepository catalog;
     private final AbilityRepository abilities;
     private final CardRepository cards;
     private final ImageProcessor imageProcessor;
     private final ImageStorage imageStorage;
-    private final UnitOfWork unitOfWork;
     private final Clock clock;
 
-    public CreateCardUseCase(IdempotencyGuard idempotency, CardCatalogRepository catalog, AbilityRepository abilities,
-            CardRepository cards, ImageProcessor imageProcessor, ImageStorage imageStorage, UnitOfWork unitOfWork,
-            Clock clock) {
+    public CreateCardUseCase(IdempotencyGuard idempotency, ImageCreationSteps imageCreation,
+            CardCatalogRepository catalog, AbilityRepository abilities, CardRepository cards,
+            ImageProcessor imageProcessor, ImageStorage imageStorage, Clock clock) {
         this.idempotency = idempotency;
+        this.imageCreation = imageCreation;
         this.catalog = catalog;
         this.abilities = abilities;
         this.cards = cards;
         this.imageProcessor = imageProcessor;
         this.imageStorage = imageStorage;
-        this.unitOfWork = unitOfWork;
         this.clock = clock;
     }
 
@@ -120,37 +116,25 @@ public class CreateCardUseCase {
         }
         ValidatedImage image = imageProcessor.validate(command.image(), ImageRules.CARD);
 
-        // Paso 8 (mensajes 13 y 14): miniatura de 200 x 280, síncrona (ADR-002).
-        byte[] thumbnail = generateThumbnail(image);
+        // Paso 8 (mensajes 13 y 14): miniatura de 200 x 280, síncrona (ADR-002). Si falla, null:
+        // la carta se guardará no disponible y con PENDING_RETRY.
+        byte[] thumbnail = imageCreation.thumbnailOrPending(image, ImageRules.CARD);
 
         // Paso 9 (mensajes 15 y 16): guardar la versión grande y la pequeña, fuera de la transacción.
         StoredImages stored = imageStorage.save(ImageRules.CARD, image, thumbnail);
 
-        // Paso 10 (mensajes 17 a 20): una sola transacción.
-        try {
-            CardDetails details = unitOfWork.execute(() -> {
-                // Consecutivo del tipo: si la transacción se revierte, no se consume.
-                CardCode code = CardCode.of(fields.type().code(), cards.nextNumber(fields.type().code()));
-                // Evolución contra el código real que va a recibir la carta.
-                EvolutionRules.check(code, ability, cards::evolutionTargetOf);
-                Card card = Card.create(code, fields, ability, stored.largeUrl(), stored.smallUrl(), clock.now());
-                cards.save(card);
-                CardDetails created = CardDetails.of(card);
-                idempotency.record(request, created);
-                return created;
-            });
-
-            // Paso 11 (mensajes 21 y 22): la API responde 201 con la ficha.
-            return IdempotentResult.executed(request, details);
-        } catch (IdempotencyConflictException conflict) {
-            // Otra solicitud igual confirmó primero: se borran nuestros archivos y se repite su respuesta.
-            imageStorage.delete(stored.storageKey());
-            return idempotency.resolveConflict(request, CardDetails.class);
-        } catch (RuntimeException failure) {
-            // Compensación: la base y los archivos no comparten transacción (sección 9).
-            imageStorage.delete(stored.storageKey());
-            throw failure;
-        }
+        // Paso 10 (mensajes 17 a 20): una sola transacción con la carta y la clave de idempotencia.
+        // Si falla, se revierte y se borran los archivos; si otra solicitud igual ganó, se repite su respuesta.
+        // Paso 11 (mensajes 21 y 22): con el resultado, la API responde 201 con la ficha.
+        return imageCreation.commitOrCompensate(request, stored, CardDetails.class, () -> {
+            // Consecutivo del tipo: si la transacción se revierte, no se consume.
+            CardCode code = CardCode.of(fields.type().code(), cards.nextNumber(fields.type().code()));
+            // Evolución contra el código real que va a recibir la carta.
+            EvolutionRules.check(code, ability, cards::evolutionTargetOf);
+            Card card = Card.create(code, fields, ability, stored.largeUrl(), stored.smallUrl(), clock.now());
+            cards.save(card);
+            return CardDetails.of(card);
+        });
     }
 
     private Ability validateAbility(String abilityCode) {
@@ -160,17 +144,5 @@ public class CreateCardUseCase {
         }
         return abilities.findActiveByCode(abilityCode).orElseThrow(() -> ValidationException.unknownAbility(
                 CardFieldRules.ABILITY_FIELD, "La habilidad '" + abilityCode + "' no existe."));
-    }
-
-    /** Miniatura, o {@code null} si no se pudo generar: la carta queda PENDING_RETRY (sección 7.1). */
-    private byte[] generateThumbnail(ValidatedImage image) {
-        try {
-            return imageProcessor.generateThumbnail(image, ImageRules.CARD);
-        } catch (ThumbnailGenerationException failure) {
-            // No es un error de la solicitud: se registra la causa y la carta sigue, no disponible.
-            LOG.log(System.Logger.Level.WARNING, "No se pudo generar la miniatura; la carta queda PENDING_RETRY",
-                    failure);
-            return null;
-        }
     }
 }

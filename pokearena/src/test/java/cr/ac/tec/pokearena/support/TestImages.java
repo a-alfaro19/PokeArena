@@ -13,9 +13,9 @@ import javax.imageio.ImageIO;
 
 /**
  * Propósito: imágenes para las pruebas, generadas por código con las medidas exactas (sección 14).
- * Responsabilidades: crear PNG, JPG y GIF del tamaño pedido y cargar el único archivo WebP del
- * repositorio ({@code src/test/resources/images/carta-600x840.webp}). Ese archivo existe porque
- * ImageIO, incluso con TwelveMonkeys, puede leer WebP pero no escribirlo.
+ * Responsabilidades: crear PNG, JPG y GIF del tamaño pedido y cargar los dos archivos WebP del
+ * repositorio ({@code src/test/resources/images/carta-600x840.webp} y {@code ubicacion-800x600.webp}).
+ * Esos archivos existen porque ImageIO, incluso con TwelveMonkeys, puede leer WebP pero no escribirlo.
  * Referencia: sección 14 ("las imágenes de las pruebas se generan por código").
  */
 public final class TestImages {
@@ -42,10 +42,21 @@ public final class TestImages {
         return encode(drawing(width, height, BufferedImage.TYPE_INT_RGB), "gif");
     }
 
+    /** WebP de 800 x 600 (ubicación 4:3), en src/test/resources. */
+    public static final String WEBP_LOCATION_RESOURCE = "/images/ubicacion-800x600.webp";
+
     public static byte[] webpCard() {
-        try (InputStream input = TestImages.class.getResourceAsStream(WEBP_CARD_RESOURCE)) {
+        return resource(WEBP_CARD_RESOURCE);
+    }
+
+    public static byte[] webpLocation() {
+        return resource(WEBP_LOCATION_RESOURCE);
+    }
+
+    private static byte[] resource(String name) {
+        try (InputStream input = TestImages.class.getResourceAsStream(name)) {
             if (input == null) {
-                throw new IllegalStateException("Falta el recurso de prueba " + WEBP_CARD_RESOURCE);
+                throw new IllegalStateException("Falta el recurso de prueba " + name);
             }
             return input.readAllBytes();
         } catch (IOException failure) {

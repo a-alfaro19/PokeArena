@@ -346,7 +346,7 @@ Mismos pasos 1 a 4, 9, 10 y 11, en el mismo orden: la seguridad (paso 2) va ante
 
 | Paso | Qué hace | Error |
 |---|---|---|
-| 5 | Valida nombre y descripción no vacíos; límite de cartas entero de 0 a 5; energía extra: `NONE` (monto 0), `FIXED` (0 a 3) o `PER_CARD` (0 a 2) | `INVALID_FIELD` |
+| 5 | Valida nombre y descripción no vacíos; límite de cartas entero de 0 a 5; energía extra: `NONE` (monto 0), `FIXED` (0 a 3) o `PER_CARD` (0 a 2), ver "Energía extra" | `INVALID_FIELD` / `MISSING_FIELD` (con `field` y `allowedValues`) |
 | 6 | `LocationEffectRegistry` valida el tipo de efecto y sus parámetros (el efecto es opcional) | `INVALID_EFFECT` |
 | 7 | Imagen: formato real PNG, JPG o WebP, máximo 5 MB, proporción 4:3 (tolerancia 1%), mínimo 800 × 600 | errores de imagen |
 | 8 | Versión pequeña **320 × 240 exactos**; mismo manejo de fallo que en cartas | |
@@ -360,7 +360,31 @@ Mismos pasos 1 a 4, 9, 10 y 11, en el mismo orden: la seguridad (paso 2) va ante
 | `COST_MODIFIER` | `amount`, `affectedType` (opcional) | Monto entero de -5 a +5; si hay tipo, existe |
 | `TURN_RESTRICTION` | `turns` | Lista no vacía de enteros de 1 a 6 sin repetidos |
 
-Los parámetros del efecto llegan en el multipart como **un campo de texto con JSON**. Crear una ubicación solo agrega una fila disponible para partidas **nuevas**; no toca otras tablas.
+**Formato del campo `effect`.** El efecto llega en el multipart como **un campo de texto con JSON**, con esta forma:
+
+```json
+{ "code": "TYPE_BONUS" | "COST_MODIFIER" | "TURN_RESTRICTION", "parameters": { ... } }
+```
+
+| `code` | `parameters` | Ejemplo |
+|---|---|---|
+| `TYPE_BONUS` | `type` (código de tipo existente, obligatorio), `amount` (entero de -5 a +5, obligatorio) | `{"code": "TYPE_BONUS", "parameters": {"type": "FUE", "amount": 3}}` |
+| `COST_MODIFIER` | `amount` (entero de -5 a +5, obligatorio), `affectedType` (código de tipo existente, opcional) | `{"code": "COST_MODIFIER", "parameters": {"amount": -2, "affectedType": "AGU"}}` |
+| `TURN_RESTRICTION` | `turns` (lista no vacía de enteros de 1 a 6, sin repetidos, obligatoria) | `{"code": "TURN_RESTRICTION", "parameters": {"turns": [1, 3, 6]}}` |
+
+- **El efecto es opcional:** sin el campo `effect` (o vacío) la ubicación no tiene efecto. Unos `parameters` sin `code` se rechazan.
+- **Solo se aceptan las claves `code` y `parameters`**, y dentro de `parameters` solo los del tipo de efecto: **cualquier parámetro desconocido se rechaza** (por ejemplo `amout` en vez de `amount`), para detectar errores de escritura.
+- Los montos y turnos deben ser **números enteros** en el JSON: un número con decimales (`3.5`, o incluso `3.0`) o un texto (`"3"`) se rechaza.
+- Un texto que no es un JSON con esta forma, un `code` inexistente o unos parámetros inválidos son **`INVALID_EFFECT`** sobre el campo `effect`; con un `code` inexistente, `allowedValues` lista los tipos registrados.
+- El JSON se interpreta en el **paso 6** del caso de uso (puerto `EffectReader`), no en el controlador, para respetar el orden de los errores: un efecto mal escrito se informa después de los campos del paso 5.
+
+**Energía extra.** La modalidad (`extraEnergyMode`) es **obligatoria**: su ausencia es `MISSING_FIELD`, nunca se interpreta como `NONE` (una ausencia silenciosa ocultaría errores del cliente).
+- Con `NONE` el monto (`extraEnergyAmount`) **puede omitirse** y vale 0; cualquier otro valor es `INVALID_FIELD` con `allowedValues` `["0"]`.
+- Con `FIXED` (0 a 3) o `PER_CARD` (0 a 2) el monto es **obligatorio** (`MISSING_FIELD` si falta) e `INVALID_FIELD` fuera de su rango, con el rango de la modalidad en `allowedValues`.
+- Una modalidad inexistente es `INVALID_FIELD` con `allowedValues` `["NONE", "FIXED", "PER_CARD"]`.
+- La **interfaz web** (sección 11) muestra `NONE` como opción **seleccionada por defecto**, así el usuario no tiene que elegirla y la API sigue recibiendo siempre una modalidad explícita.
+
+Crear una ubicación solo agrega una fila disponible para partidas **nuevas**; no toca otras tablas.
 
 ### 7.3 Buscar carta (2.1.2): `SearchCardsUseCase`, Anexo A.3
 

@@ -6,9 +6,9 @@ import org.springframework.context.annotation.Configuration;
 import cr.ac.tec.pokearena.application.port.Clock;
 import cr.ac.tec.pokearena.application.port.ImageProcessor;
 import cr.ac.tec.pokearena.application.port.ImageStorage;
-import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.application.usecase.CreateCardUseCase;
 import cr.ac.tec.pokearena.application.usecase.IdempotencyGuard;
+import cr.ac.tec.pokearena.application.usecase.ImageCreationSteps;
 import cr.ac.tec.pokearena.domain.repository.AbilityRepository;
 import cr.ac.tec.pokearena.domain.repository.CardCatalogRepository;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
@@ -23,10 +23,10 @@ import cr.ac.tec.pokearena.domain.repository.CardRepository;
 public class CardConfiguration {
 
     @Bean
-    public CreateCardUseCase createCardUseCase(IdempotencyGuard idempotency, CardCatalogRepository catalog,
-            AbilityRepository abilities, CardRepository cards, ImageProcessor imageProcessor, ImageStorage imageStorage,
-            UnitOfWork unitOfWork, Clock clock) {
-        return new CreateCardUseCase(idempotency, catalog, abilities, cards, imageProcessor, imageStorage, unitOfWork,
-                clock);
+    public CreateCardUseCase createCardUseCase(IdempotencyGuard idempotency, ImageCreationSteps imageCreation,
+            CardCatalogRepository catalog, AbilityRepository abilities, CardRepository cards,
+            ImageProcessor imageProcessor, ImageStorage imageStorage, Clock clock) {
+        return new CreateCardUseCase(idempotency, imageCreation, catalog, abilities, cards, imageProcessor,
+                imageStorage, clock);
     }
 }

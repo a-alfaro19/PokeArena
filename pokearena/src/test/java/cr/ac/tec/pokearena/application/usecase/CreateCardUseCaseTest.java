@@ -69,10 +69,11 @@ class CreateCardUseCaseTest {
             "HAB-000", new Ability("HAB-000", "Sin Habilidad", null, null),
             "HAB-LIM", new Ability("HAB-LIM", "Solo agua", "AGU", null)));
 
-    private final CreateCardUseCase useCase = new CreateCardUseCase(
-            new IdempotencyGuard(keys, new ObjectSerializer()), new FixedCatalog(),
-            code -> Optional.ofNullable(abilityTable.get(code)), cards, processor, storage,
-            new SnapshotUnitOfWork(), () -> NOW);
+    private final IdempotencyGuard guard = new IdempotencyGuard(keys, new ObjectSerializer());
+
+    private final CreateCardUseCase useCase = new CreateCardUseCase(guard,
+            new ImageCreationSteps(guard, processor, storage, new SnapshotUnitOfWork()), new FixedCatalog(),
+            code -> Optional.ofNullable(abilityTable.get(code)), cards, processor, storage, () -> NOW);
 
     private final UUID admin = UUID.randomUUID();
 
