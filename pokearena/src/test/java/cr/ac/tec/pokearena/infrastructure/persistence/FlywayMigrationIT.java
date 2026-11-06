@@ -42,17 +42,54 @@ class FlywayMigrationIT extends PostgresIntegrationTestBase {
     private JdbcTemplate jdbc;
 
     @Test
-    @DisplayName("La migración V1 se aplica sobre una base vacía y queda registrada como exitosa")
+    @DisplayName("Las migraciones V1 y V2 se aplican en orden sobre una base vacía y quedan registradas como exitosas")
     void migrationIsAppliedOnEmptyDatabase() {
-        // El contenedor arranca vacío: la única migración registrada debe ser V1, en primer lugar.
+        // El contenedor arranca vacío: solo deben estar V1 (esquema) y V2 (evolución sin clave foránea).
         List<Map<String, Object>> history = jdbc.queryForList(
                 "SELECT installed_rank, version, success FROM flyway_schema_history ORDER BY installed_rank");
 
-        assertThat(history).hasSize(1);
-        assertThat(history.getFirst())
-                .containsEntry("installed_rank", 1)
-                .containsEntry("version", "1")
-                .containsEntry("success", true);
+        assertThat(history).extracting(row -> row.get("version")).containsExactly("1", "2");
+        assertThat(history).allSatisfy(row -> assertThat(row).containsEntry("success", true));
+        assertThat(history.getFirst()).containsEntry("installed_rank", 1);
+    }
+
+    @Test
+    @DisplayName("El código de carta admite 3 dígitos o más (V2): PKA-FUE-001, PKA-FUE-999 y PKA-FUE-1000")
+    void cardCodeAcceptsThreeOrMoreDigits() {
+        insertCard("PKA-FUE-001", "READY", "/images/cards/1/small.png", true);
+        insertCard("PKA-FUE-999", "READY", "/images/cards/1/small.png", true);
+        insertCard("PKA-FUE-1000", "READY", "/images/cards/1/small.png", true);
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM card WHERE code LIKE 'PKA-FUE-%'", Integer.class))
+                .isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("El CHECK del código rechaza menos de 3 dígitos y un tipo fuera del catálogo (V2)")
+    void cardCodeCheckRejectsInvalidFormats() {
+        assertThatThrownBy(() -> insertCard("PKA-FUE-01", "READY", "/images/cards/1/small.png", true))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_card_code_format");
+    }
+
+    @Test
+    @DisplayName("El CHECK del código rechaza un tipo que no es FUE, AGU, PLA, ELE, PSI ni LUC (V2)")
+    void cardCodeCheckRejectsUnknownType() {
+        assertThatThrownBy(() -> insertCard("PKA-XYZ-001", "READY", "/images/cards/1/small.png", true))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_card_code_format");
+    }
+
+    @Test
+    @DisplayName("Una habilidad de evolución puede apuntar a una carta que todavía no existe (V2)")
+    void evolutionTargetNeedNotExist() {
+        jdbc.update("""
+                INSERT INTO ability (code, name, evolves_to_card_code, created_at)
+                VALUES ('HAB-PRUEBA-V2', 'Evoluciona a una carta futura', 'PKA-FUE-999', now())
+                """);
+
+        assertThat(jdbc.queryForObject("SELECT evolves_to_card_code FROM ability WHERE code = 'HAB-PRUEBA-V2'",
+                String.class)).isEqualTo("PKA-FUE-999");
     }
 
     @Test
