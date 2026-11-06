@@ -91,6 +91,16 @@ class ImageFileControllerTest {
             public Optional<ImageFile> find(String relativePath) {
                 return Optional.ofNullable(file);
             }
+
+            @Override
+            public Optional<byte[]> readLarge(String largeUrl) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public String saveThumbnail(String largeUrl, byte[] thumbnail) {
+                throw new UnsupportedOperationException();
+            }
         };
     }
 }

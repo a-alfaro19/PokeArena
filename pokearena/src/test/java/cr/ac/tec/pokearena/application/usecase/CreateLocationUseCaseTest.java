@@ -379,6 +379,16 @@ class CreateLocationUseCaseTest {
         public Optional<ImageFile> find(String relativePath) {
             return Optional.empty();
         }
+
+        @Override
+        public Optional<byte[]> readLarge(String largeUrl) {
+            throw new UnsupportedOperationException("Solo lo usa la tarea de reintentos");
+        }
+
+        @Override
+        public String saveThumbnail(String largeUrl, byte[] thumbnail) {
+            throw new UnsupportedOperationException("Solo lo usa la tarea de reintentos");
+        }
     }
 
     /** Procesador real (ImageIO) que cuenta validaciones y puede simular una miniatura fallida. */
