@@ -21,6 +21,8 @@ import org.testcontainers.utility.DockerImageName;
  *       y la contraseña, en lugar de las propiedades de {@code application.properties}.</li>
  *   <li>Flyway aplica la migración al arrancar el contexto, igual que en producción.</li>
  *   <li>También entrega el secreto JWT, sin el cual la aplicación no arranca (sección 5.2).</li>
+ *   <li>Y aleja la tarea programada de reintentos de miniaturas, para que no actúe sola en medio de
+ *       una prueba.</li>
  * </ul>
  *
  * <p>Uso: la prueba extiende esta clase y declara su propio {@code @SpringBootTest}, porque
@@ -40,6 +42,9 @@ public abstract class PostgresIntegrationTestBase {
      */
     protected static final String TEST_JWT_SECRET = TestSecrets.randomJwtSecret();
 
+    /** Intervalo más largo que cualquier ejecución de las pruebas. */
+    private static final String SCHEDULED_TASKS_NEVER_DURING_TESTS = "PT24H";
+
     static {
         POSTGRES.start();
     }
@@ -47,5 +52,8 @@ public abstract class PostgresIntegrationTestBase {
     @DynamicPropertySource
     static void securityProperties(DynamicPropertyRegistry registry) {
         registry.add("app.security.jwt-secret", () -> TEST_JWT_SECRET);
+        // La tarea programada de reintentos no corre sola durante las pruebas: podría tomar las cartas
+        // PENDING_RETRY que otra prueba está revisando. Las pruebas de reintentos invocan el caso de uso.
+        registry.add("app.images.retry-interval", () -> SCHEDULED_TASKS_NEVER_DURING_TESTS);
     }
 }

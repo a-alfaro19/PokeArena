@@ -145,6 +145,45 @@ class FileSystemImageStorageTest {
         assertThat(outsideSecret).exists().hasContent("no debe salir");
     }
 
+    @Test
+    @DisplayName("Reintentos: lee la versión grande guardada por su URL")
+    void readsLargeImage() {
+        byte[] content = TestImages.png(600, 840);
+        StoredImages stored = storage.save(ImageRules.CARD, image(ImageFormat.PNG, content), null);
+
+        assertThat(storage.readLarge(stored.largeUrl())).hasValueSatisfying(bytes -> assertThat(bytes).isEqualTo(content));
+    }
+
+    @Test
+    @DisplayName("Reintentos: si la versión grande ya no existe, o la URL no es de una versión grande, no hay nada que leer")
+    void readLargeMissingOrInvalid() {
+        StoredImages stored = storage.save(ImageRules.CARD, image(ImageFormat.PNG, TestImages.png(600, 840)), THUMBNAIL);
+        storage.delete(stored.storageKey());
+
+        assertThat(storage.readLarge(stored.largeUrl())).isEmpty();
+        assertThat(storage.readLarge(stored.smallUrl())).isEmpty();
+        assertThat(storage.readLarge("/images/../secreto.txt")).isEmpty();
+        assertThat(storage.readLarge(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Reintentos: guarda solo la miniatura en la carpeta de la entidad y devuelve su URL")
+    void savesOnlyThumbnail() throws IOException {
+        StoredImages stored = storage.save(ImageRules.LOCATION, image(ImageFormat.PNG, TestImages.png(800, 600)), null);
+
+        String smallUrl = storage.saveThumbnail(stored.largeUrl(), THUMBNAIL);
+
+        assertThat(smallUrl).isEqualTo(FileSystemImageStorage.URL_PREFIX + stored.storageKey() + "/small.png");
+        assertThat(Files.readAllBytes(root.resolve(stored.storageKey()).resolve("small.png"))).isEqualTo(THUMBNAIL);
+    }
+
+    @Test
+    @DisplayName("Reintentos: guardar la miniatura con una URL que no es de una versión grande se rechaza")
+    void saveThumbnailRejectsInvalidUrl() {
+        assertThatThrownBy(() -> storage.saveThumbnail("/images/../../secreto/large.png", THUMBNAIL))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static ValidatedImage image(ImageFormat format, byte[] content) {
         return new ValidatedImage(format, 0, 0, content);
     }

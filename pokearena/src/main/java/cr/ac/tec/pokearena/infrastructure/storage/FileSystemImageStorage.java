@@ -27,8 +27,9 @@ import cr.ac.tec.pokearena.domain.rule.ImageRules;
  * Propósito: almacenamiento de imágenes en el sistema de archivos (sección 9; un volumen compartido
  * por las 2 instancias de la API).
  * Responsabilidades: guardar la versión grande (en su formato original) y la miniatura (PNG) en una
- * carpeta nueva por entidad, devolver sus URLs públicas relativas, borrarlas como compensación y
- * encontrarlas para servirlas.
+ * carpeta nueva por entidad, devolver sus URLs públicas relativas, borrarlas como compensación,
+ * encontrarlas para servirlas y, para la tarea de reintentos, leer la versión grande y agregar la
+ * miniatura en la carpeta de una entidad existente.
  * Referencia: secciones 6, 7.1, 7.2 (paso 9) y 9.
  *
  * <p>Organización: {@code <app.images.root-dir>/<cards|locations>/<uuid>/large.<ext>} y
@@ -160,5 +161,49 @@ public class FileSystemImageStorage implements ImageStorage {
         } catch (IOException ignored) {
             // Ya se está informando la falla original; un resto lo limpiará la tarea de huérfanos (ADR-002).
         }
+    }
+
+    @Override
+    public Optional<byte[]> readLarge(String largeUrl) {
+        Optional<ImageFile> file = find(relativeLarge(largeUrl));
+        if (file.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Files.readAllBytes(file.get().path()));
+        } catch (IOException failure) {
+            throw new UncheckedIOException("No se pudo leer la versión grande " + largeUrl, failure);
+        }
+    }
+
+    /**
+     * Escribe {@code small.png} junto a la versión grande. Se permite reemplazar un {@code small.png}
+     * existente: solo puede quedar uno de un intento anterior cuya transacción falló, y su URL nunca se
+     * publicó (la entidad seguía sin miniatura), así que reemplazarlo no rompe la caché inmutable.
+     */
+    @Override
+    public String saveThumbnail(String largeUrl, byte[] thumbnail) {
+        String relative = relativeLarge(largeUrl);
+        if (relative == null) {
+            throw new IllegalArgumentException("URL de versión grande inválida: " + largeUrl);
+        }
+        String key = relative.substring(0, relative.lastIndexOf('/'));
+        Path file = inside(key).resolve(SMALL_FILE);
+        try {
+            Files.write(file, thumbnail);
+        } catch (IOException failure) {
+            throw new UncheckedIOException("No se pudo guardar la miniatura en " + file, failure);
+        }
+        return URL_PREFIX + key + "/" + SMALL_FILE;
+    }
+
+    /** Ruta relativa de una URL de versión grande, o {@code null} si no tiene la forma del servidor. */
+    private static String relativeLarge(String largeUrl) {
+        if (largeUrl == null || !largeUrl.startsWith(URL_PREFIX)) {
+            return null;
+        }
+        String relative = largeUrl.substring(URL_PREFIX.length());
+        Matcher match = FILE.matcher(relative);
+        return match.matches() && match.group(3).startsWith(LARGE_NAME + ".") ? relative : null;
     }
 }

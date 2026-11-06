@@ -45,7 +45,7 @@ import tools.jackson.databind.json.JsonMapper;
  * Referencia: Anexo C.3, sección 7.3, sección 5.5 y Anexo A.3.
  *
  * <p>Los casos de los filtros, de los comodines y de los errores se portaron de
- * {@code legacy/.../CardSearchPostgresTests}, sin las instantáneas, los cursores UUID, {@code total}
+ * {@code CardSearchPostgresTests} del código original del Sprint 1 (etiqueta {@code sprint1-original}), sin las instantáneas, los cursores UUID, {@code total}
  * ni {@code expiresAt}. Las cartas se insertan directo en la base (aquí no se prueba Crear carta) y
  * cada prueba deja la base como estaba.
  */
@@ -84,7 +84,7 @@ class CardSearchIT extends PostgresIntegrationTestBase {
                 INSERT INTO ability (code, name, trigger, effect_type, parameters, limited_to_type, created_at)
                 VALUES (?, 'Revelación', 'AL_REVELAR', 'BONUS_PODER', '{"amount": 2}'::jsonb, 'AGU', now())
                 """, TEST_ABILITY);
-        // Portadas de legacy. El orden de inserción es el orden de id, y por lo tanto el de los resultados.
+        // Portadas del Sprint 1 original. El orden de inserción es el orden de id, y por lo tanto el de los resultados.
         card("PKA-FUE-001", "Dragón Áureo", 0, -20, "FUE", "COMMON", "HAB-000", true);
         card("PKA-AGU-001", "Dragón Azul", 5, 10, "AGU", "RARE", TEST_ABILITY, true);
         card("PKA-ELE-001", "100%_Volt!", 10, 20, "ELE", "LEGENDARY", TEST_ABILITY, true);

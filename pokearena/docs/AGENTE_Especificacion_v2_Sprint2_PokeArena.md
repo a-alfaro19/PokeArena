@@ -11,7 +11,7 @@ Documento para el agente de IA que ayuda a construir y corregir el código. **L�
 1. **Una fase a la vez.** Al terminar cada fase entrega un resumen (qué cambiaste, qué pruebas agregaste, qué quedó pendiente) y espera la aprobación del equipo antes de seguir.
 2. **No inventes requerimientos.** Si hay una ambigüedad, anótala y pregunta.
 3. **Una sola lógica para todas las historias.** Las seis historias deben verse escritas por la misma persona: misma estructura de paquetes, mismo manejo de errores, misma autorización, misma idempotencia, mismo estilo de pruebas.
-4. **Pasos pequeños.** Un cambio lógico por commit, con `./mvnw verify` en verde en cada commit. **No hagas commit ni push** sin que el equipo lo pida. Nunca trabajes directo en `main`.
+4. **Pasos pequeños.** Un cambio lógico por commit, con `.\mvnw.cmd clean verify` en verde en cada commit. **No hagas commit ni push** sin que el equipo lo pida. Nunca trabajes directo en `main`.
 5. **El código debe poder defenderse en una oral individual.** Prefiere claridad sobre ingenio, comenta las decisiones y explica cada una al entregar.
 6. **No uses Spring Security** ni frameworks que tomen decisiones de diseño de autenticación, llaves de API o multi-organización (restricción RES-01). Sí puedes usar una biblioteca que ejecute una decisión del equipo, por ejemplo verificar la firma de un JWT.
 7. **Aplica los principios y patrones solo donde simplifiquen** (sección 4.4). Cada patrón que uses debe poder justificarse en una frase.
@@ -139,6 +139,8 @@ public interface UnitOfWork {
 ```
 
 La implementación (`infrastructure.persistence`) usa `TransactionTemplate`. Reglas: una transacción por caso de uso; nada de efectos externos (archivos, Redis) dentro de ella, salvo lo indicado en cada historia.
+
+**Excepción documentada: reintentos de miniaturas (7.1).** `ThumbnailRetryUseCase` abre **una transacción por entidad** y, dentro de ella, con la fila bloqueada (`FOR UPDATE SKIP LOCKED`), **lee la versión grande y escribe la miniatura** en disco. Justificación: el bloqueo de la fila es justamente lo que impide que dos instancias de la API procesen la misma entidad a la vez; si los archivos se tocaran fuera de la transacción, el bloqueo ya se habría soltado y dos instancias podrían generar la misma miniatura. No hace falta compensar: si la transacción falla después de escribir `small.png`, la entidad sigue sin miniatura (su URL nunca se publicó) y el próximo intento reemplaza el archivo.
 
 ### 4.4 Principios y patrones (aplicar solo donde simplifiquen)
 
@@ -335,7 +337,12 @@ Misma plantilla en todos: autorizar → idempotencia → validar → ejecutar en
 - **Multipart diferido:** `spring.servlet.multipart.resolve-lazily=true`. El cuerpo se lee recién cuando el controlador pide sus campos, después del interceptor de autorización: un archivo de más de 5 MB sin token recibe **401**, con token de jugador **403**, y solo con token de administrador **400** `IMAGE_TOO_LARGE`.
 - **Ficha de respuesta:** código, nombre, costo, poder, tipo, rareza, imágenes grande y pequeña, estado de imagen, disponibilidad y la habilidad con su nombre, su código y, si está limitada a un tipo, a cuál afecta.
 - **Si falla la miniatura:** la carta se guarda con `available = false` e `image_status = PENDING_RETRY`. Una tarea programada reintenta (máximo configurable, `app.images.max-retries` = 3) e incrementa `retry_count` en cada intento; al lograrlo pasa a `READY` y disponible. Si llega al máximo sin lograrlo, pasa a `FAILED` y **sigue no disponible**; la tarea ya no la reintenta. El administrador ve el estado (`PENDING_RETRY` o `FAILED`) en la ficha y en la búsqueda. Lo mismo aplica a las ubicaciones (7.2).
-- **Operaciones de la tarea de reintentos:** volver a generar la miniatura necesita **leer la versión grande ya guardada** y **guardar solo la miniatura** en la carpeta de la entidad. Esas dos operaciones de `ImageStorage` no existen todavía: se agregan en la tarea de reintentos (tarea propia en Azure DevOps), junto con la tarea programada.
+- **Operaciones de la tarea de reintentos:** volver a generar la miniatura necesita **leer la versión grande ya guardada** y **guardar solo la miniatura** en la carpeta de la entidad: `ImageStorage.readLarge(largeUrl)` y `ImageStorage.saveThumbnail(largeUrl, miniatura)`.
+- **Tarea de reintentos (`ThumbnailRetryJob` y `ThumbnailRetryUseCase`):**
+  - Corre cada **`app.images.retry-interval`** (por defecto `PT1M`, 1 minuto), contado desde que termina la ejecución anterior (`fixedDelay`), así dos ejecuciones de la misma instancia no se solapan. La primera espera también un intervalo, para no competir con el arranque.
+  - **Un intento por entidad y ejecución:** cada ejecución recorre las cartas y luego las ubicaciones en `PENDING_RETRY` con `retry_count` menor que `app.images.max-retries`, en orden de `id`, y hace **un solo** intento por entidad. Una entidad que sigue pendiente se vuelve a intentar en la ejecución siguiente, no en un bucle inmediato.
+  - Cada intento suma 1 a `retry_count`. Si se logra, `READY`, disponible y con la URL de la miniatura; si falla y `retry_count` llega al máximo, `FAILED` y no disponible; si falta la versión grande en disco, `FAILED` de inmediato (ningún intento futuro podría lograrlo) con un aviso en el log.
+  - **Concurrencia:** una transacción por entidad, que la selecciona con `FOR UPDATE SKIP LOCKED`; otra instancia que corre a la vez salta esa fila y toma la siguiente. Leer y escribir los archivos con la fila bloqueada es una excepción a la regla de 4.3, justificada allí.
 - **Si el paso 10 falla** después de guardar los archivos, se **borran** esos archivos como compensación (los archivos y la base no comparten transacción).
 - **Exceso de dimensiones (paso 7):** antes de decodificar, el procesador lee el ancho y el alto del encabezado; si su producto supera `app.images.max-pixels` (por defecto 16 000 000), la imagen se rechaza con **`IMAGE_TOO_LARGE`**, el mismo tipo que el exceso de peso pero con **otro mensaje** ("las dimensiones de la imagen superan el máximo permitido"). Evita que un archivo pequeño que declara dimensiones enormes agote la memoria al decodificarse; solo lo alcanzan imágenes absurdas. Lo mismo aplica a las ubicaciones (7.2).
 - **`EvolutionRules`** (servicio de dominio en `domain.rule`, con pruebas unitarias propias): rechaza una evolución a la misma carta y los ciclos (A evoluciona a B y B, directa o indirectamente, a A). **Decisión del equipo sobre cómo se dispara en la creación:** `CreateCardUseCase` la aplica **dentro** de la transacción del paso 10, después de obtener el código que recibirá la carta y antes de guardarla. Si la habilidad evoluciona hacia ese mismo código, o la cadena de evoluciones de su destino vuelve a él, lanza `INVALID_EVOLUTION`; la transacción se revierte (el consecutivo no se consume) y se borran los archivos del paso 9. Por eso una habilidad puede apuntar a una carta que todavía no existe (migración V2, sección 6).
@@ -573,13 +580,14 @@ El pipeline de GitHub Actions ejecuta compilación, todas las pruebas y `oasdiff
 
 ---
 
-## 15. Qué hacer con el código existente (modo "esqueleto nuevo y portar")
+## 15. Cómo se reconstruyó el Sprint 1 (historia)
 
-1. Etiquetar el estado actual (`git tag sprint1-original`).
-2. Crear la estructura nueva de 4.1 en el mismo repositorio. Mover el código viejo a una carpeta `legacy/` **fuera de la compilación** como referencia, que se borra antes del merge final.
-3. **Portar** (copiar y adaptar a la estructura nueva): la validación de criterios de búsqueda con los nombres de esta especificación; el escape de `%` y `_`; el índice trigram; la sentencia atómica del consecutivo (ahora dentro de la transacción); `CardType`; y los casos de prueba de la búsqueda como base de las nuevas.
-4. **Descartar:** `schema.sql`, `SearchSchemaMigration.java`, `V039`, las tablas `card_search_*`, los cursores UUID, los 410 y 503 de la búsqueda, `total`, `expiresAt`, `CardSearchErrorHandler`, `CardSearchException`, `SearchIdentity`, `ImageService` como clase concreta, la validación a medias de `CreateCardUseCase`, `DisposableDatabaseInitializer` (cuando las pruebas pasen con Testcontainers), y los starters de JPA.
-5. **Plazo de seguridad:** si la base compartida (fases 1 y 2) no está en verde al final del viernes 6 de noviembre, el equipo vuelve a corregir sobre lo existente.
+El código del Sprint 1 no seguía esta especificación, así que se reconstruyó con la estrategia "esqueleto nuevo y portar". Esta sección queda solo como registro de lo que se hizo; no tiene instrucciones pendientes.
+
+1. El estado original quedó en la etiqueta de Git **`sprint1-original`**, que es la única copia de ese código.
+2. Se creó la estructura de 4.1 en el mismo repositorio, y el código viejo se guardó temporalmente fuera de la compilación, solo como referencia. Se eliminó al cerrar las correcciones del Sprint 1.
+3. **Se portó** (copiado y adaptado a la estructura nueva): la validación de criterios de búsqueda, con los nombres de esta especificación (`CardSearchRules`); el escape de `%` y `_` (`CardSearchSql`); el índice trigram; la sentencia atómica del consecutivo, ahora dentro de la transacción; `CardType`; y los casos de prueba de la búsqueda, como base de `CardSearchRulesTest` y `CardSearchIT`.
+4. **Se descartó:** `schema.sql`, `SearchSchemaMigration.java`, `V039`, las tablas `card_search_*`, los cursores UUID, los 410 y 503 de la búsqueda, `total`, `expiresAt`, `CardSearchErrorHandler`, `CardSearchException`, `SearchIdentity`, `ImageService` como clase concreta, la validación a medias de `CreateCardUseCase`, `DisposableDatabaseInitializer` (reemplazado por Testcontainers), los starters de JPA, y los documentos y el script de pruebas manuales de la búsqueda vieja (`us39-*`, `test-us39.ps1`), que describían el diseño de instantáneas.
 
 ---
 
@@ -613,7 +621,7 @@ Al terminar cada fase, entrega el resumen y espera la aprobación.
 - [ ] Una solicitud inválida no deja archivos ni filas.
 - [ ] Ningún código de carta se repite bajo concurrencia; una identidad tiene una sola cuenta; la colección inicial se entrega una vez.
 - [ ] La búsqueda y el catálogo responden en menos de 300 ms con 10,000 cartas y no repiten ni omiten resultados.
-- [ ] Las pruebas de arquitectura pasan en CI y `./mvnw verify` pasa en una máquina limpia.
+- [ ] Las pruebas de arquitectura pasan en CI y `.\mvnw.cmd clean verify` pasa en una máquina limpia.
 - [ ] Cada integrante puede explicar cualquier archivo del código.
 
 ---
