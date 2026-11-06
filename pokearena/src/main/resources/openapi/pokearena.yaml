@@ -1,0 +1,869 @@
+# =============================================================================
+# Contrato HTTP de PokéArena (RNF-API-01; sección 10 de la especificación).
+# Propósito: describir las operaciones públicas de la API de las historias del Sprint 1
+# (Crear carta, Buscar carta y Crear ubicación) y la entrega de imágenes, con sus
+# parámetros, cuerpos, respuestas y el formato único de errores (sección 5.3).
+# Se escribe a mano y lo verifica OpenApiContractIT en los dos sentidos: todo lo
+# documentado existe en la aplicación, y toda operación de la aplicación está aquí.
+# No documenta POST /api/v1/dev/sesiones: solo existe con el perfil dev.
+# =============================================================================
+openapi: 3.1.0
+info:
+  title: PokéArena API
+  version: 1.0.0
+  description: |
+    API REST de PokéArena (curso CE-1116, TEC). La presentación es la interfaz web servida
+    en "/"; esta API es una capa aparte (sección 4.1).
+
+    **Autenticación (sección 5.2).** Las operaciones protegidas exigen
+    `Authorization: Bearer <token>` con las credenciales propias de PokéArena (JWT HS256,
+    vencimiento corto). Sin token, o con uno inválido o vencido: **401 NOT_AUTHENTICATED**.
+    Con token válido sin el rol requerido: **403 FORBIDDEN**. La autorización ocurre antes
+    que cualquier otra validación. El rol requerido de cada operación está en `x-roles`.
+
+    **Errores (sección 5.3).** Toda respuesta de error usa el esquema `ApiError`. Las
+    extensiones `x-error-types` de cada respuesta listan los `type` que puede traer.
+
+    **Correlación (sección 5.6).** Toda respuesta lleva `X-Correlation-Id`: el recibido si
+    es seguro, o uno generado. Es el mismo `correlationId` del cuerpo de error.
+servers:
+  - url: http://localhost:8080
+    description: Desarrollo local
+
+tags:
+  - name: Cartas
+    description: Historias 2.1.1 (Crear carta) y 2.1.2 (Buscar carta)
+  - name: Ubicaciones
+    description: Historia 2.2.1 (Crear ubicación)
+  - name: Imágenes
+    description: Versiones grande y pequeña de cartas y ubicaciones
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/cartas:
+    post:
+      tags: [Cartas]
+      operationId: createCard
+      summary: Crear carta (2.1.1)
+      description: |
+        Crea una carta con su imagen (sección 7.1, Anexo A.1). Todas las validaciones ocurren
+        antes de guardar nada: una solicitud inválida no deja archivos ni filas. El código
+        `PKA-<TIPO>-<NNN>` lo asigna el servidor (consecutivo por tipo, mínimo 3 dígitos, sin
+        máximo). Si la miniatura falla, la carta se guarda igual, no disponible y con
+        `imageStatus = PENDING_RETRY`; una tarea programada la reintenta.
+
+        Los campos del formulario llegan como texto: un valor ausente es `MISSING_FIELD` y
+        uno inválido (fuera de rango, no entero o fuera del catálogo) es `INVALID_FIELD`, con
+        `field` y `allowedValues`.
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateCardForm'
+      responses:
+        '201':
+          description: Carta creada, o la misma respuesta guardada si es un reintento con la misma clave y el mismo contenido.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '400':
+          description: Solicitud inválida.
+          x-error-types: [IDEMPOTENCY_KEY_REQUIRED, INVALID_FIELD, MISSING_FIELD, UNKNOWN_ABILITY, INVALID_EVOLUTION,
+            INVALID_IMAGE_FORMAT, IMAGE_TOO_LARGE, INVALID_IMAGE_RATIO, IMAGE_RESOLUTION_TOO_LOW, BAD_REQUEST]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                type: INVALID_FIELD
+                title: Campo inválido
+                status: 400
+                detail: El costo debe estar entre 0 y 10.
+                field: cost
+                allowedValues: ['0..10']
+                correlationId: b3f1c9e0-4f2a-4c1e-9d55-0d8a1f3e7c21
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      tags: [Cartas]
+      operationId: searchCards
+      summary: Buscar carta (2.1.2)
+      description: |
+        Busca en el catálogo completo (sección 7.3, Anexo A.3). Todos los criterios son
+        opcionales y se combinan con AND; sin criterios recorre todo el catálogo. El
+        administrador ve todas las cartas, también las no disponibles y las desactivadas.
+
+        Paginación única (sección 5.5): orden por `id` y cursor por clave; `nextCursor` es
+        `null` en la última página. Sin resultados: 200 con `items` vacío.
+
+        Un parámetro desconocido, repetido o vacío, un valor exacto combinado con un rango del
+        mismo campo, un tipo o rareza inexistentes, un valor fuera de rango o un mínimo mayor
+        que el máximo es `INVALID_SEARCH_CRITERIA`, con el criterio en `field`. Un `limit` o un
+        `cursor` inválidos son `INVALID_PAGINATION`. Una habilidad inexistente no es un error:
+        es una búsqueda sin resultados.
+      x-roles: [ADMIN]
+      parameters:
+        - name: code
+          in: query
+          description: Código exacto de la carta.
+          schema:
+            type: string
+            example: PKA-FUE-001
+        - name: name
+          in: query
+          description: Parte del nombre, sin distinguir mayúsculas ni tildes. `%` y `_` se buscan como texto literal.
+          schema:
+            type: string
+        - name: cost
+          in: query
+          description: Costo exacto. No se combina con `costMin` ni `costMax`.
+          schema:
+            $ref: '#/components/schemas/Cost'
+        - name: costMin
+          in: query
+          description: Costo mínimo, incluido.
+          schema:
+            $ref: '#/components/schemas/Cost'
+        - name: costMax
+          in: query
+          description: Costo máximo, incluido.
+          schema:
+            $ref: '#/components/schemas/Cost'
+        - name: power
+          in: query
+          description: Poder exacto. No se combina con `powerMin` ni `powerMax`.
+          schema:
+            $ref: '#/components/schemas/Power'
+        - name: powerMin
+          in: query
+          description: Poder mínimo, incluido.
+          schema:
+            $ref: '#/components/schemas/Power'
+        - name: powerMax
+          in: query
+          description: Poder máximo, incluido.
+          schema:
+            $ref: '#/components/schemas/Power'
+        - name: type
+          in: query
+          description: Código del tipo de carta.
+          schema:
+            $ref: '#/components/schemas/TypeCode'
+        - name: rarity
+          in: query
+          description: Código de la rareza.
+          schema:
+            $ref: '#/components/schemas/RarityCode'
+        - name: ability
+          in: query
+          description: Código exacto de la habilidad (incluida HAB-000, Sin Habilidad).
+          schema:
+            type: string
+            example: HAB-000
+        - name: abilityTrigger
+          in: query
+          description: Disparador de la habilidad. HAB-000 no tiene disparador.
+          schema:
+            type: string
+        - name: abilityEffect
+          in: query
+          description: Tipo de efecto de la habilidad. HAB-000 no tiene efecto.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Página de resultados (puede venir vacía).
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardPage'
+        '400':
+          description: Criterio o paginación inválidos.
+          x-error-types: [INVALID_SEARCH_CRITERIA, INVALID_PAGINATION, BAD_REQUEST]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                type: INVALID_SEARCH_CRITERIA
+                title: Criterio de búsqueda inválido
+                status: 400
+                detail: El tipo 'FIRE' no existe.
+                field: type
+                allowedValues: [AGU, ELE, FUE, LUC, PLA, PSI]
+                correlationId: b3f1c9e0-4f2a-4c1e-9d55-0d8a1f3e7c21
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/ubicaciones:
+    post:
+      tags: [Ubicaciones]
+      operationId: createLocation
+      summary: Crear ubicación (2.2.1)
+      description: |
+        Crea una ubicación con su imagen (sección 7.2, Anexo A.2). Mismo orden y manejo que
+        Crear carta: autorización, `Idempotency-Key`, campos (paso 5), efecto (paso 6), imagen
+        (paso 7). Una solicitud inválida no deja archivos ni filas. Si la miniatura falla, se
+        guarda no disponible con `imageStatus = PENDING_RETRY`.
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateLocationForm'
+            encoding:
+              effect:
+                contentType: application/json
+      responses:
+        '201':
+          description: Ubicación creada, o la misma respuesta guardada si es un reintento con la misma clave y el mismo contenido.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '400':
+          description: Solicitud inválida.
+          x-error-types: [IDEMPOTENCY_KEY_REQUIRED, INVALID_FIELD, MISSING_FIELD, INVALID_EFFECT, INVALID_IMAGE_FORMAT,
+            IMAGE_TOO_LARGE, INVALID_IMAGE_RATIO, IMAGE_RESOLUTION_TOO_LOW, BAD_REQUEST]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                type: INVALID_EFFECT
+                title: Efecto inválido
+                status: 400
+                detail: El tipo de efecto 'LLUVIA' no existe.
+                field: effect
+                allowedValues: [COST_MODIFIER, TURN_RESTRICTION, TYPE_BONUS]
+                correlationId: b3f1c9e0-4f2a-4c1e-9d55-0d8a1f3e7c21
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /images/{folder}/{id}/{file}:
+    get:
+      tags: [Imágenes]
+      operationId: getImage
+      summary: Imagen de una carta o ubicación
+      description: |
+        Entrega una imagen guardada por su URL pública (las URLs vienen en las fichas). Es
+        pública: no necesita credenciales. El contenido de una URL nunca cambia (cada entidad
+        usa una carpeta nueva con nombre UUID), por eso se puede cachear un año como inmutable.
+        Atiende lecturas por rangos (`Range`). Una ruta con otra forma, o un archivo que no
+        existe, es 404 NOT_FOUND.
+      security: []
+      parameters:
+        - name: folder
+          in: path
+          required: true
+          description: Carpeta del tipo de entidad.
+          schema:
+            type: string
+            enum: [cards, locations]
+        - name: id
+          in: path
+          required: true
+          description: Carpeta de la entidad, generada por el servidor.
+          schema:
+            type: string
+            format: uuid
+        - name: file
+          in: path
+          required: true
+          description: Versión grande (en su formato original) o miniatura (siempre PNG).
+          schema:
+            type: string
+            enum: [large.png, large.jpg, large.webp, small.png]
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: La imagen.
+          headers:
+            Cache-Control:
+              description: Siempre `public, max-age=31536000, immutable`.
+              schema:
+                type: string
+            X-Content-Type-Options:
+              description: Siempre `nosniff`.
+              schema:
+                type: string
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: Parte de la imagen, para una solicitud con `Range`.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Credenciales propias de PokéArena (sección 5.2), nunca el token del proveedor de identidad.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Clave de idempotencia de los POST de creación (sección 5.4), generada por el cliente.
+        Ausente o vacía: 400 IDEMPOTENCY_KEY_REQUIRED. Más larga que
+        `app.idempotency.max-key-length` (255 por defecto): 400 INVALID_FIELD. La misma clave
+        con el mismo contenido devuelve la respuesta guardada; con otro contenido, 422
+        IDEMPOTENCY_KEY_REUSED. Se valida después de la autorización.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: Identificador para seguir la solicitud en los logs. Si falta o tiene caracteres inseguros, el servidor genera uno.
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9._-]{1,64}$'
+    Limit:
+      name: limit
+      in: query
+      description: Tamaño de la página, de 1 a `app.pagination.max-limit` (100 por defecto). Sin él, `app.pagination.default-limit` (20 por defecto).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      description: Cursor opaco, tal como llegó en `nextCursor` de la página anterior. Solo se acepta la forma exacta que genera el servidor.
+      schema:
+        type: string
+
+  headers:
+    CorrelationId:
+      description: Identificador de la solicitud; coincide con `correlationId` en los errores.
+      schema:
+        type: string
+
+  responses:
+    NotAuthenticated:
+      description: Sin credenciales, o con credenciales inválidas o vencidas.
+      x-error-types: [NOT_AUTHENTICATED]
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: Autenticado sin el rol requerido.
+      x-error-types: [FORBIDDEN]
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: La ruta o el archivo no existen.
+      x-error-types: [NOT_FOUND]
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    MethodNotAllowed:
+      description: La ruta existe pero no admite ese método. El encabezado `Allow` lista los métodos válidos.
+      x-error-types: [METHOD_NOT_ALLOWED]
+      headers:
+        Allow:
+          schema:
+            type: string
+        X-Correlation-Id:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    UnsupportedMediaType:
+      description: El cuerpo no viene como `multipart/form-data`.
+      x-error-types: [UNSUPPORTED_MEDIA_TYPE]
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    IdempotencyKeyReused:
+      description: La misma `Idempotency-Key` con otro contenido.
+      x-error-types: [IDEMPOTENCY_KEY_REUSED]
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InternalError:
+      description: Error inesperado. El detalle es un texto fijo; la causa solo queda en el log, con el `correlationId`.
+      x-error-types: [INTERNAL_ERROR]
+      headers:
+        X-Correlation-Id:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    ApiError:
+      description: |
+        Formato único de errores (sección 5.3; RNF-API-03). `field` y `allowedValues` solo
+        aparecen cuando aplican. Los tipos de dominio los lanza el dominio; los de protocolo
+        (BAD_REQUEST, NOT_FOUND, METHOD_NOT_ALLOWED, UNSUPPORTED_MEDIA_TYPE, INTERNAL_ERROR)
+        nacen en la capa API. Cualquier otro 4xx de Spring se informa como BAD_REQUEST y
+        cualquier 5xx como INTERNAL_ERROR.
+      type: object
+      required: [type, title, status, detail, correlationId]
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            # Dominio (domain.error.ErrorType)
+            - NOT_AUTHENTICATED
+            - FORBIDDEN
+            - INVALID_IDENTITY_TOKEN
+            - IDENTITY_PROVIDER_UNAVAILABLE
+            - UNSUPPORTED_PROVIDER
+            - INVALID_FIELD
+            - MISSING_FIELD
+            - UNKNOWN_ABILITY
+            - INVALID_EVOLUTION
+            - INVALID_EFFECT
+            - INVALID_SEARCH_CRITERIA
+            - INVALID_PAGINATION
+            - INVALID_IMAGE_FORMAT
+            - IMAGE_TOO_LARGE
+            - INVALID_IMAGE_RATIO
+            - IMAGE_RESOLUTION_TOO_LOW
+            - IDEMPOTENCY_KEY_REQUIRED
+            - IDEMPOTENCY_KEY_REUSED
+            # Protocolo (capa API)
+            - BAD_REQUEST
+            - NOT_FOUND
+            - METHOD_NOT_ALLOWED
+            - UNSUPPORTED_MEDIA_TYPE
+            - INTERNAL_ERROR
+        title:
+          type: string
+          description: Título fijo del tipo de error, en español.
+        status:
+          type: integer
+          description: Código HTTP, igual al de la respuesta.
+        detail:
+          type: string
+          description: Explicación para el usuario, en español. Nunca revela datos internos.
+        field:
+          type: string
+          description: Campo, criterio o encabezado afectado.
+        allowedValues:
+          type: array
+          items:
+            type: string
+          description: Valores permitidos del campo, por ejemplo `["0..10"]` o los códigos de un catálogo.
+        correlationId:
+          type: string
+
+    Cost:
+      type: integer
+      minimum: 0
+      maximum: 10
+    Power:
+      type: integer
+      minimum: -20
+      maximum: 20
+    TypeCode:
+      type: string
+      description: Fuego, Agua, Planta, Eléctrico, Psíquico o Lucha.
+      enum: [FUE, AGU, PLA, ELE, PSI, LUC]
+    RarityCode:
+      type: string
+      description: Común, Poco común, Rara o Legendaria.
+      enum: [COMMON, UNCOMMON, RARE, LEGENDARY]
+    ImageStatus:
+      type: string
+      description: |
+        READY: existen ambas versiones. PENDING_RETRY: falló la miniatura y la tarea
+        programada la reintenta. FAILED: se agotaron los reintentos. Solo READY puede estar
+        disponible.
+      enum: [READY, PENDING_RETRY, FAILED]
+    ImageFile:
+      type: string
+      format: binary
+      description: PNG, JPG o WebP (formato detectado por el contenido), de máximo 5 MB.
+
+    CreateCardForm:
+      type: object
+      required: [name, cost, power, type, rarity, ability, image]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        cost:
+          $ref: '#/components/schemas/Cost'
+        power:
+          $ref: '#/components/schemas/Power'
+        type:
+          $ref: '#/components/schemas/TypeCode'
+        rarity:
+          $ref: '#/components/schemas/RarityCode'
+        ability:
+          type: string
+          description: Código de una habilidad existente y activa. Obligatoria; HAB-000 (Sin Habilidad) existe siempre.
+          example: HAB-000
+        image:
+          allOf:
+            - $ref: '#/components/schemas/ImageFile'
+          description: Proporción vertical 5:7 (tolerancia 1 %), mínimo 600 × 840. Se genera una miniatura de 200 × 280 exactos.
+
+    CreateLocationForm:
+      type: object
+      required: [name, description, cardLimit, extraEnergyMode, image]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          minLength: 1
+        cardLimit:
+          type: integer
+          minimum: 0
+          maximum: 5
+          description: Cartas por jugador; 0 significa que no se pueden jugar cartas en ella.
+        extraEnergyMode:
+          type: string
+          enum: [NONE, FIXED, PER_CARD]
+          description: Obligatoria; su ausencia es MISSING_FIELD, nunca se interpreta como NONE.
+        extraEnergyAmount:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: |
+            Con NONE puede omitirse y vale 0 (otro valor es INVALID_FIELD con `["0"]`). Con
+            FIXED es obligatorio y va de 0 a 3; con PER_CARD es obligatorio y va de 0 a 2.
+        effect:
+          type: string
+          contentMediaType: application/json
+          contentSchema:
+            $ref: '#/components/schemas/LocationEffectInput'
+          description: |
+            Opcional. Campo de texto con un JSON `{"code": ..., "parameters": {...}}`. Solo se
+            aceptan esas dos claves, y dentro de `parameters` solo los del tipo de efecto: un
+            parámetro desconocido se rechaza. Montos y turnos deben ser enteros (ni `3.0` ni
+            `"3"`). Cualquier error es INVALID_EFFECT sobre `effect`; con un `code` inexistente,
+            `allowedValues` lista los tipos registrados.
+          example: '{"code": "TYPE_BONUS", "parameters": {"type": "FUE", "amount": 3}}'
+        image:
+          allOf:
+            - $ref: '#/components/schemas/ImageFile'
+          description: Proporción horizontal 4:3 (tolerancia 1 %), mínimo 800 × 600. Se genera una miniatura de 320 × 240 exactos.
+
+    LocationEffectInput:
+      description: Formato del JSON del campo `effect` (sección 7.2).
+      oneOf:
+        - $ref: '#/components/schemas/TypeBonusEffect'
+        - $ref: '#/components/schemas/CostModifierEffect'
+        - $ref: '#/components/schemas/TurnRestrictionEffect'
+      discriminator:
+        propertyName: code
+        mapping:
+          TYPE_BONUS: '#/components/schemas/TypeBonusEffect'
+          COST_MODIFIER: '#/components/schemas/CostModifierEffect'
+          TURN_RESTRICTION: '#/components/schemas/TurnRestrictionEffect'
+    TypeBonusEffect:
+      type: object
+      required: [code, parameters]
+      additionalProperties: false
+      properties:
+        code:
+          const: TYPE_BONUS
+        parameters:
+          type: object
+          required: [type, amount]
+          additionalProperties: false
+          properties:
+            type:
+              $ref: '#/components/schemas/TypeCode'
+            amount:
+              type: integer
+              minimum: -5
+              maximum: 5
+    CostModifierEffect:
+      type: object
+      required: [code, parameters]
+      additionalProperties: false
+      properties:
+        code:
+          const: COST_MODIFIER
+        parameters:
+          type: object
+          required: [amount]
+          additionalProperties: false
+          properties:
+            amount:
+              type: integer
+              minimum: -5
+              maximum: 5
+            affectedType:
+              $ref: '#/components/schemas/TypeCode'
+    TurnRestrictionEffect:
+      type: object
+      required: [code, parameters]
+      additionalProperties: false
+      properties:
+        code:
+          const: TURN_RESTRICTION
+        parameters:
+          type: object
+          required: [turns]
+          additionalProperties: false
+          properties:
+            turns:
+              type: array
+              minItems: 1
+              uniqueItems: true
+              items:
+                type: integer
+                minimum: 1
+                maximum: 6
+
+    CatalogValue:
+      type: object
+      required: [code, name]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+
+    Ability:
+      type: object
+      required: [code, name, parameters]
+      properties:
+        code:
+          type: string
+          example: HAB-000
+        name:
+          type: string
+          example: Sin Habilidad
+        limitedToType:
+          type: [string, 'null']
+          description: Tipo de carta al que está limitada, o null.
+        trigger:
+          type: [string, 'null']
+          description: Disparador, o null (HAB-000 no tiene).
+        effect:
+          type: [string, 'null']
+          description: Tipo de efecto, o null (HAB-000 no tiene).
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Parámetros del efecto; vacío si no tiene.
+
+    Card:
+      description: Ficha de una carta (secciones 7.1 y 7.3). La misma forma al crearla y al buscarla.
+      type: object
+      required: [code, name, cost, power, type, rarity, imageLargeUrl, imageSmallUrl, imageStatus, available, ability]
+      properties:
+        code:
+          type: string
+          pattern: '^PKA-(FUE|AGU|PLA|ELE|PSI|LUC)-[0-9]{3,}$'
+          example: PKA-FUE-001
+        name:
+          type: string
+        cost:
+          $ref: '#/components/schemas/Cost'
+        power:
+          $ref: '#/components/schemas/Power'
+        type:
+          $ref: '#/components/schemas/CatalogValue'
+        rarity:
+          $ref: '#/components/schemas/CatalogValue'
+        imageLargeUrl:
+          type: string
+          example: /images/cards/0b7e2f7c-3c1a-4a59-9e0f-6a2d3b9b1c11/large.png
+        imageSmallUrl:
+          type: [string, 'null']
+          description: URL de la miniatura, o null si todavía no existe.
+        imageStatus:
+          $ref: '#/components/schemas/ImageStatus'
+        available:
+          type: boolean
+          description: Si los jugadores pueden verla. Solo con imageStatus READY.
+        ability:
+          $ref: '#/components/schemas/Ability'
+
+    CardPage:
+      description: Página de la paginación única (sección 5.5). Sin total ni vencimientos.
+      type: object
+      required: [items, nextCursor, limit]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Card'
+        nextCursor:
+          type: [string, 'null']
+          description: Cursor de la página siguiente; null en la última.
+        limit:
+          type: integer
+          description: Tamaño de página con el que se pidió.
+
+    Location:
+      description: Ubicación creada (sección 7.2).
+      type: object
+      required: [id, name, description, effect, cardLimit, extraEnergy, imageLargeUrl, imageSmallUrl, imageStatus, available]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        effect:
+          description: Efecto de la ubicación, o null si no tiene.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [code, parameters]
+              properties:
+                code:
+                  type: string
+                  enum: [TYPE_BONUS, COST_MODIFIER, TURN_RESTRICTION]
+                parameters:
+                  type: object
+                  additionalProperties: true
+        cardLimit:
+          type: integer
+          minimum: 0
+          maximum: 5
+        extraEnergy:
+          type: object
+          required: [mode, amount]
+          properties:
+            mode:
+              type: string
+              enum: [NONE, FIXED, PER_CARD]
+            amount:
+              type: integer
+              minimum: 0
+              maximum: 3
+        imageLargeUrl:
+          type: string
+          example: /images/locations/0b7e2f7c-3c1a-4a59-9e0f-6a2d3b9b1c11/large.png
+        imageSmallUrl:
+          type: [string, 'null']
+        imageStatus:
+          $ref: '#/components/schemas/ImageStatus'
+        available:
+          type: boolean
