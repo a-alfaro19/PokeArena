@@ -18,20 +18,16 @@ import cr.ac.tec.pokearena.domain.repository.AbilityRepository;
 public class JdbcAbilityRepository implements AbilityRepository {
 
     private final JdbcTemplate jdbc;
+    private final AbilityRows abilityRows;
 
-    public JdbcAbilityRepository(JdbcTemplate jdbc) {
+    public JdbcAbilityRepository(JdbcTemplate jdbc, AbilityRows abilityRows) {
         this.jdbc = jdbc;
+        this.abilityRows = abilityRows;
     }
 
     @Override
     public Optional<Ability> findActiveByCode(String code) {
-        return jdbc.query("""
-                SELECT code, name, limited_to_type, evolves_to_card_code
-                FROM ability
-                WHERE code = ? AND active
-                """,
-                (rs, row) -> new Ability(rs.getString("code"), rs.getString("name"),
-                        rs.getString("limited_to_type"), rs.getString("evolves_to_card_code")),
-                code).stream().findFirst();
+        return jdbc.query("SELECT " + AbilityRows.COLUMNS + " FROM ability a WHERE a.code = ? AND a.active",
+                (rs, row) -> abilityRows.map(rs), code).stream().findFirst();
     }
 }

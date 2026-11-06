@@ -45,7 +45,9 @@ import cr.ac.tec.pokearena.application.port.AuthenticatedUser;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.application.usecase.PlayerAccountService;
 import cr.ac.tec.pokearena.domain.model.Card;
+import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
 import cr.ac.tec.pokearena.domain.model.Role;
+import cr.ac.tec.pokearena.domain.model.StoredCard;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
 import cr.ac.tec.pokearena.infrastructure.persistence.JdbcCardRepository;
@@ -571,6 +573,11 @@ class CardControllerIT extends PostgresIntegrationTestBase {
         @Override
         public Optional<String> evolutionTargetOf(String cardCode) {
             return real.evolutionTargetOf(cardCode);
+        }
+
+        @Override
+        public List<StoredCard> search(CardSearchCriteria criteria, long afterId, int maxRows) {
+            return real.search(criteria, afterId, maxRows);
         }
     }
 

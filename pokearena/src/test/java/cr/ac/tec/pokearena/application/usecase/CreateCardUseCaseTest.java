@@ -36,8 +36,10 @@ import cr.ac.tec.pokearena.domain.error.IdempotencyConflictException;
 import cr.ac.tec.pokearena.domain.error.ThumbnailGenerationException;
 import cr.ac.tec.pokearena.domain.model.Ability;
 import cr.ac.tec.pokearena.domain.model.Card;
+import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
 import cr.ac.tec.pokearena.domain.model.CardType;
 import cr.ac.tec.pokearena.domain.model.Rarity;
+import cr.ac.tec.pokearena.domain.model.StoredCard;
 import cr.ac.tec.pokearena.domain.repository.CardCatalogRepository;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
@@ -350,6 +352,11 @@ class CreateCardUseCaseTest {
         @Override
         public Optional<String> evolutionTargetOf(String cardCode) {
             return Optional.ofNullable(evolutions.get(cardCode));
+        }
+
+        @Override
+        public List<StoredCard> search(CardSearchCriteria criteria, long afterId, int maxRows) {
+            throw new UnsupportedOperationException("Crear carta no busca cartas");
         }
 
         @Override

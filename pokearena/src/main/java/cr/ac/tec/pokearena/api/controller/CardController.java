@@ -5,6 +5,8 @@ import java.io.IOException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -13,22 +15,30 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import cr.ac.tec.pokearena.api.dto.CardResponse;
+import cr.ac.tec.pokearena.api.dto.PageResponse;
 import cr.ac.tec.pokearena.api.security.RequiresRole;
 import cr.ac.tec.pokearena.api.web.IdempotencyKeyHeader;
 import cr.ac.tec.pokearena.application.dto.CardDetails;
 import cr.ac.tec.pokearena.application.dto.CreateCardCommand;
 import cr.ac.tec.pokearena.application.dto.IdempotentResult;
+import cr.ac.tec.pokearena.application.dto.SearchCardsCommand;
 import cr.ac.tec.pokearena.application.port.AuthenticatedUser;
 import cr.ac.tec.pokearena.application.usecase.CreateCardUseCase;
 import cr.ac.tec.pokearena.application.usecase.RequestHash;
+import cr.ac.tec.pokearena.application.usecase.SearchCardsUseCase;
 import cr.ac.tec.pokearena.domain.rule.CardFieldRules;
 import cr.ac.tec.pokearena.domain.model.Role;
 
 /**
- * Propósito: API de cartas del administrador (historia 2.1.1; sección 5.1).
- * Responsabilidades: traducir {@code POST /api/v1/cartas} (multipart) a un comando del caso de uso y
- * su resultado a la respuesta 201 con la ficha. No contiene reglas: valida el caso de uso.
- * Referencia: sección 7.1 (pasos 1 a 3 y 11) y Anexo A.1 (mensajes 2 a 5, 21 y 22).
+ * Propósito: API de cartas del administrador (historias 2.1.1 y 2.1.2; sección 5.1).
+ * Responsabilidades: traducir {@code POST /api/v1/cartas} (multipart) a un comando de Crear carta y su
+ * resultado a la respuesta 201 con la ficha; y {@code GET /api/v1/cartas} a un comando de Buscar carta
+ * y su resultado a la respuesta 200 con la página. No contiene reglas: valida el caso de uso.
+ * Referencia: sección 7.1 (pasos 1 a 3 y 11), Anexo A.1 (mensajes 2 a 5, 21 y 22), sección 7.3 y
+ * Anexo A.3 (mensajes 2 a 5 y 13 a 15).
+ *
+ * <p>Las dos operaciones son solo para administradores: {@code @RequiresRole(ADMIN)} en la clase las
+ * cubre a ambas, con la misma autorización (401 sin sesión, 403 sin el rol).
  *
  * <p>Todos los campos se reciben como opcionales y como texto: así un campo ausente o mal escrito lo
  * informa el dominio con su error tipado, su {@code field} y sus {@code allowedValues}, en lugar de
@@ -40,9 +50,11 @@ import cr.ac.tec.pokearena.domain.model.Role;
 public class CardController {
 
     private final CreateCardUseCase createCard;
+    private final SearchCardsUseCase searchCards;
 
-    public CardController(CreateCardUseCase createCard) {
+    public CardController(CreateCardUseCase createCard, SearchCardsUseCase searchCards) {
         this.createCard = createCard;
+        this.searchCards = searchCards;
     }
 
     /**
@@ -80,5 +92,19 @@ public class CardController {
 
         // Paso 11: 201 con la ficha (o la misma respuesta guardada, si es un reintento).
         return ResponseEntity.status(result.status()).body(CardResponse.from(result.body()));
+    }
+
+    /**
+     * Busca cartas con criterios combinables y paginación por cursor (sección 7.3).
+     *
+     * <p>Recibe TODOS los parámetros de la consulta, con sus repeticiones, sin enlazarlos uno por uno:
+     * así un criterio desconocido, repetido o mal escrito lo informa el dominio con
+     * INVALID_SEARCH_CRITERIA y el criterio en {@code field}, y un {@code limit} o {@code cursor}
+     * inválido, la paginación con INVALID_PAGINATION. El interceptor ya autorizó antes (mensajes 3 y 4).
+     */
+    @GetMapping
+    public PageResponse<CardResponse> search(@RequestParam MultiValueMap<String, String> parameters) {
+        // Mensaje 5: buscarCartas(criterios, cursor, límite). Mensajes 13 y 14: 200 con las cartas y el cursor.
+        return PageResponse.from(searchCards.execute(new SearchCardsCommand(parameters)), CardResponse::from);
     }
 }

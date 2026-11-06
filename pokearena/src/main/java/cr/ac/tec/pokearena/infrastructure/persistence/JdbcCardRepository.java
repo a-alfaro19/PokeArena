@@ -1,7 +1,10 @@
 package cr.ac.tec.pokearena.infrastructure.persistence;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -9,13 +12,20 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import cr.ac.tec.pokearena.domain.model.Card;
+import cr.ac.tec.pokearena.domain.model.CardCode;
+import cr.ac.tec.pokearena.domain.model.CardFields;
+import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
+import cr.ac.tec.pokearena.domain.model.CardType;
+import cr.ac.tec.pokearena.domain.model.ImageStatus;
+import cr.ac.tec.pokearena.domain.model.Rarity;
+import cr.ac.tec.pokearena.domain.model.StoredCard;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
 
 /**
  * Propósito: implementación JDBC de {@link CardRepository} (tablas card y card_type_counter).
- * Responsabilidades: entregar el consecutivo de cada tipo de forma atómica, guardar cartas y leer el
- * destino de evolución de la habilidad de una carta.
- * Referencia: sección 7.1 ("Código único" y paso 10).
+ * Responsabilidades: entregar el consecutivo de cada tipo de forma atómica, guardar cartas, leer el
+ * destino de evolución de la habilidad de una carta y buscar cartas por criterios.
+ * Referencia: sección 7.1 ("Código único" y paso 10) y sección 7.3 (búsqueda).
  *
  * <p>El consecutivo usa una sola sentencia {@code UPDATE ... RETURNING}: PostgreSQL bloquea la fila
  * del tipo hasta que la transacción termina, así dos transacciones del mismo tipo nunca reciben el
@@ -26,9 +36,11 @@ import cr.ac.tec.pokearena.domain.repository.CardRepository;
 public class JdbcCardRepository implements CardRepository {
 
     private final JdbcTemplate jdbc;
+    private final AbilityRows abilityRows;
 
-    public JdbcCardRepository(JdbcTemplate jdbc) {
+    public JdbcCardRepository(JdbcTemplate jdbc, AbilityRows abilityRows) {
         this.jdbc = jdbc;
+        this.abilityRows = abilityRows;
     }
 
     @Override
@@ -66,5 +78,24 @@ public class JdbcCardRepository implements CardRepository {
                 JOIN ability a ON a.code = c.ability_code
                 WHERE c.code = ? AND a.evolves_to_card_code IS NOT NULL
                 """, (rs, row) -> rs.getString(1), cardCode).stream().findFirst();
+    }
+
+    /** La consulta la arma {@link CardSearchSql}; aquí solo se ejecuta y se convierte cada fila. */
+    @Override
+    public List<StoredCard> search(CardSearchCriteria criteria, long afterId, int maxRows) {
+        CardSearchSql.Query query = CardSearchSql.build(criteria, afterId, maxRows);
+        return jdbc.query(query.sql(), (rs, row) -> storedCard(rs), query.arguments().toArray());
+    }
+
+    private StoredCard storedCard(ResultSet rs) throws SQLException {
+        CardFields fields = new CardFields(rs.getString("name"), rs.getString("name_normalized"),
+                rs.getInt("cost"), rs.getInt("power"),
+                new CardType(rs.getString("type_code"), rs.getString("type_name")),
+                new Rarity(rs.getString("rarity_code"), rs.getString("rarity_name")));
+        Card card = new Card(new CardCode(rs.getString("code")), fields, abilityRows.map(rs),
+                rs.getString("image_large_url"), rs.getString("image_small_url"),
+                ImageStatus.valueOf(rs.getString("image_status")), rs.getBoolean("available"),
+                rs.getObject("created_at", OffsetDateTime.class).toInstant());
+        return new StoredCard(rs.getLong("id"), card);
     }
 }
