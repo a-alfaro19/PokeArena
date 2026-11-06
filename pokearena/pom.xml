@@ -32,6 +32,9 @@
 		<archunit.version>1.4.1</archunit.version>
 		<!-- nimbus-jose-jwt tampoco lo administra Spring Boot 4. -->
 		<nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
+		<!-- Imágenes (sección 3): tampoco las administra Spring Boot. -->
+		<thumbnailator.version>0.4.21</thumbnailator.version>
+		<twelvemonkeys.version>3.15.3</twelvemonkeys.version>
 	</properties>
 	<dependencies>
 		<!-- Capa API: controladores REST y servidor embebido. -->
@@ -71,6 +74,20 @@
 			<groupId>com.nimbusds</groupId>
 			<artifactId>nimbus-jose-jwt</artifactId>
 			<version>${nimbus-jose-jwt.version}</version>
+		</dependency>
+
+		<!-- Imágenes (corrección 6): Thumbnailator genera la miniatura con tamaño forzado; el
+		     plugin de TwelveMonkeys permite a ImageIO leer WebP (ImageIO no lo trae). Solo se
+		     usan en infrastructure.storage. -->
+		<dependency>
+			<groupId>net.coobird</groupId>
+			<artifactId>thumbnailator</artifactId>
+			<version>${thumbnailator.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.twelvemonkeys.imageio</groupId>
+			<artifactId>imageio-webp</artifactId>
+			<version>${twelvemonkeys.version}</version>
 		</dependency>
 
 		<!-- Pruebas: JUnit 5, AssertJ y soporte de Spring. -->
