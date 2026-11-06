@@ -23,7 +23,8 @@ import cr.ac.tec.pokearena.domain.model.Rarity;
  * Propósito: pruebas unitarias de la validación de criterios de búsqueda (historia 2.1.2).
  * Responsabilidades: comprobar que cada criterio válido se convierte bien y que cada criterio inválido
  * es INVALID_SEARCH_CRITERIA con el criterio en {@code field}. Los casos se portaron de
- * {@code legacy/.../CardSearchValidationTests} con los nombres y errores de la especificación.
+ * {@code CardSearchValidationTests} del código original del Sprint 1 (etiqueta
+ * {@code sprint1-original}) con los nombres y errores de la especificación.
  * Referencia: sección 7.3 y criterio C.3 (errores).
  */
 @DisplayName("Reglas de los criterios de búsqueda de cartas")

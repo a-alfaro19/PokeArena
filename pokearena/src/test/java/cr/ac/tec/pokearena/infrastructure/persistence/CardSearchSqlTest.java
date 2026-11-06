@@ -9,8 +9,8 @@ import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
 
 /**
  * Propósito: pruebas unitarias del armado de la consulta de búsqueda.
- * Responsabilidades: comprobar el escape de {@code %} y {@code _} (portado de legacy) y que los valores
- * del usuario van como parámetros, nunca dentro del texto SQL.
+ * Responsabilidades: comprobar el escape de {@code %} y {@code _} (portado del código original del
+ * Sprint 1) y que los valores del usuario van como parámetros, nunca dentro del texto SQL.
  * Referencia: sección 7.3 ("escapar % y _") y sección 5.5.
  */
 @DisplayName("Consulta SQL de la búsqueda de cartas")

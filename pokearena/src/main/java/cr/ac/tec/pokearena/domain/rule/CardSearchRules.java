@@ -18,7 +18,8 @@ import cr.ac.tec.pokearena.domain.model.Rarity;
  * Referencia: sección 7.3 y criterio C.3 ("un criterio con un valor inválido es rechazado indicando
  * el criterio").
  *
- * <p>Portado de {@code legacy/.../CardSearchCriteria} con los nombres de la especificación
+ * <p>Portado de {@code CardSearchCriteria} del código original del Sprint 1 (etiqueta
+ * {@code sprint1-original}) con los nombres de la especificación
  * ({@code ability} en lugar de {@code abilityCode}) y los errores tipados del formato único. Los
  * rangos de costo y poder son los mismos de Crear carta ({@link CardFieldRules}): una sola fuente.
  *

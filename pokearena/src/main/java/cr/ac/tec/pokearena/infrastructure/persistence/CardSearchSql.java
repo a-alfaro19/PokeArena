@@ -20,7 +20,7 @@ import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
  *   <li>Nombre: {@code name_normalized LIKE '%parte%'} sobre el nombre ya normalizado por el dominio
  *       (minúsculas y sin tildes). Usa el índice trigram {@code idx_card_name_normalized_trgm}. El
  *       carácter de escape es {@code \}: {@code 100%_} busca el texto literal, no comodines
- *       (portado de legacy, que usaba {@code !}).</li>
+ *       (portado del código original del Sprint 1, que usaba {@code !}).</li>
  *   <li>Disparador y efecto: se comparan con las columnas de la habilidad, así {@code HAB-000} (sin
  *       disparador ni efecto) nunca coincide con un disparador o un efecto.</li>
  *   <li>Orden y paginación: {@code id > ? ORDER BY id LIMIT ?}. El {@code id} es la clave primaria,

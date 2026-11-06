@@ -11,7 +11,7 @@ Documento para el agente de IA que ayuda a construir y corregir el código. **L�
 1. **Una fase a la vez.** Al terminar cada fase entrega un resumen (qué cambiaste, qué pruebas agregaste, qué quedó pendiente) y espera la aprobación del equipo antes de seguir.
 2. **No inventes requerimientos.** Si hay una ambigüedad, anótala y pregunta.
 3. **Una sola lógica para todas las historias.** Las seis historias deben verse escritas por la misma persona: misma estructura de paquetes, mismo manejo de errores, misma autorización, misma idempotencia, mismo estilo de pruebas.
-4. **Pasos pequeños.** Un cambio lógico por commit, con `./mvnw verify` en verde en cada commit. **No hagas commit ni push** sin que el equipo lo pida. Nunca trabajes directo en `main`.
+4. **Pasos pequeños.** Un cambio lógico por commit, con `.\mvnw.cmd clean verify` en verde en cada commit. **No hagas commit ni push** sin que el equipo lo pida. Nunca trabajes directo en `main`.
 5. **El código debe poder defenderse en una oral individual.** Prefiere claridad sobre ingenio, comenta las decisiones y explica cada una al entregar.
 6. **No uses Spring Security** ni frameworks que tomen decisiones de diseño de autenticación, llaves de API o multi-organización (restricción RES-01). Sí puedes usar una biblioteca que ejecute una decisión del equipo, por ejemplo verificar la firma de un JWT.
 7. **Aplica los principios y patrones solo donde simplifiquen** (sección 4.4). Cada patrón que uses debe poder justificarse en una frase.
@@ -580,13 +580,14 @@ El pipeline de GitHub Actions ejecuta compilación, todas las pruebas y `oasdiff
 
 ---
 
-## 15. Qué hacer con el código existente (modo "esqueleto nuevo y portar")
+## 15. Cómo se reconstruyó el Sprint 1 (historia)
 
-1. Etiquetar el estado actual (`git tag sprint1-original`).
-2. Crear la estructura nueva de 4.1 en el mismo repositorio. Mover el código viejo a una carpeta `legacy/` **fuera de la compilación** como referencia, que se borra antes del merge final.
-3. **Portar** (copiar y adaptar a la estructura nueva): la validación de criterios de búsqueda con los nombres de esta especificación; el escape de `%` y `_`; el índice trigram; la sentencia atómica del consecutivo (ahora dentro de la transacción); `CardType`; y los casos de prueba de la búsqueda como base de las nuevas.
-4. **Descartar:** `schema.sql`, `SearchSchemaMigration.java`, `V039`, las tablas `card_search_*`, los cursores UUID, los 410 y 503 de la búsqueda, `total`, `expiresAt`, `CardSearchErrorHandler`, `CardSearchException`, `SearchIdentity`, `ImageService` como clase concreta, la validación a medias de `CreateCardUseCase`, `DisposableDatabaseInitializer` (cuando las pruebas pasen con Testcontainers), y los starters de JPA.
-5. **Plazo de seguridad:** si la base compartida (fases 1 y 2) no está en verde al final del viernes 6 de noviembre, el equipo vuelve a corregir sobre lo existente.
+El código del Sprint 1 no seguía esta especificación, así que se reconstruyó con la estrategia "esqueleto nuevo y portar". Esta sección queda solo como registro de lo que se hizo; no tiene instrucciones pendientes.
+
+1. El estado original quedó en la etiqueta de Git **`sprint1-original`**, que es la única copia de ese código.
+2. Se creó la estructura de 4.1 en el mismo repositorio, y el código viejo se guardó temporalmente fuera de la compilación, solo como referencia. Se eliminó al cerrar las correcciones del Sprint 1.
+3. **Se portó** (copiado y adaptado a la estructura nueva): la validación de criterios de búsqueda, con los nombres de esta especificación (`CardSearchRules`); el escape de `%` y `_` (`CardSearchSql`); el índice trigram; la sentencia atómica del consecutivo, ahora dentro de la transacción; `CardType`; y los casos de prueba de la búsqueda, como base de `CardSearchRulesTest` y `CardSearchIT`.
+4. **Se descartó:** `schema.sql`, `SearchSchemaMigration.java`, `V039`, las tablas `card_search_*`, los cursores UUID, los 410 y 503 de la búsqueda, `total`, `expiresAt`, `CardSearchErrorHandler`, `CardSearchException`, `SearchIdentity`, `ImageService` como clase concreta, la validación a medias de `CreateCardUseCase`, `DisposableDatabaseInitializer` (reemplazado por Testcontainers), los starters de JPA, y los documentos y el script de pruebas manuales de la búsqueda vieja (`us39-*`, `test-us39.ps1`), que describían el diseño de instantáneas.
 
 ---
 
@@ -620,7 +621,7 @@ Al terminar cada fase, entrega el resumen y espera la aprobación.
 - [ ] Una solicitud inválida no deja archivos ni filas.
 - [ ] Ningún código de carta se repite bajo concurrencia; una identidad tiene una sola cuenta; la colección inicial se entrega una vez.
 - [ ] La búsqueda y el catálogo responden en menos de 300 ms con 10,000 cartas y no repiten ni omiten resultados.
-- [ ] Las pruebas de arquitectura pasan en CI y `./mvnw verify` pasa en una máquina limpia.
+- [ ] Las pruebas de arquitectura pasan en CI y `.\mvnw.cmd clean verify` pasa en una máquina limpia.
 - [ ] Cada integrante puede explicar cualquier archivo del código.
 
 ---

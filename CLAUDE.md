@@ -16,13 +16,15 @@ aceptación están en los anexos de ese archivo.
   un resumen y espera la aprobación del equipo antes de seguir.
 - No inventes requerimientos; ante una ambigüedad, pregunta.
 - No uses Spring Security ni frameworks que tomen decisiones de autenticación (RES-01).
-- El código existente está en modo "esqueleto nuevo y portar" (sección 15): lo viejo va a
-  `legacy/` como referencia, y de ahí solo se porta lo que indica la especificación.
+- El código del Sprint 1 ya se reconstruyó (sección 15). El estado anterior se conserva en la
+  etiqueta `sprint1-original`; no se vuelve a copiar código de ahí.
 - Las seis historias deben compartir estructura, errores, autorización e idempotencia.
 - Cero números mágicos: valores configurables o constantes con nombre.
 - Cada clase lleva un encabezado con propósito y responsabilidades, y los casos de uso
   citan el paso del diagrama (Anexo A) que implementan.
 - Todo el código debe poder defenderse en una oral: explica cada decisión que tomes.
+- Verifica cada cambio con `.\mvnw.cmd clean verify` (PowerShell, desde la carpeta `pokearena`,
+  con Docker Desktop encendido para las pruebas de integración): debe terminar en BUILD SUCCESS.
 
 ## Git
 - Nunca trabajes directo en `main`. No hagas commit ni push sin que yo lo pida.
