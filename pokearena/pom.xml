@@ -30,6 +30,8 @@
 		<java.version>21</java.version>
 		<!-- ArchUnit no lo administra Spring Boot: su versión se fija aquí, con nombre. -->
 		<archunit.version>1.4.1</archunit.version>
+		<!-- nimbus-jose-jwt tampoco lo administra Spring Boot 4. -->
+		<nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
 	</properties>
 	<dependencies>
 		<!-- Capa API: controladores REST y servidor embebido. -->
@@ -60,6 +62,15 @@
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
+		</dependency>
+
+		<!-- JWT: solo firma y verificación de las credenciales propias (HS256). Las decisiones
+		     (qué claims, vencimiento, roles) son del equipo, no de un framework (RES-01). Solo
+		     se usa en infrastructure.identity; ArchUnit lo verifica. -->
+		<dependency>
+			<groupId>com.nimbusds</groupId>
+			<artifactId>nimbus-jose-jwt</artifactId>
+			<version>${nimbus-jose-jwt.version}</version>
 		</dependency>
 
 		<!-- Pruebas: JUnit 5, AssertJ y soporte de Spring. -->

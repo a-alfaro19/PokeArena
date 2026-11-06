@@ -1,6 +1,8 @@
 package cr.ac.tec.pokearena.support;
 
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -18,6 +20,7 @@ import org.testcontainers.utility.DockerImageName;
  *   <li>{@code @ServiceConnection} hace que Spring Boot tome del contenedor la URL, el usuario
  *       y la contraseña, en lugar de las propiedades de {@code application.properties}.</li>
  *   <li>Flyway aplica la migración al arrancar el contexto, igual que en producción.</li>
+ *   <li>También entrega el secreto JWT, sin el cual la aplicación no arranca (sección 5.2).</li>
  * </ul>
  *
  * <p>Uso: la prueba extiende esta clase y declara su propio {@code @SpringBootTest}, porque
@@ -31,7 +34,18 @@ public abstract class PostgresIntegrationTestBase {
     @ServiceConnection
     protected static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(POSTGRES_IMAGE);
 
+    /**
+     * Secreto de firma de las pruebas: aleatorio en cada ejecución, así no hay un secreto escrito en
+     * el repositorio y las pruebas no dependen de que la máquina tenga APP_JWT_SECRET definida.
+     */
+    protected static final String TEST_JWT_SECRET = TestSecrets.randomJwtSecret();
+
     static {
         POSTGRES.start();
+    }
+
+    @DynamicPropertySource
+    static void securityProperties(DynamicPropertyRegistry registry) {
+        registry.add("app.security.jwt-secret", () -> TEST_JWT_SECRET);
     }
 }

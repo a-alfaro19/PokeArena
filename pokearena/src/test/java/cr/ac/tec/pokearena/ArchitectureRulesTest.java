@@ -34,6 +34,7 @@ class ArchitectureRulesTest {
     private static final String DOMAIN = BASE + ".domain..";
     private static final String DOMAIN_REPOSITORY = BASE + ".domain.repository..";
     private static final String INFRASTRUCTURE = BASE + ".infrastructure..";
+    private static final String INFRASTRUCTURE_IDENTITY = BASE + ".infrastructure.identity..";
 
     // Bloque de reglas 1, 2 y 4: quién puede usar a quién. Solo cuentan las dependencias
     // entre capas; las bibliotecas externas se revisan en las reglas siguientes.
@@ -116,6 +117,16 @@ class ArchitectureRulesTest {
                     call -> isCall(call, "java.util.UUID", "randomUUID")
                             || isCall(call, "java.lang.Math", "random")))
             .because("regla 5 de 4.2: identificadores y azar entran por el puerto RandomSource")
+            .allowEmptyShould(true);
+
+    // RES-01 y sección 3: la biblioteca JWT solo firma y verifica, y solo dentro de
+    // infrastructure.identity. El resto del sistema usa los puertos TokenIssuer y TokenVerifier.
+    @ArchTest
+    static final ArchRule jwtLibraryOnlyInIdentity = noClasses()
+            .that().resideOutsideOfPackage(INFRASTRUCTURE_IDENTITY)
+            .should().dependOnClassesThat().resideInAPackage("com.nimbusds..")
+            .because("RES-01: la biblioteca JWT solo ejecuta la firma y la verificación en "
+                    + "infrastructure.identity; las demás capas usan TokenIssuer y TokenVerifier")
             .allowEmptyShould(true);
 
     private static DescribedPredicate<JavaMethodCall> callTo(
