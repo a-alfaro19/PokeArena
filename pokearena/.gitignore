@@ -37,3 +37,6 @@ build/
 
 ## Environment Variables ##
 .env
+
+## Imágenes guardadas en desarrollo (app.images.root-dir) ##
+/data/
