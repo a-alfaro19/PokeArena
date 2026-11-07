@@ -17,11 +17,11 @@ public enum InitialCollectionStatus {
     ALREADY_DELIVERED(null),
 
     /** El catálogo todavía no tiene 15 cartas Comunes: la cuenta existe sin colección ni cubos. */
-    PENDING_NO_CARDS("El juego aún no está disponible: todavía no hay cartas suficientes para tu colección "
-            + "inicial. La recibirás en un próximo ingreso."),
+    PENDING_NO_CARDS("El juego aún no está disponible: todavía no hay cartas disponibles, tu colección se "
+            + "entregará en un ingreso posterior."),
 
     /** La entrega falló sin dejar nada a medias: se completará en el siguiente ingreso. */
-    PENDING_ERROR("No pudimos entregar tu colección inicial en este momento. Se completará en tu próximo ingreso.");
+    PENDING_ERROR("No pudimos entregar tu colección, se reintentará en tu próximo ingreso.");
 
     private final String message;
 

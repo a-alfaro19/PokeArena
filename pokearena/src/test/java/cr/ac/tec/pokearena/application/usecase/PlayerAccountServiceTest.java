@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import cr.ac.tec.pokearena.application.dto.Session;
+import cr.ac.tec.pokearena.application.port.InitialCollectionDelivery;
+import cr.ac.tec.pokearena.application.port.InitialCollectionStatus;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.domain.model.Player;
@@ -153,11 +157,18 @@ class PlayerAccountServiceTest {
         private final TokenIssuer issuer = user -> new TokenIssuer.IssuedToken("token-" + user.playerId(),
                 Duration.ofMinutes(15), NOW.plus(Duration.ofMinutes(15)));
 
+        // Jugadores a los que se pidió entregar la colección inicial.
+        private final List<UUID> deliveries = new ArrayList<>();
+        private final InitialCollectionDelivery recordingDelivery = playerId -> {
+            deliveries.add(playerId);
+            return InitialCollectionStatus.DELIVERED;
+        };
+
         @Test
         @DisplayName("ADMIN y PLAYER se crean como jugadores reales con proveedor dev")
         void createsRealDevPlayers() {
             IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(
-                    service(Set.of(new ProviderIdentity("dev", "dev-admin"))), issuer);
+                    service(Set.of(new ProviderIdentity("dev", "dev-admin"))), recordingDelivery, issuer);
 
             Session admin = useCase.execute(Role.ADMIN);
             Session player = useCase.execute(Role.PLAYER);
@@ -171,11 +182,35 @@ class PlayerAccountServiceTest {
         @Test
         @DisplayName("Si la configuración no declara dev:dev-admin, no entrega credenciales de otro rol")
         void refusesMismatchedRole() {
-            IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(service(Set.of()), issuer);
+            IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(service(Set.of()), recordingDelivery, issuer);
 
             assertThatThrownBy(() -> useCase.execute(Role.ADMIN))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("app.admin.identities");
+        }
+
+        @Test
+        @DisplayName("El jugador de prueba PLAYER recibe la colección inicial por la misma vía; el ADMIN de prueba no")
+        void onlyDevPlayerReceivesCollection() {
+            IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(
+                    service(Set.of(new ProviderIdentity("dev", "dev-admin"))), recordingDelivery, issuer);
+
+            useCase.execute(Role.ADMIN);
+            Session player = useCase.execute(Role.PLAYER);
+
+            assertThat(deliveries).containsExactly(player.player().id());
+        }
+
+        @Test
+        @DisplayName("Si la entrega del jugador de prueba falla, la sesión de prueba se abre igual")
+        void failedDeliveryDoesNotBlockDevSession() {
+            IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(service(Set.of()), playerId -> {
+                throw new IllegalStateException("falla simulada");
+            }, issuer);
+
+            Session player = useCase.execute(Role.PLAYER);
+
+            assertThat(player.token().value()).isNotBlank();
         }
     }
 }

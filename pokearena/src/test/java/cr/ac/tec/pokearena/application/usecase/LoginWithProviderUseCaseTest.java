@@ -59,7 +59,8 @@ class LoginWithProviderUseCaseTest {
         return new TokenIssuer.IssuedToken("token-" + user.playerId(), TTL, NOW.plus(TTL));
     };
 
-    private InitialCollectionDelivery delivery = new ProvisionalInitialCollectionDelivery();
+    // Por defecto, una entrega que encuentra el catálogo sin Comunes suficientes.
+    private InitialCollectionDelivery delivery = playerId -> InitialCollectionStatus.PENDING_NO_CARDS;
 
     /**
      * Proveedor falso: acepta los tokens {@code valido:<sub>:<correo>:<nombre>} (correo y nombre opcionales),
@@ -243,16 +244,17 @@ class LoginWithProviderUseCaseTest {
     class InitialCollection {
 
         @Test
-        @DisplayName("La implementación provisional informa PENDING_NO_CARDS con un mensaje para el jugador")
-        void provisionalDelivery() {
+        @DisplayName("Informa el estado que devuelve la entrega; PENDING_NO_CARDS lleva su mensaje para el jugador")
+        void reportsDeliveryStatus() {
             LoginResult result = login("google", "valido:sub-1");
 
             assertThat(result.initialCollection()).isEqualTo(InitialCollectionStatus.PENDING_NO_CARDS);
-            assertThat(result.initialCollection().message()).contains("aún no está disponible");
+            assertThat(result.initialCollection().message())
+                    .contains("todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior");
         }
 
         @Test
-        @DisplayName("8.1 paso 6: si la entrega falla, el ingreso no se bloquea y el estado es PENDING_ERROR")
+        @DisplayName("8.1 paso 6: si la entrega falla, el ingreso no se bloquea y el estado es PENDING_ERROR con su mensaje")
         void deliveryFailureDoesNotBlockLogin() {
             delivery = playerId -> {
                 throw new IllegalStateException("falla simulada");
@@ -261,7 +263,25 @@ class LoginWithProviderUseCaseTest {
             LoginResult result = login("google", "valido:sub-1");
 
             assertThat(result.initialCollection()).isEqualTo(InitialCollectionStatus.PENDING_ERROR);
+            assertThat(result.initialCollection().message())
+                    .isEqualTo("No pudimos entregar tu colección, se reintentará en tu próximo ingreso.");
             assertThat(result.session().token().value()).isNotBlank();
+        }
+
+        @Test
+        @DisplayName("8.1 paso 6: la entrega ocurre después de crear la cuenta, en otra transacción")
+        void deliveryAfterAccountInSeparateTransaction() {
+            List<Integer> transactionsSeenByDelivery = new ArrayList<>();
+            delivery = playerId -> {
+                // La cuenta ya existe y su transacción ya terminó cuando empieza la entrega.
+                assertThat(players.created()).hasSize(1);
+                transactionsSeenByDelivery.add(unitOfWork.transactions);
+                return InitialCollectionStatus.DELIVERED;
+            };
+
+            login("google", "valido:sub-1");
+
+            assertThat(transactionsSeenByDelivery).containsExactly(1);
         }
 
         @Test

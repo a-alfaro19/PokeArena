@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import cr.ac.tec.pokearena.application.port.Clock;
+import cr.ac.tec.pokearena.application.port.InitialCollectionDelivery;
 import cr.ac.tec.pokearena.application.port.InitialCollectionStatus;
 import cr.ac.tec.pokearena.application.port.RandomSource;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
@@ -47,9 +48,11 @@ import cr.ac.tec.pokearena.domain.rule.InitialCollectionRules;
  *       cartas no se cargan en memoria, y con una semilla fija las pruebas son reproducibles.</li>
  *   <li>Si algo falla, la excepción se propaga sin convertirse en un estado: quien invoca (el inicio de
  *       sesión) decide cómo informarla ({@code PENDING_ERROR}) y el siguiente ingreso reintenta.</li>
+ *   <li>Implementa el puerto {@link InitialCollectionDelivery}: así el inicio de sesión (paso 6 del
+ *       diagrama A.4) depende del puerto y no de esta clase, y cada historia se prueba por separado.</li>
  * </ul>
  */
-public class DeliverInitialCollectionUseCase {
+public class DeliverInitialCollectionUseCase implements InitialCollectionDelivery {
 
     private final UnitOfWork unitOfWork;
     private final PlayerRepository players;
@@ -71,6 +74,17 @@ public class DeliverInitialCollectionUseCase {
         this.random = random;
         this.clock = clock;
         this.rules = rules;
+    }
+
+    /**
+     * Puerto {@link InitialCollectionDelivery}, que usa el inicio de sesión (sección 8.1, paso 6). El
+     * resultado de {@link #execute} ya es un {@link InitialCollectionStatus} ({@code DELIVERED},
+     * {@code ALREADY_DELIVERED} o {@code PENDING_NO_CARDS}), así que pasa sin cambios. Una falla se
+     * propaga: {@code PENDING_ERROR} lo decide quien invoca, porque es quien sabe que el ingreso sigue.
+     */
+    @Override
+    public InitialCollectionStatus deliver(UUID playerId) {
+        return execute(playerId);
     }
 
     /**

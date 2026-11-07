@@ -16,32 +16,46 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import com.nimbusds.jose.jwk.RSAKey;
 
+import cr.ac.tec.pokearena.api.web.CorrelationIdFilter;
 import cr.ac.tec.pokearena.application.port.AuthenticatedUser;
 import cr.ac.tec.pokearena.application.port.IdentityProvider;
+import cr.ac.tec.pokearena.application.port.InitialCollectionDelivery;
 import cr.ac.tec.pokearena.application.port.TokenVerifier;
 import cr.ac.tec.pokearena.application.port.VerifiedIdentity;
+import cr.ac.tec.pokearena.application.usecase.DeliverInitialCollectionUseCase;
 import cr.ac.tec.pokearena.domain.error.AuthenticationException;
+import cr.ac.tec.pokearena.domain.model.CubeMovement;
 import cr.ac.tec.pokearena.domain.model.Role;
+import cr.ac.tec.pokearena.domain.repository.CubeRepository;
+import cr.ac.tec.pokearena.infrastructure.persistence.JdbcCubeRepository;
 import cr.ac.tec.pokearena.support.FakeGoogleIdentityServer;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
+import cr.ac.tec.pokearena.support.TestCards;
 import cr.ac.tec.pokearena.support.TestPlayers;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -51,8 +65,14 @@ import tools.jackson.databind.json.JsonMapper;
  * Responsabilidades: verificar {@code POST /api/v1/sesiones} con la aplicación completa, PostgreSQL real y
  * un Google simulado (llaves RSA generadas en la prueba y un JWKS servido por un servidor local): éxito,
  * cada error con su status y su type, que un token rechazado o un proveedor caído no dejan ninguna cuenta,
- * la concurrencia de dos primeros ingresos y que un segundo proveedor no cambia la autorización.
- * Referencia: sección 8.1, Anexo A.4 y Anexo C.4.
+ * la concurrencia de dos primeros ingresos y que un segundo proveedor no cambia la autorización. También
+ * la entrega de la colección inicial durante el ingreso (paso 6): entregada, ya entregada, sin cartas
+ * suficientes, con falla simulada y con ingresos simultáneos.
+ * Referencia: sección 8.1, sección 8.2, Anexos A.4 y A.5, y Anexos C.4 y C.5.
+ *
+ * <p>Cada prueba parte de un catálogo vacío ({@link TestCards}); las de la colección siembran sus Comunes.
+ * La falla de la entrega se simula con un {@link CubeRepository} real envuelto ({@code @Primary}) que lanza
+ * una excepción cuando la prueba lo pide: ocurre después de guardar las cartas del jugador.
  *
  * <p>El segundo proveedor ({@code otro}) es un bean de prueba que implementa {@link IdentityProvider}: es
  * todo lo que hace falta para agregarlo. La prueba lo usa para iniciar sesión y luego entrar a una
@@ -62,7 +82,8 @@ import tools.jackson.databind.json.JsonMapper;
         properties = "app.admin.identities=google:" + SessionControllerIT.GOOGLE_ADMIN_SUBJECT
                 + ",otro:" + SessionControllerIT.OTHER_ADMIN_SUBJECT)
 // Explícito: las clases @Nested no detectan solas la configuración anidada.
-@Import(SessionControllerIT.SecondProviderConfiguration.class)
+@Import({ SessionControllerIT.SecondProviderConfiguration.class, SessionControllerIT.FaultyCubesConfiguration.class })
+@ExtendWith(OutputCaptureExtension.class)
 @DisplayName("Historia 1.1.1: inicio de sesión con proveedor (API completa)")
 class SessionControllerIT extends PostgresIntegrationTestBase {
 
@@ -132,6 +153,21 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
     @Autowired
     private TokenVerifier tokenVerifier;
 
+    @Autowired
+    private FaultyCubeRepository faultyCubes;
+
+    @Autowired
+    private ApplicationContext context;
+
+    private TestCards catalog;
+
+    /** Cada prueba parte de un catálogo vacío: así el estado de la colección inicial es conocido. */
+    @BeforeEach
+    void emptyCatalog() {
+        catalog = new TestCards(jdbc);
+        catalog.reset();
+    }
+
     @AfterEach
     void deleteAccounts() {
         for (String[] identity : identities) {
@@ -141,6 +177,40 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
             TestPlayers.delete(jdbc, ids);
         }
         GOOGLE.setDown(false);
+        faultyCubes.failing.set(false);
+        catalog.reset();
+    }
+
+    /**
+     * Repositorio real de cubos que puede simular una falla a mitad de la entrega: después de guardar las
+     * cartas del jugador y antes de los cubos y la marca. {@code @Primary}: lo recibe el caso de uso real.
+     */
+    static class FaultyCubeRepository implements CubeRepository {
+
+        final AtomicBoolean failing = new AtomicBoolean();
+        private final CubeRepository real;
+
+        FaultyCubeRepository(CubeRepository real) {
+            this.real = real;
+        }
+
+        @Override
+        public void apply(CubeMovement movement) {
+            if (failing.get()) {
+                throw new IllegalStateException("falla simulada al mover los cubos");
+            }
+            real.apply(movement);
+        }
+    }
+
+    @TestConfiguration
+    static class FaultyCubesConfiguration {
+
+        @Bean
+        @Primary
+        FaultyCubeRepository faultyCubeRepository(JdbcCubeRepository real) {
+            return new FaultyCubeRepository(real);
+        }
     }
 
     /** Un sub nuevo de Google, que se borra al terminar la prueba. */
@@ -184,7 +254,7 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
         }
 
         @Test
-        @DisplayName("C.4 éxito: el primer ingreso crea la cuenta con rol de jugador y Elo inicial 0, aún sin cubos")
+        @DisplayName("C.4 éxito: el primer ingreso crea la cuenta con rol de jugador y Elo inicial 0; los cubos llegan con la colección")
         void firstLoginCreatesPlayerAccount() throws Exception {
             String subject = newSubject();
 
@@ -199,12 +269,10 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
                     """, subject);
             assertThat(row.get("role")).isEqualTo("PLAYER");
             assertThat(((Number) row.get("elo")).intValue()).isZero();
-            // Los cubos llegan con la colección inicial (3.1.1), que todavía es provisional.
+            // Los cubos llegan con la colección inicial (3.1.1). Aquí el catálogo está vacío: todavía no hay.
             assertThat(((Number) row.get("cube_balance")).intValue()).isZero();
             assertThat(row.get("initial_collection_status")).isEqualTo("PENDING");
-            JsonNode collection = body.get("initialCollection");
-            assertThat(collection.get("status").asString()).isEqualTo("PENDING_NO_CARDS");
-            assertThat(collection.get("message").asString()).contains("aún no está disponible");
+            assertThat(body.get("initialCollection").get("status").asString()).isEqualTo("PENDING_NO_CARDS");
         }
 
         @Test
@@ -425,6 +493,187 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
         }
     }
 
+    @Nested
+    @DisplayName("Colección inicial al iniciar sesión (8.1 paso 6 y 8.2)")
+    class InitialCollectionOnLogin {
+
+        private static final int AVAILABLE_COMMONS = 20;
+        private static final int INITIAL_CARDS = 15;
+        private static final long INITIAL_CUBES = 1000;
+
+        @Test
+        @DisplayName("El único bean del puerto InitialCollectionDelivery es el caso de uso real de la colección inicial")
+        void onlyOneDeliveryBean() {
+            assertThat(context.getBeansOfType(InitialCollectionDelivery.class).values()).singleElement()
+                    .isInstanceOf(DeliverInitialCollectionUseCase.class);
+        }
+
+        @Test
+        @DisplayName("C.5 éxito: el primer ingreso con suficientes Comunes entrega DELIVERED, 15 cartas distintas, 1.000 cubos e INITIAL_GRANT como primer movimiento")
+        void firstLoginDelivers() throws Exception {
+            catalog.commons(AVAILABLE_COMMONS);
+            String subject = newSubject();
+
+            JsonNode body = login("google", googleToken(subject).sign()).body();
+
+            JsonNode collection = body.get("initialCollection");
+            assertThat(collection.get("status").asString()).isEqualTo("DELIVERED");
+            assertThat(collection.get("message").isNull()).isTrue();
+            UUID player = UUID.fromString(body.get("player").get("id").asString());
+            assertThat(jdbc.queryForObject("""
+                    SELECT count(DISTINCT pc.card_code) FROM player_card pc JOIN card c ON c.code = pc.card_code
+                    WHERE pc.player_id = ? AND c.rarity_code = 'COMMON' AND pc.copies = 1
+                    """, Integer.class, player)).isEqualTo(INITIAL_CARDS);
+            assertThat(cardCount(player)).isEqualTo(INITIAL_CARDS);
+            assertThat(balance(player)).isEqualTo(INITIAL_CUBES);
+            Map<String, Object> first = jdbc.queryForMap(
+                    "SELECT amount, reason FROM cube_movement WHERE player_id = ? ORDER BY id LIMIT 1", player);
+            assertThat(first.get("reason")).isEqualTo("INITIAL_GRANT");
+            assertThat(((Number) first.get("amount")).longValue()).isEqualTo(INITIAL_CUBES);
+        }
+
+        @Test
+        @DisplayName("C.5 alterno: el segundo ingreso responde ALREADY_DELIVERED, sin mensaje, y no entrega nada nuevo")
+        void secondLoginAlreadyDelivered() throws Exception {
+            catalog.commons(AVAILABLE_COMMONS);
+            String subject = newSubject();
+            UUID player = UUID.fromString(login("google", googleToken(subject).sign()).body()
+                    .get("player").get("id").asString());
+            List<String> before = cardsOf(player);
+
+            JsonNode collection = login("google", googleToken(subject).sign()).body().get("initialCollection");
+
+            assertThat(collection.get("status").asString()).isEqualTo("ALREADY_DELIVERED");
+            assertThat(collection.get("message").isNull()).isTrue();
+            assertThat(cardsOf(player)).isEqualTo(before);
+            assertThat(balance(player)).isEqualTo(INITIAL_CUBES);
+            assertThat(movementCount(player)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("C.5 error: con menos de 15 Comunes el jugador ingresa con PENDING_NO_CARDS, sin cartas ni cubos; con las cartas que faltan, el siguiente ingreso la entrega")
+        void notEnoughCommonsThenDelivered() throws Exception {
+            catalog.commons(INITIAL_CARDS - 1);
+            String subject = newSubject();
+
+            Result first = login("google", googleToken(subject).sign());
+
+            assertThat(first.status()).isEqualTo(200);
+            assertThat(first.body().get("accessToken").asString()).isNotBlank();
+            JsonNode collection = first.body().get("initialCollection");
+            assertThat(collection.get("status").asString()).isEqualTo("PENDING_NO_CARDS");
+            assertThat(collection.get("message").asString())
+                    .contains("todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior");
+            UUID player = UUID.fromString(first.body().get("player").get("id").asString());
+            assertThat(cardCount(player)).isZero();
+            assertThat(balance(player)).isZero();
+            assertThat(movementCount(player)).isZero();
+
+            catalog.commons(1);
+            JsonNode second = login("google", googleToken(subject).sign()).body();
+
+            assertThat(second.get("initialCollection").get("status").asString()).isEqualTo("DELIVERED");
+            assertThat(cardCount(player)).isEqualTo(INITIAL_CARDS);
+            assertThat(balance(player)).isEqualTo(INITIAL_CUBES);
+        }
+
+        @Test
+        @DisplayName("C.5 error: si la entrega falla, el ingreso funciona con PENDING_ERROR y un aviso con el correlationId, sin nada parcial; el siguiente ingreso la completa")
+        void failedDeliveryDoesNotBlockLogin(CapturedOutput output) throws Exception {
+            catalog.commons(AVAILABLE_COMMONS);
+            String subject = newSubject();
+            String correlationId = "it-coleccion-" + UUID.randomUUID();
+            faultyCubes.failing.set(true);
+
+            Result first = loginWithCorrelationId("google", googleToken(subject).sign(), correlationId);
+
+            assertThat(first.status()).isEqualTo(200);
+            assertThat(first.body().get("accessToken").asString()).isNotBlank();
+            JsonNode collection = first.body().get("initialCollection");
+            assertThat(collection.get("status").asString()).isEqualTo("PENDING_ERROR");
+            assertThat(collection.get("message").asString())
+                    .isEqualTo("No pudimos entregar tu colección, se reintentará en tu próximo ingreso.");
+            UUID player = UUID.fromString(first.body().get("player").get("id").asString());
+            // La cuenta existe (otra transacción), pero la entrega se revirtió completa.
+            assertThat(accountsOf("google", subject)).isEqualTo(1);
+            assertThat(cardCount(player)).isZero();
+            assertThat(balance(player)).isZero();
+            assertThat(movementCount(player)).isZero();
+            assertThat(jdbc.queryForObject("SELECT initial_collection_status FROM player WHERE id = ?", String.class,
+                    player)).isEqualTo("PENDING");
+            // El aviso queda en el log con el correlationId de la solicitud.
+            assertThat(output.getAll().lines()
+                    .filter(line -> line.contains("No se pudo entregar la colección inicial")))
+                    .anySatisfy(line -> assertThat(line).contains(correlationId));
+
+            faultyCubes.failing.set(false);
+            JsonNode second = login("google", googleToken(subject).sign()).body();
+
+            assertThat(second.get("initialCollection").get("status").asString()).isEqualTo("DELIVERED");
+            assertThat(cardCount(player)).isEqualTo(INITIAL_CARDS);
+            assertThat(balance(player)).isEqualTo(INITIAL_CUBES);
+        }
+
+        @Test
+        @DisplayName("C.4 y C.5 alternos: 10 primeros ingresos simultáneos de una identidad nueva crean una cuenta y entregan la colección una sola vez")
+        void simultaneousFirstLoginsDeliverOnce() throws Exception {
+            catalog.commons(AVAILABLE_COMMONS);
+            String subject = newSubject();
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<Result>> results = new ArrayList<>();
+            ExecutorService threads = Executors.newFixedThreadPool(SIMULTANEOUS_LOGINS);
+            try {
+                for (int i = 0; i < SIMULTANEOUS_LOGINS; i++) {
+                    String token = googleToken(subject).sign();
+                    Callable<Result> attempt = () -> {
+                        start.await();
+                        return login("google", token);
+                    };
+                    results.add(threads.submit(attempt));
+                }
+                start.countDown();
+
+                List<String> statuses = new ArrayList<>();
+                List<String> playerIds = new ArrayList<>();
+                for (Future<Result> future : results) {
+                    Result result = future.get();
+                    assertThat(result.status()).isEqualTo(200);
+                    statuses.add(result.body().get("initialCollection").get("status").asString());
+                    playerIds.add(result.body().get("player").get("id").asString());
+                }
+
+                assertThat(accountsOf("google", subject)).isEqualTo(1);
+                assertThat(playerIds).containsOnly(playerIds.getFirst());
+                assertThat(statuses).filteredOn("DELIVERED"::equals).hasSize(1);
+                assertThat(statuses).filteredOn("ALREADY_DELIVERED"::equals).hasSize(SIMULTANEOUS_LOGINS - 1);
+                UUID player = UUID.fromString(playerIds.getFirst());
+                assertThat(cardCount(player)).isEqualTo(INITIAL_CARDS);
+                assertThat(balance(player)).isEqualTo(INITIAL_CUBES);
+                assertThat(movementCount(player)).isEqualTo(1);
+            } finally {
+                threads.shutdownNow();
+            }
+        }
+
+        private List<String> cardsOf(UUID player) {
+            return jdbc.queryForList("SELECT card_code FROM player_card WHERE player_id = ? ORDER BY card_code",
+                    String.class, player);
+        }
+
+        private int cardCount(UUID player) {
+            return jdbc.queryForObject("SELECT count(*) FROM player_card WHERE player_id = ?", Integer.class, player);
+        }
+
+        private int movementCount(UUID player) {
+            return jdbc.queryForObject("SELECT count(*) FROM cube_movement WHERE player_id = ?", Integer.class,
+                    player);
+        }
+
+        private long balance(UUID player) {
+            return jdbc.queryForObject("SELECT cube_balance FROM player WHERE id = ?", Long.class, player);
+        }
+    }
+
     // =========================================================================================
 
     private Result login(String provider, String idToken) throws Exception {
@@ -435,6 +684,16 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
         HttpResponse<String> response = http.send(HttpRequest.newBuilder(uri(PATH))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+        return new Result(response.statusCode(), json.readTree(response.body()));
+    }
+
+    private Result loginWithCorrelationId(String provider, String idToken, String correlationId) throws Exception {
+        HttpResponse<String> response = http.send(HttpRequest.newBuilder(uri(PATH))
+                .header("Content-Type", "application/json")
+                .header(CorrelationIdFilter.HEADER, correlationId)
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        json.writeValueAsString(Map.of("provider", provider, "idToken", idToken))))
+                .build(), HttpResponse.BodyHandlers.ofString());
         return new Result(response.statusCode(), json.readTree(response.body()));
     }
 

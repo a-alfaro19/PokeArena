@@ -9,9 +9,8 @@ import java.util.UUID;
  * Referencia: sección 8.1, paso 6, y sección 8.2.
  *
  * <p>El inicio de sesión depende de este puerto y no del caso de uso concreto, así cada historia se
- * implementa y se prueba por separado. Hoy lo implementa
- * {@code ProvisionalInitialCollectionDelivery} (temporal); la tarea de la historia 3.1.1 lo reemplaza
- * por {@code DeliverInitialCollectionUseCase}, sin cambiar el inicio de sesión.
+ * implementa y se prueba por separado. Lo implementa {@code DeliverInitialCollectionUseCase}, el único
+ * bean de este puerto.
  */
 public interface InitialCollectionDelivery {
 

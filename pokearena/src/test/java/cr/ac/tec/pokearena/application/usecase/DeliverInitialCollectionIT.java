@@ -38,8 +38,8 @@ import cr.ac.tec.pokearena.domain.repository.CubeRepository;
 import cr.ac.tec.pokearena.domain.repository.PlayerCardRepository;
 import cr.ac.tec.pokearena.domain.repository.PlayerRepository;
 import cr.ac.tec.pokearena.domain.rule.InitialCollectionRules;
-import cr.ac.tec.pokearena.domain.rule.NameNormalizer;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
+import cr.ac.tec.pokearena.support.TestCards;
 import cr.ac.tec.pokearena.support.TestPlayers;
 
 /**
@@ -63,7 +63,6 @@ class DeliverInitialCollectionIT extends PostgresIntegrationTestBase {
     private static final int SIMULTANEOUS_DELIVERIES = 8;
     private static final long SEED = 20261108L;
     private static final long OTHER_SEED = 777L;
-    private static final String[] TYPES = { "FUE", "AGU", "PLA", "ELE", "PSI", "LUC" };
 
     @Autowired
     private DeliverInitialCollectionUseCase useCase;
@@ -96,24 +95,25 @@ class DeliverInitialCollectionIT extends PostgresIntegrationTestBase {
     private JdbcTemplate jdbc;
 
     private final List<UUID> createdPlayers = new ArrayList<>();
-    private int nextCardNumber;
+    private TestCards catalog;
 
     @BeforeEach
     void knownCatalog() {
-        resetCatalog();
-        commons(AVAILABLE_COMMONS);
+        catalog = new TestCards(jdbc);
+        catalog.reset();
+        catalog.commons(AVAILABLE_COMMONS);
         for (int i = 0; i < EXCLUDED_PER_KIND; i++) {
-            card("COMMON", false, true);     // Común no disponible (miniatura pendiente)
-            card("COMMON", true, false);     // Común desactivada
-            card("UNCOMMON", true, true);    // otra rareza
-            card("LEGENDARY", true, true);
+            catalog.card("COMMON", false, true);     // Común no disponible (miniatura pendiente)
+            catalog.card("COMMON", true, false);     // Común desactivada
+            catalog.card("UNCOMMON", true, true);    // otra rareza
+            catalog.card("LEGENDARY", true, true);
         }
     }
 
     @AfterEach
     void cleanUp() {
         TestPlayers.delete(jdbc, createdPlayers);
-        resetCatalog();
+        catalog.reset();
     }
 
     @Nested
@@ -173,11 +173,11 @@ class DeliverInitialCollectionIT extends PostgresIntegrationTestBase {
         @Test
         @DisplayName("C.5 error: con menos de 15 Comunes disponibles la cuenta queda sin colección ni cubos, PENDING_NO_CARDS, y se completa en un ingreso posterior")
         void notEnoughCommons() {
-            resetCatalog();
-            commons(rules.cardCount() - 1);
+            catalog.reset();
+            catalog.commons(rules.cardCount() - 1);
             // Las no disponibles y las desactivadas no cuentan, aunque sean Comunes.
-            card("COMMON", false, true);
-            card("COMMON", true, false);
+            catalog.card("COMMON", false, true);
+            catalog.card("COMMON", true, false);
             UUID player = newPlayer();
 
             assertThat(useCase.execute(player)).isEqualTo(InitialCollectionStatus.PENDING_NO_CARDS);
@@ -185,7 +185,7 @@ class DeliverInitialCollectionIT extends PostgresIntegrationTestBase {
             assertNothingDelivered(player);
 
             // Cuando hay cartas suficientes, el siguiente ingreso completa la entrega.
-            commons(1);
+            catalog.commons(1);
             assertThat(useCase.execute(player)).isEqualTo(InitialCollectionStatus.DELIVERED);
             assertThat(cardCount(player)).isEqualTo(15);
         }
@@ -334,31 +334,6 @@ class DeliverInitialCollectionIT extends PostgresIntegrationTestBase {
         assertThat(balance(player)).isZero();
         assertThat(movementCount(player)).isZero();
         assertThat(state(player)).isEqualTo("PENDING");
-    }
-
-    private void commons(int count) {
-        for (int i = 0; i < count; i++) {
-            card("COMMON", true, true);
-        }
-    }
-
-    private void card(String rarity, boolean available, boolean active) {
-        nextCardNumber++;
-        String type = TYPES[nextCardNumber % TYPES.length];
-        String code = "PKA-%s-%03d".formatted(type, nextCardNumber);
-        String name = "Colección inicial " + nextCardNumber;
-        jdbc.update("""
-                INSERT INTO card (code, name, name_normalized, cost, power, type_code, rarity_code, ability_code,
-                                  image_large_url, image_small_url, image_status, available, active, created_at)
-                VALUES (?, ?, ?, 1, 1, ?, ?, 'HAB-000', ?, ?, ?, ?, ?, now())
-                """, code, name, NameNormalizer.normalize(name), type, rarity, "/images/cards/" + code + "/large.png",
-                available ? "/images/cards/" + code + "/small.png" : null, available ? "READY" : "PENDING_RETRY",
-                available, active);
-    }
-
-    private void resetCatalog() {
-        jdbc.update("DELETE FROM card");
-        jdbc.update("UPDATE card_type_counter SET last_number = 0");
     }
 
     private List<String> cardsOf(UUID player) {

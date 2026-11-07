@@ -62,6 +62,11 @@ paths:
         siguientes la reutilizan y recalculan el rol. La respuesta trae las credenciales propias de
         PokéArena, que son las únicas que aceptan las demás operaciones (nunca el token del proveedor).
 
+        Después de tener la cuenta, y en otra transacción, se intenta entregar la colección inicial
+        (sección 8.2): 15 cartas Comunes distintas y 1.000 cubos, una sola vez. La entrega nunca impide
+        el ingreso: su resultado viaja en `initialCollection`, y si falla la sesión se abre igual con
+        `PENDING_ERROR` (no queda nada a medias y el siguiente ingreso la reintenta).
+
         Proveedores registrados: `google` (deshabilitado si no se configura `APP_GOOGLE_CLIENT_ID`).
         El proveedor `dev` de las credenciales de prueba no se acepta aquí.
       security: []
@@ -651,13 +656,14 @@ components:
           type: string
           enum: [DELIVERED, ALREADY_DELIVERED, PENDING_NO_CARDS, PENDING_ERROR]
           description: |
-            DELIVERED: se entregó en este ingreso. ALREADY_DELIVERED: se había entregado antes.
-            PENDING_NO_CARDS: el catálogo aún no tiene 15 cartas Comunes. PENDING_ERROR: la entrega
-            falló sin dejar nada a medias y se reintenta en el siguiente ingreso.
+            DELIVERED: se entregó en este ingreso (15 cartas y 1.000 cubos). ALREADY_DELIVERED: se
+            había entregado antes; no se entrega de nuevo. PENDING_NO_CARDS: el catálogo aún no tiene
+            15 cartas Comunes disponibles; la cuenta queda sin colección ni cubos. PENDING_ERROR: la
+            entrega falló sin dejar nada a medias; el ingreso continúa y se reintenta en el siguiente.
         message:
           type: [string, 'null']
-          description: Texto para el jugador cuando la colección está pendiente; null si no lo está.
-          example: 'El juego aún no está disponible: todavía no hay cartas suficientes para tu colección inicial. La recibirás en un próximo ingreso.'
+          description: Texto para el jugador en PENDING_NO_CARDS y PENDING_ERROR; null en DELIVERED y ALREADY_DELIVERED.
+          example: 'El juego aún no está disponible: todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior.'
 
     SessionPlayer:
       type: object
