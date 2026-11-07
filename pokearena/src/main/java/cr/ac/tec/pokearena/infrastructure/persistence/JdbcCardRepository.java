@@ -20,12 +20,15 @@ import cr.ac.tec.pokearena.domain.model.ImageStatus;
 import cr.ac.tec.pokearena.domain.model.Rarity;
 import cr.ac.tec.pokearena.domain.model.StoredCard;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
+import cr.ac.tec.pokearena.domain.repository.CollectibleCardRepository;
 
 /**
- * Propósito: implementación JDBC de {@link CardRepository} (tablas card y card_type_counter).
+ * Propósito: implementación JDBC de {@link CardRepository} y {@link CollectibleCardRepository} (tablas
+ * card y card_type_counter).
  * Responsabilidades: entregar el consecutivo de cada tipo de forma atómica, guardar cartas, leer el
- * destino de evolución de la habilidad de una carta y buscar cartas por criterios.
- * Referencia: sección 7.1 ("Código único" y paso 10) y sección 7.3 (búsqueda).
+ * destino de evolución de la habilidad de una carta, buscar cartas por criterios y elegir al azar las
+ * cartas de la colección inicial.
+ * Referencia: sección 7.1 ("Código único" y paso 10), sección 7.3 (búsqueda) y sección 8.2 (pasos 3 y 4).
  *
  * <p>El consecutivo usa una sola sentencia {@code UPDATE ... RETURNING}: PostgreSQL bloquea la fila
  * del tipo hasta que la transacción termina, así dos transacciones del mismo tipo nunca reciben el
@@ -33,7 +36,18 @@ import cr.ac.tec.pokearena.domain.repository.CardRepository;
  * Por eso esta operación exige una transacción abierta.
  */
 @Repository
-public class JdbcCardRepository implements CardRepository {
+public class JdbcCardRepository implements CardRepository, CollectibleCardRepository {
+
+    /**
+     * Selección al azar de la colección inicial (parámetros: rareza, semilla como texto y cantidad).
+     * Es pública para que la prueba de rendimiento pida el plan de esta misma consulta.
+     */
+    public static final String PICK_COLLECTIBLE_SQL = """
+            SELECT code FROM card
+            WHERE rarity_code = ? AND available AND active
+            ORDER BY md5(code || ?), code
+            LIMIT ?
+            """;
 
     private final JdbcTemplate jdbc;
     private final AbilityRows abilityRows;
@@ -97,5 +111,28 @@ public class JdbcCardRepository implements CardRepository {
                 ImageStatus.valueOf(rs.getString("image_status")), rs.getBoolean("available"),
                 rs.getObject("created_at", OffsetDateTime.class).toInstant());
         return new StoredCard(rs.getLong("id"), card);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Cartas que un jugador puede recibir (CollectibleCardRepository, sección 8.2).
+    // ---------------------------------------------------------------------------------------------
+
+    @Override
+    public int countCollectible(String rarityCode) {
+        return jdbc.queryForObject("""
+                SELECT count(*) FROM card WHERE rarity_code = ? AND available AND active
+                """, Integer.class, rarityCode);
+    }
+
+    /**
+     * Ordena las cartas candidatas por {@code md5(code || semilla)} y toma las primeras: es un orden
+     * pseudoaleatorio que depende solo de la semilla y del código, así la misma semilla da la misma
+     * selección y semillas distintas dan otra. Las cartas son distintas porque {@code code} es único.
+     * La base calcula el md5 de cada candidata y conserva solo las {@code count} menores (Top-N heapsort):
+     * nunca devuelve ni guarda en memoria el catálogo completo. El código desempata, por si acaso.
+     */
+    @Override
+    public List<String> pickRandomCollectible(String rarityCode, long seed, int count) {
+        return jdbc.queryForList(PICK_COLLECTIBLE_SQL, String.class, rarityCode, Long.toString(seed), count);
     }
 }

@@ -1,10 +1,13 @@
 package cr.ac.tec.pokearena.support;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+import cr.ac.tec.pokearena.domain.model.InitialCollectionState;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.PlayerAccount;
@@ -24,6 +27,7 @@ public final class InMemoryPlayerRepository implements PlayerRepository {
     private final Map<ProviderIdentity, Player> accounts = new HashMap<>();
     // Escrituras de rol, para comprobar que no se escribe cuando el rol no cambió.
     private int roleUpdates;
+    private final Set<UUID> delivered = new HashSet<>();
 
     /** Datos con los que se creó cada cuenta, por identidad. */
     public Map<ProviderIdentity, NewPlayer> created() {
@@ -50,6 +54,25 @@ public final class InMemoryPlayerRepository implements PlayerRepository {
         accounts.put(identity, player);
         created.put(identity, candidate);
         return new PlayerAccount(player, true);
+    }
+
+    @Override
+    public Optional<InitialCollectionState> lockInitialCollectionState(UUID playerId) {
+        if (accounts.values().stream().noneMatch(player -> player.id().equals(playerId))) {
+            return Optional.empty();
+        }
+        return Optional.of(delivered.contains(playerId) ? InitialCollectionState.DELIVERED
+                : InitialCollectionState.PENDING);
+    }
+
+    @Override
+    public void markInitialCollectionDelivered(UUID playerId) {
+        delivered.add(playerId);
+    }
+
+    /** Jugadores con la colección inicial marcada como entregada. */
+    public Set<UUID> delivered() {
+        return delivered;
     }
 
     @Override

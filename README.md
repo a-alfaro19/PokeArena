@@ -15,7 +15,7 @@ fuente de verdad del proyecto, está en
 | Reintentos de miniatura (C.1 y C.2) | Tarea programada `ThumbnailRetryJob` | Estado de imagen en la ficha y en la búsqueda | Sprint 1, terminada |
 | Imágenes de cartas y ubicaciones | `GET /images/{carpeta}/{id}/{archivo}` (pública) | Vistas previas y miniaturas | Sprint 1, terminada |
 | 1.1.1 Inicio de sesión con proveedor | `POST /api/v1/sesiones` (pública) | — | Sprint 2, API terminada (falta la interfaz) |
-| 3.1.1 Recibir colección inicial | Durante el inicio de sesión | — | Sprint 2, pendiente |
+| 3.1.1 Recibir colección inicial | Caso de uso `DeliverInitialCollectionUseCase` (se conectará al inicio de sesión) | — | Sprint 2, caso de uso terminado (falta conectarlo al login) |
 | 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` | — | Sprint 2, pendiente |
 
 Mientras llega el inicio de sesión con proveedor, el perfil `dev` ofrece credenciales de prueba
@@ -47,6 +47,13 @@ cd PokeArena\pokearena
 - **De integración** (`*IT`): cada historia de punta a punta contra un PostgreSQL real que
   Testcontainers levanta en un contenedor propio. No necesitan la base local de abajo, pero sí
   Docker Desktop encendido.
+
+**Las pruebas de integración deben ejecutarse en secuencia.** Todas comparten el mismo contenedor
+de PostgreSQL, y varias vacían el catálogo (`DELETE FROM card`) para partir de datos conocidos
+(por ejemplo `CardSearchIT`, `DeliverInitialCollectionIT` y las pruebas de rendimiento). Si
+corrieran a la vez, una borraría las cartas que otra está usando. Es el comportamiento por defecto
+de Maven: **no actives la ejecución en paralelo** (`parallel` o `forkCount` mayor que 1 en Failsafe,
+ni `junit.jupiter.execution.parallel.enabled`).
 
 Para ejecutar solo una clase de prueba:
 
