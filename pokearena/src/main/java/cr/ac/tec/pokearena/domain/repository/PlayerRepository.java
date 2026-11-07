@@ -3,6 +3,7 @@ package cr.ac.tec.pokearena.domain.repository;
 import java.util.Optional;
 import java.util.UUID;
 
+import cr.ac.tec.pokearena.domain.model.InitialCollectionState;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.PlayerAccount;
@@ -33,4 +34,17 @@ public interface PlayerRepository {
 
     /** Cambia el rol del jugador. Lo usa el ingreso cuando la configuración de administradores cambió. */
     void updateRole(UUID playerId, Role role);
+
+    /**
+     * Bloquea la fila del jugador hasta el final de la transacción ({@code SELECT ... FOR UPDATE}) y
+     * devuelve el estado de su colección inicial. Otra transacción que pida el mismo bloqueo espera, y al
+     * continuar ve el estado ya confirmado: así la colección se entrega una sola vez (sección 8.2, paso 1).
+     * Debe llamarse dentro de un {@code UnitOfWork}.
+     *
+     * @return el estado, o vacío si el jugador no existe
+     */
+    Optional<InitialCollectionState> lockInitialCollectionState(UUID playerId);
+
+    /** Marca la colección inicial del jugador como entregada (sección 8.2, paso 7). */
+    void markInitialCollectionDelivered(UUID playerId);
 }

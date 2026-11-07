@@ -459,6 +459,8 @@ Se ejecuta durante el inicio de sesión (paso 6) y es idempotente.
 
 - **Todo o nada:** cartas, cubos, movimiento y marca van en **una sola transacción**. Si algo falla, no queda entrega parcial y el resultado es `PENDING_ERROR`; el siguiente ingreso reintenta.
 - **Exactamente una vez:** el bloqueo de fila garantiza que dos primeros ingresos simultáneos entreguen una sola vez, y los ingresos posteriores no vuelven a entregar.
+- **Primer movimiento de cubos:** que `INITIAL_GRANT` sea el primer movimiento del historial lo garantizan el bloqueo de la fila del jugador (`SELECT ... FOR UPDATE`) y la marca `DELIVERED`: la entrega ocurre una sola vez y, hasta ella, ninguna otra operación crea movimientos. No se agrega una consulta extra para comprobarlo, porque no cambiaría el resultado; la prueba "primer movimiento" lo verifica.
+- **Semilla no predecible:** la implementación real de `RandomSource` usa `SecureRandom`. Con un generador predecible, alguien podría deducir qué cartas recibirá un jugador; las pruebas usan una semilla fija para que la selección sea reproducible.
 - Con la colección recibida debe ser posible armar un mazo válido de 12 cartas (15 distintas ≥ 12).
 - El selector de cartas debe funcionar con un catálogo de 10,000 cartas sin cargarlas todas en memoria.
 
@@ -570,6 +572,8 @@ Una prueba por **cada criterio de aceptación** (Anexo C), con `@DisplayName` en
 | Contrato | El OpenAPI coincide con la aplicación |
 
 El pipeline de GitHub Actions ejecuta compilación, todas las pruebas y `oasdiff`.
+
+**Ejecución en secuencia.** Las pruebas de integración comparten un solo contenedor de PostgreSQL, y varias vacían el catálogo (`DELETE FROM card`) para partir de datos conocidos (por ejemplo `CardSearchIT`, `DeliverInitialCollectionIT` y las pruebas de rendimiento). Por eso deben ejecutarse **en secuencia**, que es lo que hace Maven por defecto. **No se debe activar la ejecución en paralelo** (`parallel` o `forkCount` mayor que 1 en Failsafe, ni `junit.jupiter.execution.parallel.enabled`): una prueba borraría las cartas que otra está usando.
 
 ---
 

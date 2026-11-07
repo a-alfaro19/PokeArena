@@ -8,7 +8,9 @@ import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import cr.ac.tec.pokearena.domain.model.InitialCollectionState;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.PlayerAccount;
@@ -96,6 +98,29 @@ public class JdbcPlayerRepository implements PlayerRepository {
         int updated = jdbc.update("UPDATE player SET role = ? WHERE id = ?", role.name(), playerId);
         if (updated == 0) {
             throw new IllegalStateException("No existe el jugador " + playerId + " para cambiar su rol");
+        }
+    }
+
+    /**
+     * {@code FOR UPDATE} bloquea la fila hasta el final de la transacción. Sin una transacción abierta el
+     * bloqueo se soltaría al terminar la sentencia y no protegería nada: por eso se exige.
+     */
+    @Override
+    public Optional<InitialCollectionState> lockInitialCollectionState(UUID playerId) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException(
+                    "El bloqueo del jugador se toma dentro del UnitOfWork de la entrega (sección 8.2)");
+        }
+        return jdbc.query("SELECT initial_collection_status FROM player WHERE id = ? FOR UPDATE",
+                (rs, row) -> InitialCollectionState.valueOf(rs.getString(1)), playerId).stream().findFirst();
+    }
+
+    @Override
+    public void markInitialCollectionDelivered(UUID playerId) {
+        int updated = jdbc.update("UPDATE player SET initial_collection_status = ? WHERE id = ?",
+                InitialCollectionState.DELIVERED.name(), playerId);
+        if (updated == 0) {
+            throw new IllegalStateException("No existe el jugador " + playerId + " para marcar su colección");
         }
     }
 }

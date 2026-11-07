@@ -32,6 +32,9 @@ public final class TestPlayers {
     /** Borra los jugadores y todo lo que depende de ellos en las tablas que usan estas pruebas. */
     public static void delete(JdbcTemplate jdbc, Collection<UUID> playerIds) {
         for (UUID id : playerIds) {
+            // Colección y cubos (historia 3.1.1): van primero porque apuntan al jugador y a las cartas.
+            jdbc.update("DELETE FROM player_card WHERE player_id = ?", id);
+            jdbc.update("DELETE FROM cube_movement WHERE player_id = ?", id);
             jdbc.update("DELETE FROM idempotency_key WHERE user_id = ?", id);
             jdbc.update("DELETE FROM player_identity WHERE player_id = ?", id);
             jdbc.update("DELETE FROM player WHERE id = ?", id);
