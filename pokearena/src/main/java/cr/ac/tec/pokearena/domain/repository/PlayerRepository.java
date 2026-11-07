@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
+import cr.ac.tec.pokearena.domain.model.PlayerAccount;
 import cr.ac.tec.pokearena.domain.model.ProviderIdentity;
 import cr.ac.tec.pokearena.domain.model.Role;
 
@@ -25,8 +26,10 @@ public interface PlayerRepository {
     /**
      * Devuelve el jugador de la identidad; si no existe, lo crea con los datos de {@code candidate}.
      * Si otra solicitud lo crea al mismo tiempo, devuelve ese mismo jugador: nunca hay dos cuentas.
+     *
+     * @return el jugador y si esta llamada fue la que lo creó (solo una de dos llamadas simultáneas)
      */
-    Player findOrCreate(ProviderIdentity identity, NewPlayer candidate);
+    PlayerAccount findOrCreate(ProviderIdentity identity, NewPlayer candidate);
 
     /** Cambia el rol del jugador. Lo usa el ingreso cuando la configuración de administradores cambió. */
     void updateRole(UUID playerId, Role role);

@@ -31,6 +31,8 @@ servers:
     description: Desarrollo local
 
 tags:
+  - name: Sesiones
+    description: Historia 1.1.1 (Inicio de sesión con proveedor)
   - name: Cartas
     description: Historias 2.1.1 (Crear carta) y 2.1.2 (Buscar carta)
   - name: Ubicaciones
@@ -42,6 +44,98 @@ security:
   - bearerAuth: []
 
 paths:
+  /api/v1/sesiones:
+    post:
+      tags: [Sesiones]
+      operationId: login
+      summary: Inicio de sesión con proveedor (1.1.1)
+      description: |
+        Abre una sesión con el token de identidad de un proveedor externo (sección 8.1, Anexo A.4).
+        El servidor verifica la firma del token con las llaves públicas del proveedor (JWKS), el
+        emisor, el vencimiento y la audiencia (el `client id` configurado). Solo se acepta RS256.
+        Cualquier falla de verificación es 401 INVALID_IDENTITY_TOKEN, sin decir cuál comprobación
+        falló. La verificación ocurre antes de tocar la base: un token inválido o un proveedor que
+        no responde no crean ninguna cuenta.
+
+        La cuenta se identifica por `(provider, sub)`, nunca por el correo. El primer ingreso la
+        crea con rol PLAYER (o ADMIN si la identidad está en `app.admin.identities`) y Elo 0; los
+        siguientes la reutilizan y recalculan el rol. La respuesta trae las credenciales propias de
+        PokéArena, que son las únicas que aceptan las demás operaciones (nunca el token del proveedor).
+
+        Proveedores registrados: `google` (deshabilitado si no se configura `APP_GOOGLE_CLIENT_ID`).
+        El proveedor `dev` de las credenciales de prueba no se acepta aquí.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Sesión abierta.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Solicitud inválida.
+          x-error-types: [MISSING_FIELD, UNSUPPORTED_PROVIDER, BAD_REQUEST]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                type: UNSUPPORTED_PROVIDER
+                title: Proveedor no soportado
+                status: 400
+                detail: El proveedor de identidad 'facebook' no está disponible.
+                field: provider
+                allowedValues: [google]
+                correlationId: b3f1c9e0-4f2a-4c1e-9d55-0d8a1f3e7c21
+        '401':
+          description: El token no fue emitido por el proveedor, venció, tiene la firma inválida o fue emitido para otra aplicación.
+          x-error-types: [INVALID_IDENTITY_TOKEN]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '415':
+          description: El cuerpo no viene como `application/json`.
+          x-error-types: [UNSUPPORTED_MEDIA_TYPE]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: El proveedor de identidad no responde (no se pudieron obtener sus llaves). No se crea ninguna cuenta.
+          x-error-types: [IDENTITY_PROVIDER_UNAVAILABLE]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
   /api/v1/cartas:
     post:
       tags: [Cartas]
@@ -513,6 +607,75 @@ components:
             $ref: '#/components/schemas/ApiError'
 
   schemas:
+    LoginRequest:
+      description: Cuerpo del inicio de sesión (sección 8.1). Un campo ausente o vacío es MISSING_FIELD.
+      type: object
+      required: [provider, idToken]
+      properties:
+        provider:
+          type: string
+          example: google
+        idToken:
+          type: string
+          description: Token de identidad (JWT) que el proveedor entregó a la interfaz.
+
+    LoginResponse:
+      description: Sesión abierta (sección 8.1, paso 8).
+      type: object
+      required: [accessToken, tokenType, expiresIn, player, firstLogin, initialCollection]
+      properties:
+        accessToken:
+          type: string
+          description: 'Credenciales propias de PokéArena, para el encabezado `Authorization: Bearer`.'
+        tokenType:
+          type: string
+          enum: [Bearer]
+        expiresIn:
+          type: integer
+          description: Segundos de validez del token (`app.security.access-token-ttl`, 15 minutos por defecto).
+          example: 900
+        player:
+          $ref: '#/components/schemas/SessionPlayer'
+        firstLogin:
+          type: boolean
+          description: true solo en el ingreso que creó la cuenta.
+        initialCollection:
+          $ref: '#/components/schemas/InitialCollection'
+
+    InitialCollection:
+      description: Resultado de la entrega de la colección inicial (secciones 8.1 y 8.2). El mensaje pertenece al estado.
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          enum: [DELIVERED, ALREADY_DELIVERED, PENDING_NO_CARDS, PENDING_ERROR]
+          description: |
+            DELIVERED: se entregó en este ingreso. ALREADY_DELIVERED: se había entregado antes.
+            PENDING_NO_CARDS: el catálogo aún no tiene 15 cartas Comunes. PENDING_ERROR: la entrega
+            falló sin dejar nada a medias y se reintenta en el siguiente ingreso.
+        message:
+          type: [string, 'null']
+          description: Texto para el jugador cuando la colección está pendiente; null si no lo está.
+          example: 'El juego aún no está disponible: todavía no hay cartas suficientes para tu colección inicial. La recibirás en un próximo ingreso.'
+
+    SessionPlayer:
+      type: object
+      required: [id, displayName, email, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          description: Nombre del proveedor o, si no lo envió, un nombre de respaldo ("Jugador" más un sufijo del id).
+        email:
+          type: [string, 'null']
+          description: Correo que informó el proveedor, o null.
+        role:
+          type: string
+          enum: [PLAYER, ADMIN]
+
     ApiError:
       description: |
         Formato único de errores (sección 5.3; RNF-API-03). `field` y `allowedValues` solo

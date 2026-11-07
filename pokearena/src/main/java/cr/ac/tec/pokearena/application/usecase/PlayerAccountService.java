@@ -4,6 +4,7 @@ import cr.ac.tec.pokearena.application.port.Clock;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
+import cr.ac.tec.pokearena.domain.model.PlayerAccount;
 import cr.ac.tec.pokearena.domain.model.ProviderIdentity;
 import cr.ac.tec.pokearena.domain.model.Role;
 import cr.ac.tec.pokearena.domain.repository.PlayerRepository;
@@ -42,21 +43,31 @@ public class PlayerAccountService {
      * @param email       correo que informó el proveedor (puede ser nulo)
      */
     public Player findOrCreate(ProviderIdentity identity, String displayName, String email) {
+        return findOrCreateAccount(identity, displayName, email).player();
+    }
+
+    /**
+     * Igual que {@link #findOrCreate}, pero dice además si esta llamada creó la cuenta. Lo usa el
+     * inicio de sesión para informar {@code firstLogin} (sección 8.1, paso 8).
+     */
+    public PlayerAccount findOrCreateAccount(ProviderIdentity identity, String displayName, String email) {
         // El rol se calcula en cada ingreso: app.admin.identities es la fuente de verdad (sección 5.2).
         Role configuredRole = adminIdentities.roleFor(identity);
         NewPlayer candidate = new NewPlayer(displayName, email, configuredRole, clock.now());
 
         return unitOfWork.execute(() -> {
             // Paso 5 del diagrama A.4: buscar el jugador por proveedor y sub, o crearlo si no existe.
-            Player player = players.findOrCreate(identity, candidate);
+            PlayerAccount account = players.findOrCreate(identity, candidate);
+            Player player = account.player();
 
             // Una cuenta existente toma el rol de la configuración actual: quien sale de la lista
             // pierde ADMIN y quien entra lo recibe, sin borrar su cuenta. Solo se escribe si cambió.
             if (player.role() == configuredRole) {
-                return player;
+                return account;
             }
             players.updateRole(player.id(), configuredRole);
-            return new Player(player.id(), player.displayName(), player.email(), configuredRole);
+            return new PlayerAccount(new Player(player.id(), player.displayName(), player.email(), configuredRole),
+                    account.created());
         });
     }
 }
