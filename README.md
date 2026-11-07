@@ -14,7 +14,7 @@ fuente de verdad del proyecto, está en
 | 2.1.2 Buscar carta | `GET /api/v1/cartas` (administrador) | Pestaña "Buscar carta" | Sprint 1, terminada |
 | Reintentos de miniatura (C.1 y C.2) | Tarea programada `ThumbnailRetryJob` | Estado de imagen en la ficha y en la búsqueda | Sprint 1, terminada |
 | Imágenes de cartas y ubicaciones | `GET /images/{carpeta}/{id}/{archivo}` (pública) | Vistas previas y miniaturas | Sprint 1, terminada |
-| 1.1.1 Inicio de sesión con proveedor | `POST /api/v1/sesiones` | — | Sprint 2, pendiente |
+| 1.1.1 Inicio de sesión con proveedor | `POST /api/v1/sesiones` (pública) | — | Sprint 2, API terminada (falta la interfaz) |
 | 3.1.1 Recibir colección inicial | Durante el inicio de sesión | — | Sprint 2, pendiente |
 | 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` | — | Sprint 2, pendiente |
 
@@ -99,8 +99,46 @@ $env:DB_URL = "jdbc:postgresql://localhost:55432/pokearena"
 ```
 
 **Otras variables:** `DB_USERNAME` (por defecto `pokearena`), `APP_IMAGES_ROOT_DIR` (carpeta de
-las imágenes, por defecto `./data/images`) y `APP_ADMIN_IDENTITIES` (identidades `proveedor:sub`,
-separadas por comas, que reciben el rol de administrador).
+las imágenes, por defecto `./data/images`) y `APP_ADMIN_IDENTITIES` (ver abajo).
+
+### Inicio de sesión con Google (`APP_GOOGLE_CLIENT_ID` y `APP_ADMIN_IDENTITIES`)
+
+`POST /api/v1/sesiones` recibe `{ "provider": "google", "idToken": "..." }` y responde con las
+credenciales propias de PokéArena. El servidor verifica la firma del token con las llaves públicas
+de Google, el emisor, el vencimiento y que la **audiencia** sea el `client id` de PokéArena.
+
+1. **Client id.** Créalo en Google Cloud Console (APIs y servicios → Credenciales → ID de cliente de
+   OAuth, tipo "Aplicación web", con `http://localhost:8080` como origen autorizado). No es un
+   secreto, pero no se guarda en el repositorio porque depende del proyecto de cada equipo:
+
+   ```powershell
+   $env:APP_GOOGLE_CLIENT_ID = "1234567890-abc123.apps.googleusercontent.com"
+   ```
+
+   Sin esta variable la aplicación arranca igual, pero Google queda deshabilitado:
+   `POST /api/v1/sesiones` con `"provider": "google"` responde 400 `UNSUPPORTED_PROVIDER` (en
+   desarrollo se puede seguir usando el perfil `dev`).
+
+2. **Administradores.** El rol `ADMIN` se asigna por configuración: una lista de identidades
+   `proveedor:sub`, separadas por comas. El `sub` es el identificador de la cuenta en Google (el
+   claim `sub` del token, un número largo), **no el correo**. El rol se recalcula en cada ingreso:
+   quien entra o sale de la lista cambia de rol en su siguiente inicio de sesión, sin perder su cuenta.
+
+   ```powershell
+   $env:APP_ADMIN_IDENTITIES = "google:109876543210987654321,google:112233445566778899001"
+   ```
+
+   Para conocer tu `sub`: inicia sesión una vez y búscalo en la base
+   (`SELECT provider_subject FROM player_identity WHERE provider = 'google';`), agrégalo a la
+   variable, reinicia la aplicación y vuelve a iniciar sesión. Una entrada sin el formato
+   `proveedor:sub` detiene el arranque con un mensaje claro.
+
+Valores opcionales (en `application.properties`): `APP_GOOGLE_JWKS_URI` (URL de las llaves
+públicas; las pruebas la apuntan a un servidor local), `app.identity.google.jwks-timeout` y
+`app.identity.google.jwks-default-ttl` y `app.identity.google.jwks-min-reload-interval` (por defecto
+1 minuto: un token con un `kid` desconocido solo fuerza otra descarga de las llaves si pasó ese
+tiempo, para que nadie pueda provocar descargas ilimitadas a Google). Si Google no responde al pedir
+sus llaves, el inicio de sesión responde 503 `IDENTITY_PROVIDER_UNAVAILABLE` y no crea ninguna cuenta.
 
 **Detener la base:** `docker compose -f docker-compose.dev.yml down`. Con `-v` además se borran
 sus datos.

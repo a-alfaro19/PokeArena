@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
+import cr.ac.tec.pokearena.domain.model.PlayerAccount;
 import cr.ac.tec.pokearena.domain.model.ProviderIdentity;
 import cr.ac.tec.pokearena.domain.model.Role;
 import cr.ac.tec.pokearena.domain.repository.PlayerRepository;
@@ -31,6 +32,8 @@ import cr.ac.tec.pokearena.domain.repository.PlayerRepository;
  *   <li>Si la asociación no insertó nada, perdimos la carrera: se borra el jugador recién creado,
  *       que quedó sin identidad, y se lee el jugador de la transacción que ganó.</li>
  * </ol>
+ * Solo la transacción cuya asociación insertó la fila informa {@code created = true}: así, de dos
+ * primeros ingresos simultáneos, uno solo es el "primer ingreso".
  */
 @Repository
 public class JdbcPlayerRepository implements PlayerRepository {
@@ -60,11 +63,11 @@ public class JdbcPlayerRepository implements PlayerRepository {
     }
 
     @Override
-    public Player findOrCreate(ProviderIdentity identity, NewPlayer candidate) {
+    public PlayerAccount findOrCreate(ProviderIdentity identity, NewPlayer candidate) {
         // 1. La identidad ya tiene cuenta: se reutiliza, sin tocar sus datos.
         Optional<Player> existing = findByIdentity(identity);
         if (existing.isPresent()) {
-            return existing.get();
+            return new PlayerAccount(existing.get(), false);
         }
 
         // 2. Cuenta nueva y asociación de la identidad; la unicidad la decide la base.
@@ -83,8 +86,9 @@ public class JdbcPlayerRepository implements PlayerRepository {
         }
 
         // Lectura posterior: devuelve la cuenta que quedó, sea la nuestra o la de la otra transacción.
-        return findByIdentity(identity).orElseThrow(() -> new IllegalStateException(
+        Player player = findByIdentity(identity).orElseThrow(() -> new IllegalStateException(
                 "La identidad " + identity + " no quedó asociada a ningún jugador"));
+        return new PlayerAccount(player, linked == 1);
     }
 
     @Override

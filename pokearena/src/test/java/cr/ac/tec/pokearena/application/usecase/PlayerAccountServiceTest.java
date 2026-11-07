@@ -5,12 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.DisplayName;
@@ -20,13 +16,12 @@ import org.junit.jupiter.api.Test;
 import cr.ac.tec.pokearena.application.dto.Session;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
-import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.ProviderIdentity;
 import cr.ac.tec.pokearena.domain.model.Role;
-import cr.ac.tec.pokearena.domain.repository.PlayerRepository;
 import cr.ac.tec.pokearena.domain.rule.AdminIdentities;
 import cr.ac.tec.pokearena.infrastructure.config.AccountConfiguration;
+import cr.ac.tec.pokearena.support.InMemoryPlayerRepository;
 
 /**
  * Propósito: pruebas unitarias de la creación de cuentas y de las credenciales de prueba (sección 5.2).
@@ -42,7 +37,7 @@ class PlayerAccountServiceTest {
     private static final ProviderIdentity CONFIGURED_ADMIN = new ProviderIdentity("google", "sub-admin");
     private static final ProviderIdentity ORDINARY = new ProviderIdentity("google", "sub-jugador");
 
-    private final InMemoryPlayers players = new InMemoryPlayers();
+    private final InMemoryPlayerRepository players = new InMemoryPlayerRepository();
     private final UnitOfWork directUnitOfWork = new UnitOfWork() {
         @Override
         public <T> T execute(Supplier<T> work) {
@@ -77,7 +72,7 @@ class PlayerAccountServiceTest {
         Player second = service(Set.of()).findOrCreate(ORDINARY, "Luis", null);
 
         assertThat(second.id()).isEqualTo(first.id());
-        assertThat(players.created).hasSize(1);
+        assertThat(players.created()).hasSize(1);
     }
 
     @Test
@@ -90,7 +85,7 @@ class PlayerAccountServiceTest {
         assertThat(after.id()).isEqualTo(before.id());
         assertThat(after.role()).isEqualTo(Role.ADMIN);
         assertThat(players.findByIdentity(ORDINARY)).get().extracting(Player::role).isEqualTo(Role.ADMIN);
-        assertThat(players.roleUpdates).isEqualTo(1);
+        assertThat(players.roleUpdates()).isEqualTo(1);
     }
 
     @Test
@@ -103,7 +98,7 @@ class PlayerAccountServiceTest {
 
         assertThat(after.id()).isEqualTo(before.id());
         assertThat(after.role()).isEqualTo(Role.PLAYER);
-        assertThat(players.roleUpdates).isEqualTo(1);
+        assertThat(players.roleUpdates()).isEqualTo(1);
     }
 
     @Test
@@ -114,7 +109,7 @@ class PlayerAccountServiceTest {
         service(Set.of()).findOrCreate(ORDINARY, "Luis", null);
         service(Set.of()).findOrCreate(ORDINARY, "Luis", null);
 
-        assertThat(players.roleUpdates).isZero();
+        assertThat(players.roleUpdates()).isZero();
     }
 
     @Test
@@ -122,7 +117,7 @@ class PlayerAccountServiceTest {
     void createdAtComesFromClock() {
         service(Set.of()).findOrCreate(ORDINARY, "Luis", null);
 
-        assertThat(players.created.get(ORDINARY).createdAt()).isEqualTo(NOW);
+        assertThat(players.created().get(ORDINARY).createdAt()).isEqualTo(NOW);
     }
 
     @Nested
@@ -169,7 +164,7 @@ class PlayerAccountServiceTest {
 
             assertThat(admin.player().role()).isEqualTo(Role.ADMIN);
             assertThat(player.player().role()).isEqualTo(Role.PLAYER);
-            assertThat(players.created).containsOnlyKeys(new ProviderIdentity("dev", "dev-admin"),
+            assertThat(players.created()).containsOnlyKeys(new ProviderIdentity("dev", "dev-admin"),
                     new ProviderIdentity("dev", "dev-player"));
         }
 
@@ -181,36 +176,6 @@ class PlayerAccountServiceTest {
             assertThatThrownBy(() -> useCase.execute(Role.ADMIN))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("app.admin.identities");
-        }
-    }
-
-    /** Repositorio en memoria: una cuenta por identidad, como la restricción de la base. */
-    private static final class InMemoryPlayers implements PlayerRepository {
-
-        private final Map<ProviderIdentity, NewPlayer> created = new HashMap<>();
-        private final Map<ProviderIdentity, Player> accounts = new HashMap<>();
-        // Escrituras de rol, para comprobar que no se escribe cuando el rol no cambió.
-        private int roleUpdates;
-
-        @Override
-        public Optional<Player> findByIdentity(ProviderIdentity identity) {
-            return Optional.ofNullable(accounts.get(identity));
-        }
-
-        @Override
-        public Player findOrCreate(ProviderIdentity identity, NewPlayer candidate) {
-            return accounts.computeIfAbsent(identity, key -> {
-                created.put(key, candidate);
-                return new Player(UUID.randomUUID(), candidate.displayName(), candidate.email(), candidate.role());
-            });
-        }
-
-        @Override
-        public void updateRole(UUID playerId, Role role) {
-            roleUpdates++;
-            accounts.replaceAll((identity, player) -> player.id().equals(playerId)
-                    ? new Player(player.id(), player.displayName(), player.email(), role)
-                    : player);
         }
     }
 }
