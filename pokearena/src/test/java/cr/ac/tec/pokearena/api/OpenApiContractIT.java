@@ -34,6 +34,7 @@ import cr.ac.tec.pokearena.api.web.IdempotencyKeyHeader;
 import cr.ac.tec.pokearena.application.usecase.Pagination;
 import cr.ac.tec.pokearena.domain.model.Role;
 import cr.ac.tec.pokearena.domain.rule.CardSearchRules;
+import cr.ac.tec.pokearena.domain.rule.CatalogRules;
 import cr.ac.tec.pokearena.support.OpenApiContract;
 import cr.ac.tec.pokearena.support.OpenApiContract.Operation;
 import cr.ac.tec.pokearena.support.OpenApiContract.Parameter;
@@ -78,7 +79,8 @@ class OpenApiContractIT extends PostgresIntegrationTestBase {
 
     /** Parámetros de las operaciones que los reciben en un mapa, sin declararlos en la firma. */
     private static final Map<Operation, Set<String>> MAP_QUERY_PARAMETERS = Map.of(
-            new Operation("GET", "/api/v1/cartas"), union(CardSearchRules.CRITERIA, Pagination.PARAMETERS));
+            new Operation("GET", "/api/v1/cartas"), union(CardSearchRules.CRITERIA, Pagination.PARAMETERS),
+            new Operation("GET", "/api/v1/catalogo"), union(CatalogRules.FILTERS, Pagination.PARAMETERS));
 
     /** Encabezados que atiende un filtro en todas las rutas. */
     private static final Set<String> FILTER_HEADERS = Set.of(CorrelationIdFilter.HEADER);

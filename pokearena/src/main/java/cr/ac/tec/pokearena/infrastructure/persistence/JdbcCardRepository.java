@@ -4,8 +4,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -16,18 +22,21 @@ import cr.ac.tec.pokearena.domain.model.CardCode;
 import cr.ac.tec.pokearena.domain.model.CardFields;
 import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
 import cr.ac.tec.pokearena.domain.model.CardType;
+import cr.ac.tec.pokearena.domain.model.CatalogCriteria;
+import cr.ac.tec.pokearena.domain.model.OwnedCard;
 import cr.ac.tec.pokearena.domain.model.ImageStatus;
 import cr.ac.tec.pokearena.domain.model.Rarity;
 import cr.ac.tec.pokearena.domain.model.StoredCard;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
 import cr.ac.tec.pokearena.domain.repository.CollectibleCardRepository;
+import cr.ac.tec.pokearena.domain.repository.PlayerCatalogRepository;
 
 /**
  * Propósito: implementación JDBC de {@link CardRepository} y {@link CollectibleCardRepository} (tablas
  * card y card_type_counter).
  * Responsabilidades: entregar el consecutivo de cada tipo de forma atómica, guardar cartas, leer el
  * destino de evolución de la habilidad de una carta, buscar cartas por criterios y elegir al azar las
- * cartas de la colección inicial.
+ * cartas de la colección inicial, además del catálogo y las copias privadas de 8.3.
  * Referencia: sección 7.1 ("Código único" y paso 10), sección 7.3 (búsqueda) y sección 8.2 (pasos 3 y 4).
  *
  * <p>El consecutivo usa una sola sentencia {@code UPDATE ... RETURNING}: PostgreSQL bloquea la fila
@@ -36,7 +45,7 @@ import cr.ac.tec.pokearena.domain.repository.CollectibleCardRepository;
  * Por eso esta operación exige una transacción abierta.
  */
 @Repository
-public class JdbcCardRepository implements CardRepository, CollectibleCardRepository {
+public class JdbcCardRepository implements CardRepository, CollectibleCardRepository, PlayerCatalogRepository {
 
     /**
      * Selección al azar de la colección inicial (parámetros: rareza, semilla como texto y cantidad).
@@ -99,6 +108,39 @@ public class JdbcCardRepository implements CardRepository, CollectibleCardReposi
     public List<StoredCard> search(CardSearchCriteria criteria, long afterId, int maxRows) {
         CardSearchSql.Query query = CardSearchSql.build(criteria, afterId, maxRows);
         return jdbc.query(query.sql(), (rs, row) -> storedCard(rs), query.arguments().toArray());
+    }
+
+    /** Catálogo compartible: mantiene la visibilidad del jugador dentro de la consulta paginada. */
+    @Override
+    public List<StoredCard> available(CatalogCriteria criteria, long afterId, int maxRows) {
+        CardSearchSql.Query query = CardSearchSql.catalog(criteria.cardCriteria(), afterId, maxRows, null);
+        return jdbc.query(query.sql(), (rs, row) -> storedCard(rs), query.arguments().toArray());
+    }
+
+    /** Colección privada: filtra antes del límite y obtiene las copias en la misma consulta. */
+    @Override
+    public List<OwnedCard> owned(UUID playerId, CatalogCriteria criteria, long afterId, int maxRows) {
+        CardSearchSql.Query query = CardSearchSql.catalog(criteria.cardCriteria(), afterId, maxRows, playerId);
+        return jdbc.query(query.sql(), (rs, row) -> new OwnedCard(storedCard(rs), rs.getInt("copies")),
+                query.arguments().toArray());
+    }
+
+    /** Una consulta por página, no una por carta; no consulta nada para una página vacía. */
+    @Override
+    public Map<String, Integer> findCopies(UUID playerId, Collection<String> cardCodes) {
+        if (cardCodes.isEmpty()) {
+            return Map.of();
+        }
+        // Solo se genera la cantidad de placeholders; jugador y códigos siguen parametrizados.
+        String placeholders = String.join(",", Collections.nCopies(cardCodes.size(), "?"));
+        List<Object> arguments = new ArrayList<>();
+        arguments.add(playerId);
+        arguments.addAll(cardCodes);
+        Map<String, Integer> copies = new HashMap<>();
+        jdbc.query("SELECT card_code, copies FROM player_card WHERE player_id = ? AND card_code IN ("
+                + placeholders + ")", (org.springframework.jdbc.core.RowCallbackHandler) rs ->
+                        copies.put(rs.getString("card_code"), rs.getInt("copies")), arguments.toArray());
+        return copies;
     }
 
     private StoredCard storedCard(ResultSet rs) throws SQLException {

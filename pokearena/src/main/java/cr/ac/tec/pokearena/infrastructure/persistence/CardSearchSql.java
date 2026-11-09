@@ -3,6 +3,7 @@ package cr.ac.tec.pokearena.infrastructure.persistence;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
 
@@ -34,17 +35,18 @@ public final class CardSearchSql {
     /** Carácter de escape del LIKE. */
     private static final String ESCAPE = "\\";
 
-    private static final String SELECT = """
-            SELECT c.id, c.code, c.name, c.name_normalized, c.cost, c.power,
+    private static final String COLUMNS = """
+            c.id, c.code, c.name, c.name_normalized, c.cost, c.power,
                    c.type_code, t.name AS type_name, c.rarity_code, r.name AS rarity_name,
                    c.image_large_url, c.image_small_url, c.image_status, c.available, c.created_at,
-                   """ + AbilityRows.COLUMNS + """
+                   """ + AbilityRows.COLUMNS;
+
+    private static final String FROM = """
 
             FROM card c
             JOIN card_type t ON t.code = c.type_code
             JOIN rarity r ON r.code = c.rarity_code
             JOIN ability a ON a.code = c.ability_code
-            WHERE c.id > ?
             """;
 
     private CardSearchSql() {
@@ -65,9 +67,33 @@ public final class CardSearchSql {
      * @param maxRows filas como máximo (el tamaño de página más uno)
      */
     public static Query build(CardSearchCriteria criteria, long afterId, int maxRows) {
-        StringBuilder sql = new StringBuilder(SELECT);
+        return build(criteria, afterId, maxRows, false, null);
+    }
+
+    /** Reutiliza filtros y proyección; la visibilidad del jugador nunca cambia la búsqueda administrativa. */
+    public static Query catalog(CardSearchCriteria criteria, long afterId, int maxRows, UUID owner) {
+        return build(criteria, afterId, maxRows, true, owner);
+    }
+
+    private static Query build(CardSearchCriteria criteria, long afterId, int maxRows,
+            boolean availableOnly, UUID owner) {
+        StringBuilder sql = new StringBuilder("SELECT ");
+        if (owner != null) {
+            sql.append("pc.copies, ");
+        }
+        sql.append(COLUMNS).append(FROM);
         List<Object> arguments = new ArrayList<>();
+        if (owner != null) {
+            // La clave de player_card garantiza una fila por carta; la unión obtiene también sus copias.
+            sql.append("JOIN player_card pc ON pc.card_code = c.code AND pc.player_id = ?\n");
+            arguments.add(owner);
+        }
+        sql.append("WHERE c.id > ?\n");
         arguments.add(afterId);
+        if (availableOnly) {
+            // available ya exige READY en el modelo; active excluye las cartas desactivadas.
+            sql.append("  AND c.available AND c.active\n");
+        }
 
         equal(sql, arguments, "c.code", criteria.code());
         criteria.nameFragment().ifPresent(fragment -> {
