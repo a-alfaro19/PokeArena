@@ -22,9 +22,8 @@ import cr.ac.tec.pokearena.domain.rule.InitialCollectionRules;
  * {@link DeliverInitialCollectionUseCase}, que no lleva anotaciones de Spring (sección 4.3).
  * Referencia: sección 8.2 y sección 4.2 (regla 5: la aleatoriedad entra por un puerto).
  *
- * <p>Este caso de uso todavía NO está conectado al inicio de sesión: el login sigue usando
- * {@code ProvisionalInitialCollectionDelivery} (ver {@code IdentityConfiguration}). La conexión es una
- * tarea posterior.
+ * <p>El caso de uso es el ÚNICO bean del puerto {@code InitialCollectionDelivery}: lo reciben el inicio de
+ * sesión (sección 8.1, paso 6) y las credenciales de prueba del perfil dev.
  */
 @Configuration
 public class CollectionConfiguration {

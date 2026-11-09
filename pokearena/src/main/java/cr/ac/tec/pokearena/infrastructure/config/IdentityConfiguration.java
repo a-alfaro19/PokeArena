@@ -11,13 +11,13 @@ import cr.ac.tec.pokearena.application.port.InitialCollectionDelivery;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.application.usecase.LoginWithProviderUseCase;
 import cr.ac.tec.pokearena.application.usecase.PlayerAccountService;
-import cr.ac.tec.pokearena.application.usecase.ProvisionalInitialCollectionDelivery;
 
 /**
  * Propósito: ensamblar el inicio de sesión con proveedor (historia 1.1.1).
  * Responsabilidades: construir el registro de proveedores con TODOS los beans {@link IdentityProvider}
- * (así un proveedor nuevo se registra solo con declararlo como bean), la entrega de la colección inicial
- * y {@link LoginWithProviderUseCase}, que no llevan anotaciones de Spring (sección 4.3).
+ * (así un proveedor nuevo se registra solo con declararlo como bean) y {@link LoginWithProviderUseCase},
+ * que no lleva anotaciones de Spring (sección 4.3). La entrega de la colección inicial que usa el paso 6
+ * la declara {@link CollectionConfiguration}.
  * Referencia: sección 8.1 y sección 4.4 (Strategy y Registry).
  */
 @Configuration
@@ -29,14 +29,9 @@ public class IdentityConfiguration {
     }
 
     /**
-     * TEMPORAL: la tarea de la historia 3.1.1 reemplaza este bean por {@code DeliverInitialCollectionUseCase},
-     * que implementa el mismo puerto (sección 8.2).
+     * {@code initialCollection} es el único bean del puerto: {@code DeliverInitialCollectionUseCase},
+     * declarado en {@link CollectionConfiguration} (sección 8.1, paso 6).
      */
-    @Bean
-    public InitialCollectionDelivery initialCollectionDelivery() {
-        return new ProvisionalInitialCollectionDelivery();
-    }
-
     @Bean
     public LoginWithProviderUseCase loginWithProviderUseCase(IdentityProviderRegistry providers,
             PlayerAccountService accounts, InitialCollectionDelivery initialCollection, TokenIssuer tokenIssuer) {

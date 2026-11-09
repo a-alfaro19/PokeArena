@@ -2,6 +2,7 @@ package cr.ac.tec.pokearena.application.usecase;
 
 import cr.ac.tec.pokearena.application.dto.Session;
 import cr.ac.tec.pokearena.application.port.AuthenticatedUser;
+import cr.ac.tec.pokearena.application.port.InitialCollectionDelivery;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.ProviderIdentity;
@@ -10,7 +11,8 @@ import cr.ac.tec.pokearena.domain.model.Role;
 /**
  * Propósito: emitir credenciales de prueba para ADMIN o PLAYER (sección 5.2, solo perfil dev).
  * Responsabilidades: obtener un jugador REAL con proveedor {@code dev}, por la misma vía que el
- * inicio de sesión ({@link PlayerAccountService}), y emitir sus credenciales propias.
+ * inicio de sesión ({@link PlayerAccountService}), entregar la colección inicial al jugador de prueba
+ * de rol PLAYER (también por la misma vía, sin impedir la sesión si falla) y emitir sus credenciales.
  * Referencia: sección 5.2.
  *
  * <p>El rol del jugador de prueba no lo elige este caso de uso: sale de {@code app.admin.identities},
@@ -26,10 +28,13 @@ public class IssueDevSessionUseCase {
     public static final String DEV_PLAYER_SUBJECT = "dev-player";
 
     private final PlayerAccountService accounts;
+    private final NonBlockingInitialCollection initialCollection;
     private final TokenIssuer tokenIssuer;
 
-    public IssueDevSessionUseCase(PlayerAccountService accounts, TokenIssuer tokenIssuer) {
+    public IssueDevSessionUseCase(PlayerAccountService accounts, InitialCollectionDelivery initialCollection,
+            TokenIssuer tokenIssuer) {
         this.accounts = accounts;
+        this.initialCollection = new NonBlockingInitialCollection(initialCollection);
         this.tokenIssuer = tokenIssuer;
     }
 
@@ -47,6 +52,13 @@ public class IssueDevSessionUseCase {
         if (player.role() != requestedRole) {
             throw new IllegalStateException("La identidad " + identity + " tiene el rol " + player.role()
                     + " y se pidió " + requestedRole + ". Revise app.admin.identities del perfil dev.");
+        }
+
+        // El jugador de prueba recibe la colección inicial por la misma vía que el inicio de sesión, para
+        // que las demostraciones del catálogo tengan cartas propias. Su resultado no cambia la respuesta
+        // (el contrato de dev/sesiones no lo incluye) y una falla no impide abrir la sesión de prueba.
+        if (!admin) {
+            initialCollection.deliver(player.id());
         }
 
         return new Session(player, tokenIssuer.issue(new AuthenticatedUser(player.id(), player.role())));

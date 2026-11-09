@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
 import cr.ac.tec.pokearena.application.port.Clock;
+import cr.ac.tec.pokearena.application.port.InitialCollectionDelivery;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.application.usecase.IssueDevSessionUseCase;
@@ -61,7 +62,8 @@ public class AccountConfiguration {
     /** Solo existe con el perfil dev, igual que su controlador (RNF-SEG-10). */
     @Bean
     @Profile("dev")
-    public IssueDevSessionUseCase issueDevSessionUseCase(PlayerAccountService accounts, TokenIssuer tokenIssuer) {
-        return new IssueDevSessionUseCase(accounts, tokenIssuer);
+    public IssueDevSessionUseCase issueDevSessionUseCase(PlayerAccountService accounts,
+            InitialCollectionDelivery initialCollection, TokenIssuer tokenIssuer) {
+        return new IssueDevSessionUseCase(accounts, initialCollection, tokenIssuer);
     }
 }

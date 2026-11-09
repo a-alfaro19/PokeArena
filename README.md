@@ -15,7 +15,7 @@ fuente de verdad del proyecto, está en
 | Reintentos de miniatura (C.1 y C.2) | Tarea programada `ThumbnailRetryJob` | Estado de imagen en la ficha y en la búsqueda | Sprint 1, terminada |
 | Imágenes de cartas y ubicaciones | `GET /images/{carpeta}/{id}/{archivo}` (pública) | Vistas previas y miniaturas | Sprint 1, terminada |
 | 1.1.1 Inicio de sesión con proveedor | `POST /api/v1/sesiones` (pública) | — | Sprint 2, API terminada (falta la interfaz) |
-| 3.1.1 Recibir colección inicial | Caso de uso `DeliverInitialCollectionUseCase` (se conectará al inicio de sesión) | — | Sprint 2, caso de uso terminado (falta conectarlo al login) |
+| 3.1.1 Recibir colección inicial | Durante `POST /api/v1/sesiones` (campo `initialCollection`) y, en el perfil `dev`, para el jugador de prueba | — | Sprint 2, API terminada (falta la interfaz) |
 | 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` | — | Sprint 2, pendiente |
 
 Mientras llega el inicio de sesión con proveedor, el perfil `dev` ofrece credenciales de prueba

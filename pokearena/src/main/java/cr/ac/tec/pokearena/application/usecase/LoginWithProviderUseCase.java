@@ -33,8 +33,8 @@ import cr.ac.tec.pokearena.domain.model.PlayerAccount;
  *       emisor, vencimiento y audiencia). <b>Todo antes de abrir la transacción:</b> un token inválido o
  *       un proveedor que no responde no dejan ninguna fila.</li>
  *   <li><b>Ejecutar en UnitOfWork</b> (paso 5): {@link PlayerAccountService} busca o crea la cuenta en su
- *       propia transacción. La entrega de la colección (paso 6) usa otra, como pide la sección 8.2
- *       ("todo o nada" de la entrega, sin afectar la cuenta).</li>
+ *       propia transacción y la confirma. La entrega de la colección (paso 6) usa otra, como pide la
+ *       sección 8.2 ("todo o nada" de la entrega): si la entrega se revierte, la cuenta sigue existiendo.</li>
  *   <li><b>Responder</b> (pasos 7 y 8): credenciales propias y el resultado.</li>
  * </ol>
  *
@@ -44,8 +44,10 @@ import cr.ac.tec.pokearena.domain.model.PlayerAccount;
  *       proveedor, conserva su cuenta (criterio C.4).</li>
  *   <li>El nombre y el correo pueden faltar (Google no siempre los envía): se guardan como nulos y la
  *       respuesta muestra el nombre de respaldo de {@link Player#visibleName()}.</li>
- *   <li>Paso 6 "no bloquea el ingreso": si la entrega lanza una excepción inesperada, la sesión se abre
- *       igual con {@code PENDING_ERROR}, y el siguiente ingreso vuelve a intentar.</li>
+ *   <li>Paso 6 "no bloquea el ingreso": la entrega ({@code DeliverInitialCollectionUseCase}, por el puerto
+ *       {@link InitialCollectionDelivery}) corre después de tener la cuenta y en su propia transacción. Si
+ *       lanza una excepción, {@link NonBlockingInitialCollection} registra un aviso y la sesión se abre igual
+ *       con {@code PENDING_ERROR}; el siguiente ingreso vuelve a intentar.</li>
  *   <li>Este caso de uso nunca ve un token de PokéArena entrante: después del ingreso, la autorización de
  *       la API solo usa las credenciales que se emiten en el paso 7. Por eso agregar un proveedor no la
  *       cambia.</li>
@@ -53,20 +55,16 @@ import cr.ac.tec.pokearena.domain.model.PlayerAccount;
  */
 public class LoginWithProviderUseCase {
 
-    // Logger de Java (java.lang.System.Logger): la aplicación no depende de Spring ni de una
-    // biblioteca de logs. En ejecución sus mensajes salen por el mismo sistema de logs de Spring Boot.
-    private static final System.Logger LOG = System.getLogger(LoginWithProviderUseCase.class.getName());
-
     private final IdentityProviderRegistry providers;
     private final PlayerAccountService accounts;
-    private final InitialCollectionDelivery initialCollection;
+    private final NonBlockingInitialCollection initialCollection;
     private final TokenIssuer tokenIssuer;
 
     public LoginWithProviderUseCase(IdentityProviderRegistry providers, PlayerAccountService accounts,
             InitialCollectionDelivery initialCollection, TokenIssuer tokenIssuer) {
         this.providers = providers;
         this.accounts = accounts;
-        this.initialCollection = initialCollection;
+        this.initialCollection = new NonBlockingInitialCollection(initialCollection);
         this.tokenIssuer = tokenIssuer;
     }
 
@@ -98,27 +96,16 @@ public class LoginWithProviderUseCase {
                 blankToNull(verified.displayName()), blankToNull(verified.email()));
         Player player = account.player();
 
-        // Paso 6 (mensajes 14 y 15): entregar la colección inicial. No bloquea el ingreso.
-        InitialCollectionStatus collection = deliverInitialCollection(player);
+        // Paso 6 (mensajes 14 y 15): entregar la colección inicial, DESPUÉS de tener la cuenta y en otra
+        // transacción (la del caso de uso RecibirColecciónInicial, diagrama A.5). Nunca impide el ingreso:
+        // si falla, PENDING_ERROR con un aviso en el log, y el siguiente ingreso reintenta.
+        InitialCollectionStatus collection = initialCollection.deliver(player.id());
 
         // Paso 7 (mensajes 16 y 17): emitir las credenciales propias, con vencimiento corto.
         IssuedToken token = tokenIssuer.issue(new AuthenticatedUser(player.id(), player.role()));
 
         // Paso 8 (mensajes 18 a 20): la API responde 200 con token, jugador y estado de la colección.
         return new LoginResult(new Session(player, token), account.created(), collection);
-    }
-
-    private InitialCollectionStatus deliverInitialCollection(Player player) {
-        try {
-            return initialCollection.deliver(player.id());
-        } catch (RuntimeException failure) {
-            // La entrega es "todo o nada" en su propia transacción: si falló, no quedó nada a medias.
-            LOG.log(System.Logger.Level.WARNING,
-                    "No se pudo entregar la colección inicial del jugador " + player.id()
-                            + "; se reintentará en su próximo ingreso",
-                    failure);
-            return InitialCollectionStatus.PENDING_ERROR;
-        }
     }
 
     private static String required(String value, String field, String message) {
