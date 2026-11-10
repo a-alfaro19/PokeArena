@@ -141,6 +141,69 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
 
+  /api/v1/catalogo:
+    get:
+      tags: [Catálogo]
+      operationId: exploreCatalog
+      summary: Explorar el catálogo y mi colección (3.1.2)
+      description: |
+        Solo cartas disponibles y activas, ordenadas por id y paginadas según 5.5.
+        Los filtros se combinan con AND. La colección pertenece siempre a la sesión verificada;
+        no se acepta un identificador de jugador. Las cartas no poseídas tienen copies 0.
+        owned=false u omitido muestra todo el catálogo; owned=true muestra solo cartas propias.
+        Filtros desconocidos, repetidos, vacíos o inválidos son INVALID_FIELD con valores
+        permitidos cuando corresponda. Paginación inválida es INVALID_PAGINATION.
+        Una combinación sin coincidencias devuelve 200 con items vacío y nextCursor null.
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/TypeCode'
+        - name: costMin
+          in: query
+          description: Costo mínimo inclusivo; no puede superar costMax.
+          schema:
+            $ref: '#/components/schemas/Cost'
+        - name: costMax
+          in: query
+          description: Costo máximo inclusivo.
+          schema:
+            $ref: '#/components/schemas/Cost'
+        - name: owned
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Página del catálogo con propiedad y copias de la sesión actual.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogPage'
+        '400':
+          description: Filtros o paginación inválidos.
+          x-error-types: [INVALID_FIELD, INVALID_PAGINATION]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/v1/cartas:
     post:
       tags: [Cartas]
@@ -970,6 +1033,48 @@ components:
           description: Si los jugadores pueden verla. Solo con imageStatus READY.
         ability:
           $ref: '#/components/schemas/Ability'
+
+    CatalogCard:
+      description: Carta disponible y activa; las imágenes grandes se usan en catálogo y colección.
+      type: object
+      required: [code, name, cost, power, type, rarity, imageLargeUrl, imageSmallUrl, ability, owned, copies]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        cost:
+          $ref: '#/components/schemas/Cost'
+        power:
+          $ref: '#/components/schemas/Power'
+        type:
+          $ref: '#/components/schemas/CatalogValue'
+        rarity:
+          $ref: '#/components/schemas/CatalogValue'
+        imageLargeUrl:
+          type: string
+        imageSmallUrl:
+          type: string
+        ability:
+          $ref: '#/components/schemas/Ability'
+        owned:
+          type: boolean
+          description: true si copies es mayor que cero.
+        copies:
+          type: integer
+          minimum: 0
+    CatalogPage:
+      type: object
+      required: [items, nextCursor, limit]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogCard'
+        nextCursor:
+          type: [string, 'null']
+        limit:
+          type: integer
 
     CardPage:
       description: Página de la paginación única (sección 5.5). Sin total ni vencimientos.

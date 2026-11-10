@@ -8,6 +8,8 @@ import cr.ac.tec.pokearena.application.port.Clock;
 import cr.ac.tec.pokearena.application.port.ImageProcessor;
 import cr.ac.tec.pokearena.application.port.ImageStorage;
 import cr.ac.tec.pokearena.application.usecase.CreateCardUseCase;
+import cr.ac.tec.pokearena.application.usecase.ExploreCatalogUseCase;
+import cr.ac.tec.pokearena.domain.repository.PlayerCatalogRepository;
 import cr.ac.tec.pokearena.application.usecase.IdempotencyGuard;
 import cr.ac.tec.pokearena.application.usecase.ImageCreationSteps;
 import cr.ac.tec.pokearena.application.usecase.Pagination;
@@ -38,4 +40,11 @@ public class CardConfiguration {
             CardRepository cards, CatalogCache cache) {
         return new SearchCardsUseCase(pagination, catalog, cards, cache);
     }
+    /** Ensambla el catálogo sin introducir Spring en el caso de uso. */
+    @Bean
+    public ExploreCatalogUseCase exploreCatalogUseCase(Pagination pagination, CardCatalogRepository catalog,
+            PlayerCatalogRepository cards, CatalogCache cache) {
+        return new ExploreCatalogUseCase(pagination, catalog, cards, cache);
+    }
+
 }

@@ -18,6 +18,9 @@ public record CatalogCacheKey(String space, String filtersHash, String cursor, i
     /** Espacio de la búsqueda del administrador (7.3): incluye las cartas no disponibles. */
     public static final String ADMIN_SEARCH = "admin-search";
 
+    /** Catálogo público del jugador: solo disponibles y activas, sin propiedad ni copias. */
+    public static final String PLAYER_CATALOG = "player-catalog";
+
     /** Parte de la clave que reemplaza al cursor en la primera página. */
     public static final String FIRST_PAGE = "first";
 
