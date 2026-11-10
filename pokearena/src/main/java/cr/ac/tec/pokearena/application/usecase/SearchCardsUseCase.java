@@ -43,7 +43,8 @@ import cr.ac.tec.pokearena.domain.rule.CardSearchRules;
  *   <li>El administrador ve todas las cartas, también las no disponibles (por ejemplo con la miniatura
  *       en {@code PENDING_RETRY}), para poder revisarlas (sección 7.3).</li>
  *   <li>La clave de la caché usa los criterios ya validados y normalizados: {@code name=DRAGÓN} y
- *       {@code name=dragon}, o {@code cost=3} y {@code costMin=3&costMax=3}, comparten página.</li>
+ *       {@code name=dragon}, o {@code cost=3} y {@code costMin=3&costMax=3}, comparten página. La arma
+ *       {@link CatalogPageKeys}, igual que en Explorar el catálogo.</li>
  *   <li>La página guardada en la caché ya trae su {@code nextCursor}: como el cursor es por clave
  *       ({@code id}), sigue siendo válido aunque se creen cartas después.</li>
  * </ul>
@@ -79,7 +80,7 @@ public class SearchCardsUseCase {
         PageRequest page = pagination.parse(command.parameters());
 
         // Mensajes 7 y 8: consultar la página en la caché.
-        CatalogCacheKey key = cacheKey(criteria, page);
+        CatalogCacheKey key = CatalogPageKeys.of(CatalogCacheKey.ADMIN_SEARCH, criteria, page);
         Optional<Page<CardDetails>> cached = cache.get(key, CardDetails.class);
         if (cached.isPresent()) {
             return cached.get();
@@ -96,18 +97,5 @@ public class SearchCardsUseCase {
 
         // Mensajes 13 a 15: con el resultado, la API responde 200 con las cartas y el cursor.
         return result;
-    }
-
-    /**
-     * Clave de la página en la caché (sección 9): espacio de la búsqueda del administrador, hash de los
-     * criterios validados, cursor y límite.
-     */
-    private static CatalogCacheKey cacheKey(CardSearchCriteria criteria, PageRequest page) {
-        RequestHash.Builder filters = RequestHash.builder();
-        criteria.asMap().forEach(filters::field);
-        String cursor = page.afterId() == PageRequest.FROM_START
-                ? CatalogCacheKey.FIRST_PAGE
-                : Pagination.encode(page.afterId());
-        return new CatalogCacheKey(CatalogCacheKey.ADMIN_SEARCH, filters.build(), cursor, page.limit());
     }
 }

@@ -14,11 +14,11 @@ fuente de verdad del proyecto, está en
 | 2.1.2 Buscar carta | `GET /api/v1/cartas` (administrador) | Pestaña "Buscar carta" | Sprint 1, terminada |
 | Reintentos de miniatura (C.1 y C.2) | Tarea programada `ThumbnailRetryJob` | Estado de imagen en la ficha y en la búsqueda | Sprint 1, terminada |
 | Imágenes de cartas y ubicaciones | `GET /images/{carpeta}/{id}/{archivo}` (pública) | Vistas previas y miniaturas | Sprint 1, terminada |
-| 1.1.1 Inicio de sesión con proveedor | `POST /api/v1/sesiones` (pública) | — | Sprint 2, API terminada (falta la interfaz) |
-| 3.1.1 Recibir colección inicial | Durante `POST /api/v1/sesiones` (campo `initialCollection`) y, en el perfil `dev`, para el jugador de prueba | — | Sprint 2, API terminada (falta la interfaz) |
-| 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` | — | Sprint 2, pendiente |
+| 1.1.1 Inicio de sesión con proveedor | `POST /api/v1/sesiones` (pública) y `GET /api/v1/configuracion` (client id de Google, pública) | Botón "Entrar con Google" en la barra de sesión | Sprint 2, terminada |
+| 3.1.1 Recibir colección inicial | Durante `POST /api/v1/sesiones` (campo `initialCollection`) y, en el perfil `dev`, para el jugador de prueba | Bienvenida con el estado de la colección; caso rápido "Segundo ingreso del jugador" | Sprint 2, terminada |
+| 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` (jugador o administrador) | Pestaña "Catálogo y mi colección" | Sprint 2, terminada |
 
-Mientras llega el inicio de sesión con proveedor, el perfil `dev` ofrece credenciales de prueba
+Para desarrollo y demostraciones, el perfil `dev` ofrece además credenciales de prueba
 (`POST /api/v1/dev/sesiones`), que no existen con ningún otro perfil.
 
 El contrato HTTP está en
@@ -246,8 +246,10 @@ PokeArena
         │       ├── application.properties, application-dev.properties
         │       ├── db/migration          migraciones Flyway (V1 esquema y semillas, V2, ...)
         │       ├── openapi/pokearena.yaml contrato HTTP
-        │       └── static                interfaz web (index.html, app.js, styles.css)
-        └── test/java/cr/ac/tec/pokearena  pruebas (*Test unitarias, *IT de integración, support/)
+        │       └── static                interfaz web (index.html, app.js, player.js, styles.css)
+        └── test
+            ├── java/cr/ac/tec/pokearena  pruebas (*Test unitarias, *IT de integración, support/)
+            └── javascript                pruebas de la interfaz del jugador (node --test)
 ```
 
 El código vive en `cr.ac.tec.pokearena`, organizado en capas (sección 4.1 de la especificación).
@@ -255,8 +257,8 @@ Cada paquete tiene un `package-info.java` que explica su responsabilidad y lo qu
 
 | Capa | Paquete | Qué contiene | Puede usar |
 |---|---|---|---|
-| Presentación | `src/main/resources/static/` | Interfaz web | La API por HTTP |
-| API | `api.controller` | `CardController`, `LocationController`, `ImageFileController` y `DevSessionController` (solo `dev`) | `application` |
+| Presentación | `src/main/resources/static/` | Interfaz web: `index.html` (estructura), `app.js` (sesiones, formularios del administrador, casos rápidos y panel de respuesta), `player.js` (estado del catálogo del jugador, bienvenida y Google, sin DOM: lo prueban las pruebas de JavaScript) y `styles.css` | La API por HTTP |
+| API | `api.controller` | `SessionController` (inicio de sesión), `CatalogController` (catálogo del jugador), `CardController`, `LocationController`, `ImageFileController`, `ConfigurationController` (client id de Google) y `DevSessionController` (solo `dev`) | `application` |
 | | `api.dto` | Cuerpos HTTP: fichas, páginas y sesiones | |
 | | `api.error` | `ApiErrorHandler` (único manejador global) y el formato único `ApiError` | |
 | | `api.security` | `AuthorizationInterceptor`, `@RequiresRole`, `@PublicRoute` | |
@@ -271,7 +273,7 @@ Cada paquete tiene un `package-info.java` que explica su responsabilidad y lo qu
 | | `domain.repository` | Puertos de persistencia | |
 | Infraestructura | `infrastructure.persistence` | Repositorios JDBC y `TransactionalUnitOfWork` | `domain` y `application` |
 | | `infrastructure.storage` | Procesador y almacenamiento de imágenes, tarea de reintentos | |
-| | `infrastructure.identity` | Emisión y verificación de las credenciales propias (JWT) | |
+| | `infrastructure.identity` | Emisión y verificación de las credenciales propias (JWT) y `GoogleIdentityProvider`, el verificador de los tokens de Google (firma con las llaves públicas JWKS, emisor, vencimiento y audiencia) | |
 | | `infrastructure.cache` | Caché del catálogo (hoy sin Redis: no guarda nada) | |
 | | `infrastructure.config` | Ensamblado de los casos de uso con sus puertos | |
 

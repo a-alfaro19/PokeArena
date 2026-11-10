@@ -16,6 +16,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -38,12 +39,20 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Propósito: verificar la historia 3.1.2 de punta a punta con HTTP, JWT real y PostgreSQL (C.6, 8.3 y A.6).
- * Responsabilidades: cubrir aislamiento, copias, filtros, visibilidad, paginación y contrato.
- * Los datos se eliminan en orden de claves foráneas y las pruebas corren en secuencia.
+ * Propósito: pruebas de punta a punta de la historia 3.1.2 "Explorar el catálogo y mi colección"
+ * (criterios C.6).
+ * Responsabilidades: verificar {@code GET /api/v1/catalogo} con la aplicación completa, credenciales
+ * propias reales y PostgreSQL real: éxito (campos, filtros, propiedad, copias, paginación), cada error con
+ * su status y su type, los alternos, el contrato de la respuesta y el rendimiento con 10.000 cartas.
+ * Referencia: sección 8.3, Anexo A.6 y Anexo C.6.
+ *
+ * <p>Misma estructura que las demás historias: clases {@code @Nested} Éxito, Errores y Alternos, con un
+ * {@code @DisplayName} que cita el criterio. Cada prueba parte de un catálogo conocido (cartas visibles y
+ * excluidas, con dueño) y lo borra al terminar, en orden de claves foráneas; las pruebas corren en
+ * secuencia (sección 13).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@DisplayName("C.6: Explorar catálogo y mi colección")
+@DisplayName("Historia 3.1.2: explorar el catálogo y mi colección (API completa)")
 class CatalogIT extends PostgresIntegrationTestBase {
 
     private static final String PATH = "/api/v1/catalogo";
@@ -105,193 +114,223 @@ class CatalogIT extends PostgresIntegrationTestBase {
         jdbc.update("DELETE FROM card");
     }
 
-    @Test
-    @DisplayName("C.6: sin sesión o con token inválido se rechaza antes de validar filtros")
-    void authentication() throws Exception {
-        for (String bearer : new String[] {null, "invalid", tokens.issue(new AuthenticatedUser(first, Role.PLAYER))
-                .value() + "alterado"}) {
-            error(get(PATH, "type=INVALID&limit=0", bearer), 401, "NOT_AUTHENTICATED", null);
+    @Nested
+    @DisplayName("Éxito")
+    class Success {
+
+        @Test
+        @DisplayName("C.6 éxito: el catálogo muestra las cartas de forma paginada con nombre, imagen, costo, poder, tipo, rareza y habilidad")
+        void ownershipAndFields() throws Exception {
+            JsonNode page = page("", firstToken);
+            assertThat(codes(page)).containsExactlyElementsOf(VISIBLE);
+            assertThat(page.get("limit").asInt()).isEqualTo(20);
+            assertThat(page.get("nextCursor").isNull()).isTrue();
+            JsonNode own = page.get("items").get(0);
+            assertThat(own.get("owned").asBoolean()).isTrue();
+            assertThat(own.get("copies").asInt()).isEqualTo(3);
+            assertThat(own.get("name").asString()).isEqualTo("Carta PKA-FUE-001");
+            assertThat(own.get("cost").asInt()).isZero();
+            assertThat(own.get("power").asInt()).isEqualTo(-2);
+            assertThat(own.get("type").get("code").asString()).isEqualTo("FUE");
+            assertThat(own.get("rarity").get("code").asString()).isEqualTo("COMMON");
+            assertThat(own.get("ability").get("code").asString()).isEqualTo("HAB-000");
+            assertThat(own.get("ability").get("name").asString()).isNotBlank();
+            assertThat(own.get("imageLargeUrl").asString()).endsWith("/large.png");
+            assertThat(own.get("imageSmallUrl").asString()).endsWith("/small.png");
+            assertThat(page.get("items").get(1).get("owned").asBoolean()).isFalse();
+            assertThat(page.get("items").get(1).get("copies").asInt()).isZero();
+        }
+
+        @ParameterizedTest
+        @CsvSource(delimiter = '|', value = {
+                "type=FUE | PKA-FUE-001,PKA-FUE-002",
+                "costMin=7 | PKA-FUE-002,PKA-PLA-001",
+                "costMax=3 | PKA-FUE-001,PKA-AGU-001",
+                "costMin=3&costMax=7 | PKA-AGU-001,PKA-FUE-002",
+                "type=FUE&costMin=1&costMax=7 | PKA-FUE-002",
+                "owned=true&type=FUE&costMin=1&costMax=7 | PKA-FUE-002",
+                "costMin=0&costMax=0 | PKA-FUE-001",
+                "costMin=10&costMax=10 | PKA-PLA-001" })
+        @DisplayName("C.6 éxito: los filtros por tipo y por costo pueden combinarse y los resultados cumplen todos los filtros activos (extremos inclusivos)")
+        void filters(String query, String expected) throws Exception {
+            assertThat(codes(page(query, firstToken))).containsExactly(expected.split(","));
+        }
+
+        @Test
+        @DisplayName("C.6 éxito: cada carta indica si el jugador la posee y cuántas copias tiene, solo de su propia colección; un filtro muestra solo las propias")
+        void isolatesPlayers() throws Exception {
+            JsonNode a = page("", firstToken);
+            JsonNode b = page("", secondToken);
+            assertThat(codes(a)).isEqualTo(codes(b));
+            assertThat(b.get("items").get(0).get("copies").asInt()).isZero();
+            assertThat(b.get("items").get(1).get("copies").asInt()).isEqualTo(5);
+            assertThat(codes(page("owned=true", firstToken))).containsExactly("PKA-FUE-001", "PKA-FUE-002");
+            JsonNode secondOwned = page("owned=true", secondToken);
+            assertThat(codes(secondOwned)).containsExactly("PKA-AGU-001");
+            assertThat(secondOwned.get("items").get(0).get("copies").asInt()).isEqualTo(5);
+            assertThat(secondOwned.get("items").get(0).get("owned").asBoolean()).isTrue();
+            // Un id enviado por el cliente no selecciona la colección de otro jugador.
+            error(get(PATH, "playerId=" + second, firstToken), 400, "INVALID_FIELD", "playerId");
+        }
+
+        @Test
+        @DisplayName("C.6 éxito (paginado) y 5.5: páginas sin duplicados ni omisiones, también con owned y filtros")
+        void pagination() throws Exception {
+            assertThat(traverse("limit=1", firstToken)).containsExactlyElementsOf(VISIBLE);
+            assertThat(traverse("limit=1&owned=true&type=FUE", firstToken))
+                    .containsExactly("PKA-FUE-001", "PKA-FUE-002");
+            assertThat(traverse("limit=1&costMin=3", firstToken))
+                    .containsExactly("PKA-AGU-001", "PKA-FUE-002", "PKA-PLA-001");
+        }
+
+        @Test
+        @DisplayName("C.6 éxito y 8.3: solo cartas disponibles y activas; la búsqueda del administrador sigue viendo todas")
+        void visibilityAndAdmin() throws Exception {
+            String admin = token(first, Role.ADMIN);
+            assertThat(codes(page("", admin))).containsExactlyElementsOf(VISIBLE);
+            assertThat(codes(page("owned=true", admin))).containsExactly("PKA-FUE-001", "PKA-FUE-002");
+            Result administrative = get("/api/v1/cartas", "", admin);
+            assertThat(administrative.status()).isEqualTo(200);
+            assertThat(codes(administrative.body())).hasSize(8)
+                    .contains("PKA-ELE-001", "PKA-PSI-001", "PKA-LUC-001", "PKA-AGU-002");
         }
     }
 
-    @Test
-    @DisplayName("C.6 éxito: catálogo con cartas propias y ajenas, copias correctas e imagen grande")
-    void ownershipAndFields() throws Exception {
-        JsonNode page = page("", firstToken);
-        assertThat(codes(page)).containsExactlyElementsOf(VISIBLE);
-        assertThat(page.get("limit").asInt()).isEqualTo(20);
-        assertThat(page.get("nextCursor").isNull()).isTrue();
-        JsonNode own = page.get("items").get(0);
-        assertThat(own.get("owned").asBoolean()).isTrue();
-        assertThat(own.get("copies").asInt()).isEqualTo(3);
-        assertThat(own.get("name").asString()).isEqualTo("Carta PKA-FUE-001");
-        assertThat(own.get("cost").asInt()).isZero();
-        assertThat(own.get("power").asInt()).isEqualTo(-2);
-        assertThat(own.get("type").get("code").asString()).isEqualTo("FUE");
-        assertThat(own.get("rarity").get("code").asString()).isEqualTo("COMMON");
-        assertThat(own.get("ability").get("code").asString()).isEqualTo("HAB-000");
-        assertThat(own.get("ability").get("name").asString()).isNotBlank();
-        assertThat(own.get("imageLargeUrl").asString()).endsWith("/large.png");
-        assertThat(own.get("imageSmallUrl").asString()).endsWith("/small.png");
-        assertThat(page.get("items").get(1).get("owned").asBoolean()).isFalse();
-        assertThat(page.get("items").get(1).get("copies").asInt()).isZero();
-    }
+    @Nested
+    @DisplayName("Errores")
+    class Errors {
 
-    @Test
-    @DisplayName("C.6: dos jugadores solo ven la propiedad y las copias de su propia colección")
-    void isolatesPlayers() throws Exception {
-        JsonNode a = page("", firstToken);
-        JsonNode b = page("", secondToken);
-        assertThat(codes(a)).isEqualTo(codes(b));
-        assertThat(b.get("items").get(0).get("copies").asInt()).isZero();
-        assertThat(b.get("items").get(1).get("copies").asInt()).isEqualTo(5);
-        assertThat(codes(page("owned=true", firstToken))).containsExactly("PKA-FUE-001", "PKA-FUE-002");
-        JsonNode secondOwned = page("owned=true", secondToken);
-        assertThat(codes(secondOwned)).containsExactly("PKA-AGU-001");
-        assertThat(secondOwned.get("items").get(0).get("copies").asInt()).isEqualTo(5);
-        assertThat(secondOwned.get("items").get(0).get("owned").asBoolean()).isTrue();
-        // Un id enviado por el cliente no selecciona la colección de otro jugador.
-        error(get(PATH, "playerId=" + second, firstToken), 400, "INVALID_FIELD", "playerId");
-    }
-
-    @ParameterizedTest
-    @CsvSource(delimiter = '|', value = {
-            "type=FUE | PKA-FUE-001,PKA-FUE-002",
-            "costMin=7 | PKA-FUE-002,PKA-PLA-001",
-            "costMax=3 | PKA-FUE-001,PKA-AGU-001",
-            "costMin=3&costMax=7 | PKA-AGU-001,PKA-FUE-002",
-            "type=FUE&costMin=1&costMax=7 | PKA-FUE-002",
-            "owned=true&type=FUE&costMin=1&costMax=7 | PKA-FUE-002",
-            "costMin=0&costMax=0 | PKA-FUE-001",
-            "costMin=10&costMax=10 | PKA-PLA-001" })
-    @DisplayName("C.6 éxito: filtros individuales y combinados con extremos inclusivos")
-    void filters(String query, String expected) throws Exception {
-        assertThat(codes(page(query, firstToken))).containsExactly(expected.split(","));
-    }
-
-    @Test
-    @DisplayName("C.6 alternos: sin coincidencias y colección vacía devuelven lista vacía, no un error")
-    void emptyAndOwnedFalse() throws Exception {
-        assertThat(codes(page("type=AGU&costMin=9", firstToken))).isEmpty();
-        assertThat(codes(page("owned=true&type=PLA", firstToken))).isEmpty();
-        String emptyPlayer = token(player(), Role.PLAYER);
-        JsonNode empty = page("owned=true", emptyPlayer);
-        assertThat(codes(empty)).isEmpty();
-        assertThat(empty.get("nextCursor").isNull()).isTrue();
-        assertThat(codes(page("owned=false", emptyPlayer))).containsExactlyElementsOf(VISIBLE);
-        assertThat(page("", emptyPlayer).get("items").valueStream()
-                .allMatch(item -> !item.get("owned").asBoolean() && item.get("copies").asInt() == 0)).isTrue();
-    }
-
-    @ParameterizedTest
-    @CsvSource(delimiter = '|', value = {
-            "type=INVALID | type", "type=fue | type", "costMin=-1 | costMin", "costMax=11 | costMax",
-            "costMin=abc | costMin", "costMax=1.5 | costMax", "costMin=8&costMax=2 | costMin",
-            "owned=yes | owned", "owned=TRUE | owned", "type= | type", "owned= | owned",
-            "type=FUE&type=AGU | type", "costMin=1&costMin=2 | costMin", "cost=3 | cost" })
-    @DisplayName("C.6 errores: filtros inválidos devuelven INVALID_FIELD y valores permitidos")
-    void invalidFilters(String query, String field) throws Exception {
-        Result response = get(PATH, query, firstToken);
-        error(response, 400, "INVALID_FIELD", field);
-        assertThat(response.body().get("allowedValues").size()).isPositive();
-    }
-
-    @ParameterizedTest
-    @CsvSource(delimiter = '|', value = {
-            "limit=0 | limit", "limit=101 | limit", "limit=-1 | limit", "limit=abc | limit",
-            "limit=1.5 | limit", "limit= | limit", "limit=1&limit=2 | limit",
-            "cursor= | cursor", "cursor=invalid | cursor", "cursor=MQ== | cursor",
-            "cursor=MDE | cursor", "cursor=KzE | cursor", "cursor=MQ&cursor=Mg | cursor" })
-    @DisplayName("C.6 errores: paginación inválida siempre devuelve INVALID_PAGINATION")
-    void invalidPagination(String query, String field) throws Exception {
-        error(get(PATH, query, firstToken), 400, "INVALID_PAGINATION", field);
-    }
-
-    @Test
-    @DisplayName("5.5 y C.6: páginas sin duplicados ni omisiones, también con owned y filtros")
-    void pagination() throws Exception {
-        assertThat(traverse("limit=1", firstToken)).containsExactlyElementsOf(VISIBLE);
-        assertThat(traverse("limit=1&owned=true&type=FUE", firstToken))
-                .containsExactly("PKA-FUE-001", "PKA-FUE-002");
-        assertThat(traverse("limit=1&costMin=3", firstToken))
-                .containsExactly("PKA-AGU-001", "PKA-FUE-002", "PKA-PLA-001");
-    }
-
-    @Test
-    @DisplayName("8.3: excluye inactivas, pendientes, fallidas y no disponibles sin alterar la búsqueda del administrador")
-    void visibilityAndAdmin() throws Exception {
-        String admin = token(first, Role.ADMIN);
-        assertThat(codes(page("", admin))).containsExactlyElementsOf(VISIBLE);
-        assertThat(codes(page("owned=true", admin))).containsExactly("PKA-FUE-001", "PKA-FUE-002");
-        Result administrative = get("/api/v1/cartas", "", admin);
-        assertThat(administrative.status()).isEqualTo(200);
-        assertThat(codes(administrative.body())).hasSize(8)
-                .contains("PKA-ELE-001", "PKA-PSI-001", "PKA-LUC-001", "PKA-AGU-002");
-    }
-
-    @Test
-    @DisplayName("C.6 alterno: una carta nueva aparece sin exigir refrescar datos personales cacheados")
-    void newlyCreatedCard() throws Exception {
-        assertThat(codes(page("type=LUC", firstToken))).isEmpty();
-        card("PKA-LUC-002", "LUC", 1, true, true, "READY");
-        assertThat(codes(page("type=LUC", firstToken))).containsExactly("PKA-LUC-002");
-    }
-
-    @Test
-    @DisplayName("Contrato HTTP: la respuesta real coincide con las propiedades requeridas del catálogo")
-    @SuppressWarnings("unchecked")
-    void responseContract() throws Exception {
-        // Lee el contrato publicado: no duplica una segunda lista manual de campos del endpoint.
-        try (var input = getClass().getResourceAsStream(OpenApiContract.RESOURCE)) {
-            Map<String, Object> contract = new Yaml().load(input);
-            Map<String, Object> schemas = (Map<String, Object>) ((Map<String, Object>) contract.get("components")).get("schemas");
-            JsonNode response = page("limit=1", firstToken);
-            // Conserva una respuesta real de HTTP para la revisión manual de la entrega.
-            Files.writeString(Path.of("target/catalog-response-example.json"),
-                    response.toPrettyString());
-            assertShape(response, (Map<String, Object>) schemas.get("CatalogPage"));
-            assertShape(response.get("items").get(0), (Map<String, Object>) schemas.get("CatalogCard"));
-        }
-    }
-
-    @Test
-    @DisplayName("13 y C.6: catálogo de 10.000 cartas con páginas menores a 300 ms e índices, también owned=true")
-    void largeCatalogPerformance() throws Exception {
-        // Usa la semilla oficial, eliminando primero las referencias de las colecciones de la prueba.
-        jdbc.update("DELETE FROM player_card WHERE player_id IN (?, ?)", first, second);
-        jdbc.update("DELETE FROM card");
-        jdbc.execute(Files.readString(Path.of("scripts/seed-10000-cartas.sql")));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM card", Integer.class)).isEqualTo(LARGE_CATALOG_SIZE);
-        jdbc.update("INSERT INTO player_card (player_id, card_code, copies) SELECT ?, code, 2 FROM card WHERE id % 4 = 0", first);
-        jdbc.execute("ANALYZE player_card");
-
-        // Las mediciones son por HTTP y usan la misma caché deshabilitada que el resto del proyecto.
-        List<String> measurements = new ArrayList<>();
-        for (String query : List.of("limit=100", "type=FUE&costMin=3&costMax=5", "owned=true&limit=100")) {
-            for (int i = 0; i < WARM_UP_REQUESTS; i++) {
-                page(query, firstToken);
+        @Test
+        @DisplayName("C.6 errores y 5.2: sin sesión o con token inválido se rechaza con 401 antes de validar filtros")
+        void authentication() throws Exception {
+            for (String bearer : new String[] {null, "invalid", tokens.issue(new AuthenticatedUser(first, Role.PLAYER))
+                    .value() + "alterado"}) {
+                error(get(PATH, "type=INVALID&limit=0", bearer), 401, "NOT_AUTHENTICATED", null);
             }
-            List<Long> millis = new ArrayList<>();
-            for (int i = 0; i < MEASURED_REQUESTS; i++) {
-                long start = System.nanoTime();
-                Result result = get(PATH, query, firstToken);
-                millis.add((System.nanoTime() - start) / NANOS_PER_MILLI);
-                assertThat(result.status()).isEqualTo(200);
-            }
-            millis.sort(Long::compareTo);
-            long p95 = millis.get(P95_INDEX);
-            measurements.add(query + ": p95=" + p95 + " ms");
-            assertThat(p95).as(query).isLessThan(MAX_PAGE_MILLIS);
         }
 
-        // EXPLAIN usa el mismo generador que JDBC, sin forzar índices ni cambiar el planificador.
-        for (UUID owner : new UUID[] {null, first}) {
-            CardSearchSql.Query query = CardSearchSql.catalog(CardSearchCriteria.builder().build(), 0, 101, owner);
-            String plan = String.join("\n", jdbc.queryForList("EXPLAIN " + query.sql(), String.class, query.arguments().toArray()));
-            assertThat(plan).contains("Index").doesNotContain("Seq Scan on card ");
-            measurements.add(plan);
+        @ParameterizedTest
+        @CsvSource(delimiter = '|', value = {
+                "type=INVALID | type", "type=fue | type", "costMin=-1 | costMin", "costMax=11 | costMax",
+                "costMin=abc | costMin", "costMax=1.5 | costMax", "costMin=8&costMax=2 | costMin",
+                "owned=yes | owned", "owned=TRUE | owned", "type= | type", "owned= | owned",
+                "type=FUE&type=AGU | type", "costMin=1&costMin=2 | costMin", "cost=3 | cost" })
+        @DisplayName("C.6 errores: un filtro con un valor inválido (tipo inexistente o costo fuera de rango) es rechazado indicando los valores permitidos")
+        void invalidFilters(String query, String field) throws Exception {
+            Result response = get(PATH, query, firstToken);
+            error(response, 400, "INVALID_FIELD", field);
+            assertThat(response.body().get("allowedValues").size()).isPositive();
         }
-        Files.writeString(Path.of("target/catalog-performance.txt"), String.join("\n", measurements));
+
+        @ParameterizedTest
+        @CsvSource(delimiter = '|', value = {
+                "limit=0 | limit", "limit=101 | limit", "limit=-1 | limit", "limit=abc | limit",
+                "limit=1.5 | limit", "limit= | limit", "limit=1&limit=2 | limit",
+                "cursor= | cursor", "cursor=invalid | cursor", "cursor=MQ== | cursor",
+                "cursor=MDE | cursor", "cursor=KzE | cursor", "cursor=MQ&cursor=Mg | cursor" })
+        @DisplayName("C.6 errores: un parámetro de paginación inválido devuelve un error descriptivo (INVALID_PAGINATION), no un error del servidor")
+        void invalidPagination(String query, String field) throws Exception {
+            error(get(PATH, query, firstToken), 400, "INVALID_PAGINATION", field);
+        }
+    }
+
+    @Nested
+    @DisplayName("Alternos")
+    class Alternatives {
+
+        @Test
+        @DisplayName("C.6 alternos: una combinación de filtros sin resultados (también una colección vacía) devuelve una lista vacía, no un error")
+        void emptyAndOwnedFalse() throws Exception {
+            assertThat(codes(page("type=AGU&costMin=9", firstToken))).isEmpty();
+            assertThat(codes(page("owned=true&type=PLA", firstToken))).isEmpty();
+            String emptyPlayer = token(player(), Role.PLAYER);
+            JsonNode empty = page("owned=true", emptyPlayer);
+            assertThat(codes(empty)).isEmpty();
+            assertThat(empty.get("nextCursor").isNull()).isTrue();
+            assertThat(codes(page("owned=false", emptyPlayer))).containsExactlyElementsOf(VISIBLE);
+            assertThat(page("", emptyPlayer).get("items").valueStream()
+                    .allMatch(item -> !item.get("owned").asBoolean() && item.get("copies").asInt() == 0)).isTrue();
+        }
+
+        @Test
+        @DisplayName("C.6 alternos: una carta recién creada aparece en el catálogo (aquí sin caché, de inmediato)")
+        void newlyCreatedCard() throws Exception {
+            assertThat(codes(page("type=LUC", firstToken))).isEmpty();
+            card("PKA-LUC-002", "LUC", 1, true, true, "READY");
+            assertThat(codes(page("type=LUC", firstToken))).containsExactly("PKA-LUC-002");
+        }
+
+        @Test
+        @DisplayName("C.6 alternos: el catálogo y la colección muestran la versión grande de la imagen de cada carta")
+        void largeImageInCatalogAndCollection() throws Exception {
+            for (String query : new String[] {"", "owned=true"}) {
+                assertThat(page(query, firstToken).get("items").valueStream()
+                        .map(item -> item.get("imageLargeUrl").asString()))
+                        .as(query).isNotEmpty().allMatch(url -> url.endsWith("/large.png"));
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Contrato y rendimiento")
+    class ContractAndPerformance {
+
+        @Test
+        @DisplayName("10: la respuesta real coincide con las propiedades requeridas del catálogo en el contrato")
+        @SuppressWarnings("unchecked")
+        void responseContract() throws Exception {
+            // Lee el contrato publicado: no duplica una segunda lista manual de campos del endpoint.
+            try (var input = getClass().getResourceAsStream(OpenApiContract.RESOURCE)) {
+                Map<String, Object> contract = new Yaml().load(input);
+                Map<String, Object> schemas = (Map<String, Object>) ((Map<String, Object>) contract.get("components")).get("schemas");
+                JsonNode response = page("limit=1", firstToken);
+                // Conserva una respuesta real de HTTP para la revisión manual de la entrega.
+                Files.writeString(Path.of("target/catalog-response-example.json"),
+                        response.toPrettyString());
+                assertShape(response, (Map<String, Object>) schemas.get("CatalogPage"));
+                assertShape(response.get("items").get(0), (Map<String, Object>) schemas.get("CatalogCard"));
+            }
+        }
+
+        @Test
+        @DisplayName("13 y C.6: catálogo de 10.000 cartas con páginas menores a 300 ms e índices, también owned=true")
+        void largeCatalogPerformance() throws Exception {
+            // Usa la semilla oficial, eliminando primero las referencias de las colecciones de la prueba.
+            jdbc.update("DELETE FROM player_card WHERE player_id IN (?, ?)", first, second);
+            jdbc.update("DELETE FROM card");
+            jdbc.execute(Files.readString(Path.of("scripts/seed-10000-cartas.sql")));
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM card", Integer.class)).isEqualTo(LARGE_CATALOG_SIZE);
+            jdbc.update("INSERT INTO player_card (player_id, card_code, copies) SELECT ?, code, 2 FROM card WHERE id % 4 = 0", first);
+            jdbc.execute("ANALYZE player_card");
+
+            // Las mediciones son por HTTP y usan la misma caché que el resto de las pruebas.
+            List<String> measurements = new ArrayList<>();
+            for (String query : List.of("limit=100", "type=FUE&costMin=3&costMax=5", "owned=true&limit=100")) {
+                for (int i = 0; i < WARM_UP_REQUESTS; i++) {
+                    page(query, firstToken);
+                }
+                List<Long> millis = new ArrayList<>();
+                for (int i = 0; i < MEASURED_REQUESTS; i++) {
+                    long start = System.nanoTime();
+                    Result result = get(PATH, query, firstToken);
+                    millis.add((System.nanoTime() - start) / NANOS_PER_MILLI);
+                    assertThat(result.status()).isEqualTo(200);
+                }
+                millis.sort(Long::compareTo);
+                long p95 = millis.get(P95_INDEX);
+                measurements.add(query + ": p95=" + p95 + " ms");
+                assertThat(p95).as(query).isLessThan(MAX_PAGE_MILLIS);
+            }
+
+            // EXPLAIN usa el mismo generador que JDBC, sin forzar índices ni cambiar el planificador.
+            for (UUID owner : new UUID[] {null, first}) {
+                CardSearchSql.Query query = CardSearchSql.catalog(CardSearchCriteria.builder().build(), 0, 101, owner);
+                String plan = String.join("\n", jdbc.queryForList("EXPLAIN " + query.sql(), String.class, query.arguments().toArray()));
+                assertThat(plan).contains("Index").doesNotContain("Seq Scan on card ");
+                measurements.add(plan);
+            }
+            Files.writeString(Path.of("target/catalog-performance.txt"), String.join("\n", measurements));
+        }
     }
 
     /** Verifica nombres reales contra required y properties del esquema, sin aceptar campos inventados. */

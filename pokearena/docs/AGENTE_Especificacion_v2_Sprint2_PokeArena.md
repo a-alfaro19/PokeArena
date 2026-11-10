@@ -68,7 +68,7 @@ Cada una debe verificarse en la lista final (sección 17).
 | Identidad | Verificación del token del proveedor con una biblioteca JWT (por ejemplo `nimbus-jose-jwt`) más JWKS; credenciales propias firmadas con la misma biblioteca |
 | Contrato de API | OpenAPI escrito a mano **antes** del código, validado con una prueba de contrato |
 | Contenedores | Docker Compose, Nginx y 2 instancias de la API |
-| Pruebas | JUnit 5, AssertJ, **Testcontainers** (PostgreSQL y Redis), ArchUnit, jqwik, y un servidor simulado del proveedor de identidad |
+| Pruebas | JUnit 5, AssertJ, **Testcontainers** (PostgreSQL y Redis), ArchUnit y un servidor simulado del proveedor de identidad |
 | CI | GitHub Actions |
 | Interfaz | HTML, CSS y JavaScript sin frameworks, servida desde `static/` |
 | Pruebas de la interfaz | **Node.js 20 o superior, requisito opcional**: `node --test` sin paquetes npm. Sin Node (o con una versión menor), `PlayerInterfaceBehaviorTest` se **omite** con un aviso y el build sigue |
@@ -576,6 +576,24 @@ Una prueba por **cada criterio de aceptación** (Anexo C), con `@DisplayName` en
 | Contrato | El OpenAPI coincide con la aplicación |
 
 El pipeline de GitHub Actions ejecuta compilación, todas las pruebas y `oasdiff`.
+
+**Resultados de rendimiento medidos.** Las pruebas de rendimiento cargan `scripts/seed-10000-cartas.sql` (10.000 cartas) en el PostgreSQL de Testcontainers, calientan la JVM y miden 20 solicitudes por caso; el p95 es el valor 19 de 20 ordenados. Exigen p95 menor a 300 ms y que el plan use índices (sin `Seq Scan on card`). Valores de una ejecución de `.\mvnw.cmd clean verify` en un equipo de desarrollo (Windows 11, Docker Desktop), el 10 de noviembre de 2026; varían según la máquina:
+
+| Prueba | Caso | p95 |
+|---|---|---|
+| `CardSearchPerformanceIT` (Buscar carta, por HTTP) | Sin criterios | 6 ms |
+| | Nombre parcial (índice trigram) | 8 ms |
+| | Tipo y rango de costo | 6 ms |
+| | Rareza y poder | 5 ms |
+| | Límite máximo (100) | 6 ms |
+| | Código exacto | 4 ms |
+| | Recorrido completo (100 páginas de 100) | 11 ms por página |
+| `CatalogIT` (Catálogo del jugador, por HTTP) | `limit=100` | 8 ms |
+| | `type=FUE&costMin=3&costMax=5` | 6 ms |
+| | `owned=true&limit=100` | 8 ms |
+| `InitialCollectionPerformanceIT` (Recibir colección inicial) | Selección y entrega de 15 Comunes | 24 ms |
+
+Cada ejecución vuelve a medir: los valores actuales quedan en la salida de las pruebas y, para el catálogo, en `target/catalog-performance.txt` (con los planes de `EXPLAIN`).
 
 **Ejecución en secuencia.** Las pruebas de integración comparten un solo contenedor de PostgreSQL, y varias vacían el catálogo (`DELETE FROM card`) para partir de datos conocidos (por ejemplo `CardSearchIT`, `DeliverInitialCollectionIT` y las pruebas de rendimiento). Por eso deben ejecutarse **en secuencia**, que es lo que hace Maven por defecto. **No se debe activar la ejecución en paralelo** (`parallel` o `forkCount` mayor que 1 en Failsafe, ni `junit.jupiter.execution.parallel.enabled`): una prueba borraría las cartas que otra está usando.
 

@@ -1,8 +1,16 @@
 # =============================================================================
 # Contrato HTTP de PokéArena (RNF-API-01; sección 10 de la especificación).
-# Propósito: describir las operaciones públicas de la API de las historias del Sprint 1
-# (Crear carta, Buscar carta y Crear ubicación) y la entrega de imágenes, con sus
-# parámetros, cuerpos, respuestas y el formato único de errores (sección 5.3).
+# Propósito: describir las operaciones de la API de las seis historias, con sus
+# parámetros, cuerpos, respuestas y el formato único de errores (sección 5.3):
+#   - 1.1.1 Inicio de sesión con proveedor ....... POST /api/v1/sesiones
+#   - 3.1.1 Recibir colección inicial ............. durante el inicio de sesión
+#                                                    (campo initialCollection)
+#   - 3.1.2 Explorar el catálogo y mi colección ... GET  /api/v1/catalogo
+#   - 2.1.1 Crear carta ........................... POST /api/v1/cartas
+#   - 2.1.2 Buscar carta .......................... GET  /api/v1/cartas
+#   - 2.2.1 Crear ubicación ....................... POST /api/v1/ubicaciones
+# Además: la entrega de imágenes (GET /images/...) y la configuración pública que
+# la interfaz web lee al cargar (GET /api/v1/configuracion: client id de Google).
 # Se escribe a mano y lo verifica OpenApiContractIT en los dos sentidos: todo lo
 # documentado existe en la aplicación, y toda operación de la aplicación está aquí.
 # No documenta POST /api/v1/dev/sesiones: solo existe con el perfil dev.
@@ -26,13 +34,35 @@ info:
 
     **Correlación (sección 5.6).** Toda respuesta lleva `X-Correlation-Id`: el recibido si
     es seguro, o uno generado. Es el mismo `correlationId` del cuerpo de error.
+
+    **Historias.** 1.1.1 Inicio de sesión con proveedor (`POST /api/v1/sesiones`); 3.1.1
+    Recibir colección inicial (durante el inicio de sesión, campo `initialCollection`); 3.1.2
+    Explorar el catálogo y mi colección (`GET /api/v1/catalogo`); 2.1.1 Crear carta
+    (`POST /api/v1/cartas`); 2.1.2 Buscar carta (`GET /api/v1/cartas`); 2.2.1 Crear ubicación
+    (`POST /api/v1/ubicaciones`).
+
+    **Configuración que cambia el contrato** (`application.properties`; entre paréntesis,
+    el valor por defecto o la variable de entorno):
+    - `app.pagination.default-limit` (20) y `app.pagination.max-limit` (100): `limit` de la
+      búsqueda y del catálogo (sección 5.5).
+    - `app.idempotency.max-key-length` (255): largo máximo de `Idempotency-Key` (sección 5.4).
+    - `app.images.max-file-size` (5MB) y `app.images.max-pixels` (16000000): límites de la
+      imagen; `app.images.max-retries` (3): reintentos de la miniatura.
+    - `app.security.access-token-ttl` (15m): `expiresIn` de las credenciales propias.
+    - `app.identity.google.client-id` (`APP_GOOGLE_CLIENT_ID`): audiencia del token de Google y
+      valor de `GET /api/v1/configuracion`; sin él, Google responde `UNSUPPORTED_PROVIDER`.
+    - `app.admin.identities` (`APP_ADMIN_IDENTITIES`): identidades `proveedor:sub` con rol ADMIN.
+    - `app.collection.initial-cards` (15) y `app.collection.initial-cubes` (1000): colección
+      inicial (sección 8.2).
 servers:
   - url: http://localhost:8080
     description: Desarrollo local
 
 tags:
   - name: Sesiones
-    description: Historia 1.1.1 (Inicio de sesión con proveedor)
+    description: Historias 1.1.1 (Inicio de sesión con proveedor) y 3.1.1 (Recibir colección inicial, campo initialCollection)
+  - name: Catálogo
+    description: Historia 3.1.2 (Explorar el catálogo y mi colección)
   - name: Cartas
     description: Historias 2.1.1 (Crear carta) y 2.1.2 (Buscar carta)
   - name: Ubicaciones
