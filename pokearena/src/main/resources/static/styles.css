@@ -101,7 +101,7 @@ small { color: var(--muted); font-weight: 400; margin-left: 0.25rem; }
 
 /* ---------------------------------------------------------------- Pestañas y paneles */
 
-.tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
 .tab {
   border: none; background: none; padding: 0.6rem 1rem; cursor: pointer;
   font: inherit; font-weight: 600; color: var(--muted);
@@ -253,3 +253,20 @@ tbody tr:hover { background: var(--surface-2); }
   max-height: 32rem; overflow: auto;
 }
 .code.small { max-height: none; font-size: 0.78rem; }
+
+/* Catálogo del jugador: imágenes grandes y datos legibles sin alterar las tablas administrativas. */
+.welcome { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+.welcome p { margin-bottom: 0; }
+.login-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.owned-filter { display: flex; align-items: center; gap: 0.5rem; }
+.catalog-message { padding: 0.75rem 0; }
+.catalog-error { color: var(--bad); }
+.catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 1rem; }
+.catalog-card { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.catalog-image { display: block; width: 100%; aspect-ratio: 5 / 7; object-fit: contain; background: var(--surface-2); }
+.catalog-card-body { padding: 0.9rem; overflow-wrap: anywhere; }
+.catalog-card-body p { margin: 0.5rem 0; }
+.ownership { color: var(--muted); }
+.ownership-owned { color: var(--ok); font-weight: 600; }
+/* El estado de carga no bloquea la lectura de las cartas que ya se habían mostrado. */
+.catalog-grid[aria-busy="true"] { opacity: 0.65; }

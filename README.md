@@ -27,6 +27,7 @@ y una prueba de contrato lo compara con la aplicación en los dos sentidos.
 
 ## Requisitos
 
+- **Node.js 20 o superior**, disponible en `PATH`: las pruebas de comportamiento de la interfaz usan `node:test` y se ejecutan también mediante Maven. Comprueba la instalación con `node --version`. No hace falta instalar paquetes npm para estas pruebas.
 - **Java 21** (JDK). Maven no hace falta: el proyecto trae su propio wrapper (`mvnw.cmd`).
 - **Docker Desktop** encendido: lo usan las pruebas de integración (Testcontainers) y la base local.
 - Git y PowerShell (los comandos de este documento son de PowerShell, en Windows).

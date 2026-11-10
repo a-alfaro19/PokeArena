@@ -50,7 +50,7 @@ class StaticInterfaceIT extends PostgresIntegrationTestBase {
     }
 
     @ParameterizedTest(name = "{0}")
-    @CsvSource({ "/index.html, text/html", "/app.js, text/javascript", "/styles.css, text/css" })
+    @CsvSource({ "/index.html, text/html", "/app.js, text/javascript", "/player.js, text/javascript", "/styles.css, text/css" })
     @DisplayName("11: los archivos estáticos son accesibles sin autenticación y con su tipo de contenido")
     void staticFilesArePublic(String path, String contentType) throws Exception {
         HttpResponse<String> response = get(path, "*/*");
