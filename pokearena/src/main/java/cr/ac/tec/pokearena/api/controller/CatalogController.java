@@ -15,7 +15,7 @@ import cr.ac.tec.pokearena.application.usecase.ExploreCatalogUseCase;
 import cr.ac.tec.pokearena.domain.model.Role;
 
 /**
- * Propósito: GET /api/v1/catalogo (US 43, sección 8.3 y mensajes 2 a 5 de A.6).
+ * Propósito: GET /api/v1/catalogo (historia 3.1.2, sección 8.3 y mensajes 2 a 5 de A.6).
  * Responsabilidades: tomar la identidad exclusivamente del usuario verificado por el interceptor
  * y traducir la página al contrato HTTP. PLAYER y ADMIN tienen acceso explícito, sin jerarquía.
  */

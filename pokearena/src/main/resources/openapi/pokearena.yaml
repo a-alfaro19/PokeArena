@@ -39,6 +39,8 @@ tags:
     description: Historia 2.2.1 (Crear ubicación)
   - name: Imágenes
     description: Versiones grande y pequeña de cartas y ubicaciones
+  - name: Configuración
+    description: Configuración pública que la interfaz web lee al cargar (sección 11)
 
 security:
   - bearerAuth: []
@@ -140,6 +142,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+
+  /api/v1/configuracion:
+    get:
+      tags: [Configuración]
+      operationId: getPublicConfiguration
+      summary: Configuración pública de la interfaz web
+      description: |
+        La interfaz web la pide al cargar (sección 11) para saber si puede ofrecer "Entrar con
+        Google". Devuelve solo el `client id` de Google configurado en el servidor
+        (`app.identity.google.client-id`, variable `APP_GOOGLE_CLIENT_ID`), que es el mismo valor
+        que se exige como audiencia del token. Si no está configurado, `googleClientId` es null y
+        la interfaz deja el botón deshabilitado. El `client id` no es un secreto. Es pública.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Configuración pública.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicConfiguration'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /api/v1/catalogo:
     get:
@@ -675,6 +706,17 @@ components:
             $ref: '#/components/schemas/ApiError'
 
   schemas:
+    PublicConfiguration:
+      description: Configuración que la interfaz web necesita antes de iniciar sesión (sección 11).
+      type: object
+      required: [googleClientId]
+      additionalProperties: false
+      properties:
+        googleClientId:
+          type: [string, 'null']
+          description: Client id de PokéArena en Google, o null si el servidor no lo tiene configurado.
+          example: 1234567890-abc123.apps.googleusercontent.com
+
     LoginRequest:
       description: Cuerpo del inicio de sesión (sección 8.1). Un campo ausente o vacío es MISSING_FIELD.
       type: object
@@ -719,9 +761,10 @@ components:
           type: string
           enum: [DELIVERED, ALREADY_DELIVERED, PENDING_NO_CARDS, PENDING_ERROR]
           description: |
-            DELIVERED: se entregó en este ingreso (15 cartas y 1.000 cubos). ALREADY_DELIVERED: se
-            había entregado antes; no se entrega de nuevo. PENDING_NO_CARDS: el catálogo aún no tiene
-            15 cartas Comunes disponibles; la cuenta queda sin colección ni cubos. PENDING_ERROR: la
+            DELIVERED: se entregó en este ingreso (`app.collection.initial-cards` cartas Comunes
+            distintas y `app.collection.initial-cubes` cubos; 15 y 1.000 por defecto). ALREADY_DELIVERED:
+            se había entregado antes; no se entrega de nuevo. PENDING_NO_CARDS: el catálogo aún no tiene
+            suficientes cartas Comunes disponibles; la cuenta queda sin colección ni cubos. PENDING_ERROR: la
             entrega falló sin dejar nada a medias; el ingreso continúa y se reintenta en el siguiente.
         message:
           type: [string, 'null']

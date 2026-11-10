@@ -21,7 +21,8 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Propósito: pruebas de la entrega de la interfaz web (corrección 1; sección 11).
  * Responsabilidades: comprobar que la página se sirve en "/" y que sus archivos estáticos son accesibles
- * sin autenticación, y que un archivo estático inexistente responde 404 en el formato único.
+ * sin autenticación, que la configuración pública que la página lee al cargar está disponible, y que un
+ * archivo estático inexistente responde 404 en el formato único.
  * Referencia: sección 11 ("servida por la misma API en http://localhost:8080") y sección 5.3.
  *
  * <p>Los archivos estáticos no son operaciones de un controlador: los atiende el manejador de recursos
@@ -59,6 +60,17 @@ class StaticInterfaceIT extends PostgresIntegrationTestBase {
         assertThat(response.headers().firstValue("Content-Type")).hasValueSatisfying(
                 type -> assertThat(type).startsWith(contentType));
         assertThat(response.body()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("11: la configuración que la interfaz lee al cargar es pública y responde con el formato esperado")
+    void configurationForTheInterface() throws Exception {
+        assertThat(get("/app.js", "*/*").body()).contains("/api/v1/configuracion");
+
+        HttpResponse<String> response = get("/api/v1/configuracion", "application/json");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(response.body()).has("googleClientId")).isTrue();
     }
 
     @Test

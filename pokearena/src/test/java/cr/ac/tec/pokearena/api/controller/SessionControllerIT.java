@@ -232,6 +232,16 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
                 Integer.class, provider, subject);
     }
 
+    @Test
+    @DisplayName("11: la configuración pública entrega a la interfaz el mismo client id que verifica la audiencia")
+    void publicConfigurationExposesClientId() throws Exception {
+        HttpResponse<String> response = http.send(HttpRequest.newBuilder(uri("/api/v1/configuracion")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(response.body()).get("googleClientId").asString()).isEqualTo(CLIENT_ID);
+    }
+
     @Nested
     @DisplayName("Éxito")
     class Success {

@@ -38,7 +38,7 @@ import cr.ac.tec.pokearena.domain.repository.PlayerCatalogRepository;
  * Propósito: verificar la frontera entre caché pública y colecciones privadas sin Spring (A.6).
  * Responsabilidades: demostrar que un hit no reutiliza copias y que owned omite la caché.
  */
-@DisplayName("US 43: caché pública y propiedad privada")
+@DisplayName("Historia 3.1.2: caché pública y propiedad privada")
 class ExploreCatalogUseCaseTest {
 
     private static final UUID FIRST = UUID.fromString("00000000-0000-0000-0000-000000000001");

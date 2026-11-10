@@ -17,7 +17,7 @@ import cr.ac.tec.pokearena.domain.repository.PlayerCatalogRepository;
 import cr.ac.tec.pokearena.domain.rule.CatalogRules;
 
 /**
- * Propósito: implementar Explorar catálogo y mi colección (US 43, sección 8.3, Anexo A.6).
+ * Propósito: implementar Explorar catálogo y mi colección (historia 3.1.2, sección 8.3, Anexo A.6).
  * Responsabilidades: validar, paginar y combinar cartas públicas con copias privadas en lote.
  * La API ya verificó la sesión (mensajes 3 a 5); GET no requiere idempotencia ni escrituras.
  * Como en SearchCardsUseCase, no mantiene una transacción durante el acceso a la caché.

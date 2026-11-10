@@ -27,9 +27,13 @@ y una prueba de contrato lo compara con la aplicación en los dos sentidos.
 
 ## Requisitos
 
-- **Node.js 20 o superior**, disponible en `PATH`: las pruebas de comportamiento de la interfaz usan `node:test` y se ejecutan también mediante Maven. Comprueba la instalación con `node --version`. No hace falta instalar paquetes npm para estas pruebas.
 - **Java 21** (JDK). Maven no hace falta: el proyecto trae su propio wrapper (`mvnw.cmd`).
 - **Docker Desktop** encendido: lo usan las pruebas de integración (Testcontainers) y la base local.
+- **Node.js 20 o superior (opcional)**, en `PATH`: las pruebas de comportamiento de la interfaz del
+  jugador (`src/test/javascript/player.test.mjs`) usan `node:test`, sin paquetes npm, y Maven las
+  ejecuta con `PlayerInterfaceBehaviorTest`. Sin Node, o con una versión menor, esa prueba se
+  **omite** con un aviso ("Pruebas de JavaScript OMITIDAS") y el build sigue. Comprueba la
+  instalación con `node --version`, o ejecútalas solas con `node --test src/test/javascript/player.test.mjs`.
 - Git y PowerShell (los comandos de este documento son de PowerShell, en Windows).
 
 ## Compilar y ejecutar las pruebas
@@ -124,8 +128,13 @@ de Google, el emisor, el vencimiento y que la **audiencia** sea el `client id` d
    ```
 
    Sin esta variable la aplicación arranca igual, pero Google queda deshabilitado:
-   `POST /api/v1/sesiones` con `"provider": "google"` responde 400 `UNSUPPORTED_PROVIDER` (en
-   desarrollo se puede seguir usando el perfil `dev`).
+   `POST /api/v1/sesiones` con `"provider": "google"` responde 400 `UNSUPPORTED_PROVIDER`, y la
+   interfaz deja el botón "Entrar con Google" deshabilitado con el aviso "falta
+   APP_GOOGLE_CLIENT_ID" (en desarrollo se puede seguir usando el perfil `dev`).
+
+   La interfaz lee el `client id` al cargar de `GET /api/v1/configuracion` (pública), que responde
+   solo `{ "googleClientId": "<id>" }` o `{ "googleClientId": null }`. Así la interfaz y el
+   verificador de la audiencia usan siempre el mismo valor.
 
 2. **Administradores.** El rol `ADMIN` se asigna por configuración: una lista de identidades
    `proveedor:sub`, separadas por comas. El `sub` es el identificador de la cuenta en Google (el
@@ -140,6 +149,15 @@ de Google, el emisor, el vencimiento y que la **audiencia** sea el `client id` d
    (`SELECT provider_subject FROM player_identity WHERE provider = 'google';`), agrégalo a la
    variable, reinicia la aplicación y vuelve a iniciar sesión. Una entrada sin el formato
    `proveedor:sub` detiene el arranque con un mensaje claro.
+
+3. **Probar el inicio de sesión real.** Con `APP_GOOGLE_CLIENT_ID` definida, arranca la aplicación
+   (con o sin el perfil `dev`) y abre `http://localhost:8080` **con ese mismo origen** (no con
+   `127.0.0.1` ni otro puerto: Google solo acepta los orígenes autorizados del client id). Pulsa
+   "Entrar con Google" y elige tu cuenta. La barra muestra tu nombre y el rol, y la bienvenida el
+   estado de tu colección inicial (`DELIVERED` en el primer ingreso si hay suficientes cartas
+   Comunes; si no, el mensaje de pendiente del servidor). Para comprobar `ALREADY_DELIVERED`, cierra
+   la sesión y vuelve a entrar. El token de Google solo viaja a `POST /api/v1/sesiones`; el resto de
+   las solicitudes usa las credenciales propias, que viven solo en memoria.
 
 Valores opcionales (en `application.properties`): `APP_GOOGLE_JWKS_URI` (URL de las llaves
 públicas; las pruebas la apuntan a un servidor local), `app.identity.google.jwks-timeout` y
@@ -178,13 +196,22 @@ Para volver a los logs en JSON y quitar las sesiones de prueba: `Remove-Item Env
 ### Interfaz web
 
 La interfaz (sección 11 de la especificación) es una sola página en
-`pokearena/src/main/resources/static/` (`index.html`, `app.js` y `styles.css`), sin frameworks ni
-bibliotecas externas, que habla con la API real en el mismo origen.
+`pokearena/src/main/resources/static/` (`index.html`, `app.js`, `player.js` y `styles.css`), sin
+frameworks ni bibliotecas externas, que habla con la API real en el mismo origen. La única
+excepción es el script oficial de Google Identity Services, que la política de seguridad de
+contenido permite solo desde `accounts.google.com/gsi/`.
 
-- **Barra de sesión:** "Sin sesión", "Jugador" y "Administrador" piden un token a
-  `POST /api/v1/dev/sesiones`. El token vive **solo en memoria**: al recargar la página se vuelve
-  a "Sin sesión". Sin el perfil `dev`, la interfaz oculta los botones y avisa que el ingreso real
-  llegará con el inicio de sesión con proveedor.
+- **Barra de sesión:** "Entrar con Google" (habilitado solo si el servidor tiene
+  `APP_GOOGLE_CLIENT_ID`, ver arriba) y, con el perfil `dev`, "Sin sesión", "Jugador" y
+  "Administrador", que piden un token a `POST /api/v1/dev/sesiones`. El token vive **solo en
+  memoria**: al recargar la página se vuelve a "Sin sesión". Sin el perfil `dev`, la interfaz oculta
+  los botones de prueba.
+- **Bienvenida y catálogo del jugador (historias 1.1.1, 3.1.1 y 3.1.2):** la bienvenida muestra el
+  estado de la colección inicial que informa el servidor (`initialCollection`, también en las
+  sesiones de prueba). La pestaña "Catálogo y mi colección" filtra por tipo y costo, con la casilla
+  "Solo mis cartas", la imagen grande, las copias y "Cargar más". Sus casos rápidos incluyen tipo
+  inexistente, límite 0, token de Google inválido y "Segundo ingreso del jugador", que vuelve a pedir
+  la sesión del jugador de prueba y confirma `ALREADY_DELIVERED`.
 - **Crear carta, Crear ubicación y Buscar carta:** formularios con todos los campos. Tipos y
   rarezas son listas fijas (las semillas de la base) y la habilidad es un texto con `HAB-000` como
   valor inicial. "Generar imagen" crea con `canvas` una imagen válida del tamaño exacto. La

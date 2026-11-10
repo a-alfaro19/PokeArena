@@ -38,7 +38,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Propósito: verificar US 43 de punta a punta con HTTP, JWT real y PostgreSQL (C.6, 8.3 y A.6).
+ * Propósito: verificar la historia 3.1.2 de punta a punta con HTTP, JWT real y PostgreSQL (C.6, 8.3 y A.6).
  * Responsabilidades: cubrir aislamiento, copias, filtros, visibilidad, paginación y contrato.
  * Los datos se eliminan en orden de claves foráneas y las pruebas corren en secuencia.
  */
