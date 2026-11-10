@@ -20,6 +20,9 @@ import cr.ac.tec.pokearena.application.dto.CardDetails;
 import cr.ac.tec.pokearena.application.dto.CreateCardCommand;
 import cr.ac.tec.pokearena.application.dto.IdempotentRequest;
 import cr.ac.tec.pokearena.application.dto.IdempotentResult;
+import cr.ac.tec.pokearena.application.dto.Page;
+import cr.ac.tec.pokearena.application.port.CatalogCache;
+import cr.ac.tec.pokearena.application.port.CatalogCacheKey;
 import cr.ac.tec.pokearena.application.port.IdempotencyKey;
 import cr.ac.tec.pokearena.application.port.IdempotencyStore;
 import cr.ac.tec.pokearena.application.port.ImageFile;
@@ -72,10 +75,11 @@ class CreateCardUseCaseTest {
             "HAB-LIM", new Ability("HAB-LIM", "Solo agua", "AGU", null)));
 
     private final IdempotencyGuard guard = new IdempotencyGuard(keys, new ObjectSerializer());
+    private final CountingCatalogCache catalogCache = new CountingCatalogCache();
 
     private final CreateCardUseCase useCase = new CreateCardUseCase(guard,
             new ImageCreationSteps(guard, processor, storage, new SnapshotUnitOfWork()), new FixedCatalog(),
-            code -> Optional.ofNullable(abilityTable.get(code)), cards, processor, storage, () -> NOW);
+            code -> Optional.ofNullable(abilityTable.get(code)), cards, processor, storage, () -> NOW, catalogCache);
 
     private final UUID admin = UUID.randomUUID();
 
@@ -86,6 +90,49 @@ class CreateCardUseCaseTest {
 
     private static CreateCardCommand command(String type, String ability) {
         return new CreateCardCommand("Charmander", "3", "4", type, "COMMON", ability, VALID_IMAGE);
+    }
+
+    @Nested
+    @DisplayName("Caché del catálogo (sección 9)")
+    class CatalogCacheInvalidation {
+
+        @Test
+        @DisplayName("9: crear una carta invalida la caché una vez, después de confirmar; un reintento con la misma clave no")
+        void invalidatesAfterCommitOnly() {
+            create("clave-cache", command("FUE", "HAB-000"));
+            assertThat(catalogCache.invalidations).isEqualTo(1);
+
+            create("clave-cache", command("FUE", "HAB-000"));
+            assertThat(catalogCache.invalidations).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("9: una solicitud inválida no guarda nada y no invalida la caché")
+        void invalidRequestDoesNotInvalidate() {
+            assertThatThrownBy(() -> create("clave-invalida", command("XXX", "HAB-000")))
+                    .isInstanceOf(DomainException.class);
+            assertThat(catalogCache.invalidations).isZero();
+        }
+    }
+
+    /** Cuenta las invalidaciones; no guarda páginas (Crear carta no las lee). */
+    private static final class CountingCatalogCache implements CatalogCache {
+        int invalidations;
+
+        @Override
+        public <T> Optional<Page<T>> get(CatalogCacheKey key, Class<T> itemType) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void put(CatalogCacheKey key, Page<?> page) {
+            // No se usa en Crear carta.
+        }
+
+        @Override
+        public void invalidate() {
+            invalidations++;
+        }
     }
 
     @Nested

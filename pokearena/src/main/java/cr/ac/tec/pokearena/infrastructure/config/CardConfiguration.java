@@ -30,9 +30,9 @@ public class CardConfiguration {
     @Bean
     public CreateCardUseCase createCardUseCase(IdempotencyGuard idempotency, ImageCreationSteps imageCreation,
             CardCatalogRepository catalog, AbilityRepository abilities, CardRepository cards,
-            ImageProcessor imageProcessor, ImageStorage imageStorage, Clock clock) {
+            ImageProcessor imageProcessor, ImageStorage imageStorage, Clock clock, CatalogCache cache) {
         return new CreateCardUseCase(idempotency, imageCreation, catalog, abilities, cards, imageProcessor,
-                imageStorage, clock);
+                imageStorage, clock, cache);
     }
 
     @Bean

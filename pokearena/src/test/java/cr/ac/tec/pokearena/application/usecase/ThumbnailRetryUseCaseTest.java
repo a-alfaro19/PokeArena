@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import cr.ac.tec.pokearena.application.dto.ThumbnailRetryResult;
 import cr.ac.tec.pokearena.application.dto.ThumbnailRetryResult.Outcome;
+import cr.ac.tec.pokearena.infrastructure.cache.NoCatalogCache;
 import cr.ac.tec.pokearena.application.port.ImageFile;
 import cr.ac.tec.pokearena.application.port.ImageProcessor;
 import cr.ac.tec.pokearena.application.port.ImageStorage;
@@ -47,7 +48,7 @@ class ThumbnailRetryUseCaseTest {
     private final InMemoryStorage storage = new InMemoryStorage();
     private final SwitchableProcessor processor = new SwitchableProcessor();
     private final ThumbnailRetryUseCase useCase = new ThumbnailRetryUseCase(new DirectUnitOfWork(), repository,
-            storage, processor, MAX_RETRIES);
+            storage, processor, MAX_RETRIES, new NoCatalogCache());
 
     @Test
     @DisplayName("Éxito tras un fallo: la miniatura se genera, la entidad queda READY y disponible, con su URL y un intento más")
@@ -139,7 +140,8 @@ class ThumbnailRetryUseCaseTest {
     @Test
     @DisplayName("Un máximo de reintentos menor que 1 es una configuración inválida")
     void invalidMaximum() {
-        assertThatThrownBy(() -> new ThumbnailRetryUseCase(new DirectUnitOfWork(), repository, storage, processor, 0))
+        assertThatThrownBy(() -> new ThumbnailRetryUseCase(new DirectUnitOfWork(), repository, storage, processor, 0,
+                new NoCatalogCache()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

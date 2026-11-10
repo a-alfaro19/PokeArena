@@ -54,6 +54,8 @@ info:
     - `app.admin.identities` (`APP_ADMIN_IDENTITIES`): identidades `proveedor:sub` con rol ADMIN.
     - `app.collection.initial-cards` (15) y `app.collection.initial-cubes` (1000): colección
       inicial (sección 8.2).
+    - `app.cache.catalog-ttl` (PT30S, con `REDIS_HOST`): cuánto puede tardar, como máximo, una
+      carta en aparecer en una página ya cacheada del catálogo o de la búsqueda (sección 9).
 servers:
   - url: http://localhost:8080
     description: Desarrollo local

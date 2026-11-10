@@ -1,7 +1,7 @@
 # PokéArena
 
 Proyecto PokéArena del curso CE-1116 (TEC): un backend en **Java 21 con Spring Boot**,
-PostgreSQL y una interfaz web servida por la misma aplicación. La especificación completa,
+PostgreSQL, Redis (caché opcional) y una interfaz web servida por la misma aplicación. La especificación completa,
 fuente de verdad del proyecto, está en
 [pokearena/docs/AGENTE_Especificacion_v2_Sprint2_PokeArena.md](pokearena/docs/AGENTE_Especificacion_v2_Sprint2_PokeArena.md).
 
@@ -111,7 +111,29 @@ $env:DB_URL = "jdbc:postgresql://localhost:55432/pokearena"
 ```
 
 **Otras variables:** `DB_USERNAME` (por defecto `pokearena`), `APP_IMAGES_ROOT_DIR` (carpeta de
-las imágenes, por defecto `./data/images`) y `APP_ADMIN_IDENTITIES` (ver abajo).
+las imágenes, por defecto `./data/images`), `APP_ADMIN_IDENTITIES` (ver abajo) y las de Redis (ver
+"Caché del catálogo con Redis").
+
+### Caché del catálogo con Redis (opcional)
+
+Las páginas del catálogo del jugador y de la búsqueda del administrador se cachean en Redis
+(sección 9 de la especificación), **sin datos del jugador**: la propiedad y las copias se leen
+siempre de la base. Redis es opcional: **sin `REDIS_HOST` la caché queda desactivada** y la
+aplicación consulta siempre la base. Para probarla en desarrollo:
+
+```powershell
+docker run -d --name pokearena-redis -p 6379:6379 redis:7.4-alpine
+$env:REDIS_HOST = "localhost"        # REDIS_PORT es 6379 por defecto
+```
+
+- Clave de cada página: `catalog:v<versión>:<espacio>:<hash de filtros>:<cursor>:<limit>`, con
+  vencimiento `app.cache.catalog-ttl` (30 s). `<espacio>` separa `player-catalog` de `admin-search`.
+- Crear carta incrementa `catalog:version` después de confirmar: la carta aparece enseguida.
+- Si Redis falla o no responde, **nunca es un error**: se ignora la caché y se consulta la base.
+  Los tiempos de espera son cortos (`REDIS_TIMEOUT` y `REDIS_CONNECT_TIMEOUT`, 250 ms) y, tras una
+  falla, la caché se pausa `app.cache.failure-backoff` (5 s).
+- Las pruebas de Redis (`RedisCatalogCacheIT` y `CatalogCacheRedisIT`) levantan su propio Redis con
+  Testcontainers; las demás pruebas corren sin Redis.
 
 ### Inicio de sesión con Google (`APP_GOOGLE_CLIENT_ID` y `APP_ADMIN_IDENTITIES`)
 
@@ -274,7 +296,7 @@ Cada paquete tiene un `package-info.java` que explica su responsabilidad y lo qu
 | Infraestructura | `infrastructure.persistence` | Repositorios JDBC y `TransactionalUnitOfWork` | `domain` y `application` |
 | | `infrastructure.storage` | Procesador y almacenamiento de imágenes, tarea de reintentos | |
 | | `infrastructure.identity` | Emisión y verificación de las credenciales propias (JWT) y `GoogleIdentityProvider`, el verificador de los tokens de Google (firma con las llaves públicas JWKS, emisor, vencimiento y audiencia) | |
-| | `infrastructure.cache` | Caché del catálogo (hoy sin Redis: no guarda nada) | |
+| | `infrastructure.cache` | Caché del catálogo: `RedisCatalogCache` (con `REDIS_HOST`) y `NoCatalogCache` (sin Redis) | |
 | | `infrastructure.config` | Ensamblado de los casos de uso con sus puertos | |
 
 Las reglas de dependencia se verifican con ArchUnit en cada `.\mvnw.cmd clean verify`.

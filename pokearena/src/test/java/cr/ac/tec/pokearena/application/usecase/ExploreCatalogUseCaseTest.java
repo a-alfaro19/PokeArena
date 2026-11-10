@@ -189,6 +189,7 @@ class ExploreCatalogUseCaseTest {
     private static final class MemoryCache implements CatalogCache {
         final Map<String, Page<?>> pages = new HashMap<>();
         int gets;
+        int invalidations;
 
         @Override
         @SuppressWarnings("unchecked")
@@ -200,6 +201,11 @@ class ExploreCatalogUseCaseTest {
         @Override
         public void put(CatalogCacheKey key, Page<?> page) {
             pages.put(key.asText(), page);
+        }
+
+        @Override
+        public void invalidate() {
+            invalidations++;
         }
     }
 }

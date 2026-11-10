@@ -506,10 +506,12 @@ Estas decisiones se documentan en dos ADRs en la wiki; el código debe respetarl
 - **Clave:** `catalog:v<versión>:<espacio>:<hash de filtros>:<cursor>:<limit>`, donde `<espacio>` separa catálogo de jugador y búsqueda de administrador (ven datos distintos).
 - **Invalidación:** una clave `catalog:version` que se incrementa al crear o cambiar una carta; las claves viejas quedan huérfanas y expiran solas por su vencimiento.
 - **Vencimiento (TTL):** `app.cache.catalog-ttl` = 30 segundos, configurable.
-- **Pendiente para la tarea de Redis:** hoy el puerto `CatalogCache` solo tiene obtener y guardar una página, y su implementación (`NoCatalogCache`) no guarda nada, que es el mismo comportamiento exigido cuando Redis falla. La tarea de Redis agrega la operación **`invalidate()`** al puerto (incrementa `catalog:version`) y la propiedad **`app.cache.catalog-ttl`**, y debe **llamar a `invalidate()` desde Crear carta** (y desde toda operación futura que cambie una carta) después de confirmar la transacción.
+- **Implementación (hecha):** el puerto `CatalogCache` tiene `get`, `put` e **`invalidate()`** (incrementa `catalog:version`). `RedisCatalogCache` (`infrastructure.cache`) guarda cada página como JSON con `SET ... PX <ttl>` y la clave anterior; `CacheConfiguration` la elige si `REDIS_HOST` (`app.cache.redis-host`) tiene valor, y si no usa `NoCatalogCache`, que no guarda nada (mismo comportamiento que con Redis caído): así las pruebas y el desarrollo local funcionan sin Redis. **Crear carta llama a `invalidate()` después de confirmar la transacción** (no en un reintento con la misma clave), y también la tarea de reintentos de miniaturas cuando intentó alguna carta, porque cambia su disponibilidad y su estado de imagen.
+- **Tiempos de espera y pausa:** `REDIS_TIMEOUT` y `REDIS_CONNECT_TIMEOUT` (250 ms por defecto). Tras una falla, `get` y `put` no vuelven a usar Redis durante `app.cache.failure-backoff` (`PT5S`), para que con Redis caído no todas las solicitudes paguen el tiempo de espera; `invalidate()` sí lo intenta siempre.
+- **Carrera aceptada:** si una carta se crea entre que una solicitud lee una página de la base y la guarda, esa página puede quedar sin la carta hasta su vencimiento (30 s). Lo permiten los criterios C.3 y C.6 ("puede tardar algunos segundos").
 - **Memoria:** Redis con `maxmemory` y política `allkeys-lru`.
 - **Falla de Redis:** se ignora la caché y se consulta la base (nunca error).
-- **Protección contra avalancha:** un bloqueo corto por clave al recalcular una página muy pedida (opcional, solo si hay tiempo).
+- **Protección contra avalancha:** un bloqueo corto por clave al recalcular una página muy pedida (opcional, solo si hay tiempo). **No se implementó** en este sprint.
 
 ---
 
