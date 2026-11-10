@@ -1,0 +1,99 @@
+# =============================================================================
+# Propósito: levantar PokéArena completo con UN comando (sección 12; RNF-INF-01 y RNF-REN-03).
+# Responsabilidades: PostgreSQL (healthcheck y volumen), Redis (con límite de memoria y política
+# allkeys-lru), DOS instancias de la API sin estado que comparten el volumen de imágenes, y Nginx como
+# balanceador en el puerto 8080 del equipo.
+#
+# Uso (PowerShell, desde la carpeta pokearena):
+#   Copy-Item .env.example .env      # una sola vez; luego completa los valores en .env
+#   docker compose up --build        # http://localhost:8080
+#
+# La configuración llega por variables de entorno desde .env (que NO se sube al repositorio). Las
+# obligatorias usan ${VAR:?mensaje}: si faltan, Compose se detiene con un mensaje claro en lugar de
+# arrancar con un valor escrito aquí. Para desarrollo con solo PostgreSQL, ver docker-compose.dev.yml.
+# =============================================================================
+name: pokearena
+
+# Configuración común de las dos instancias de la API (ancla YAML: se escribe una sola vez).
+x-api: &api
+  build: .
+  image: pokearena-api:local
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  environment:
+    DB_URL: jdbc:postgresql://postgres:5432/pokearena
+    DB_USERNAME: ${DB_USERNAME:-pokearena}
+    DB_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD en .env}
+    APP_JWT_SECRET: ${APP_JWT_SECRET:?Defina APP_JWT_SECRET en .env (al menos 32 bytes)}
+    APP_GOOGLE_CLIENT_ID: ${APP_GOOGLE_CLIENT_ID:-}
+    APP_ADMIN_IDENTITIES: ${APP_ADMIN_IDENTITIES:-}
+    # Perfil: vacío es producción (sin dev/sesiones); "dev" activa las sesiones de prueba.
+    SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    # Volumen compartido: las dos instancias ven las mismas imágenes (sección 9).
+    APP_IMAGES_ROOT_DIR: /data/images
+  volumes:
+    - images:/data/images
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pokearena
+      POSTGRES_USER: ${DB_USERNAME:-pokearena}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD en .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # $$ evita que Compose reemplace la variable: la resuelve el contenedor.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    # Solo caché (sección 9): sin persistencia en disco, con un tope de memoria y desalojo LRU de
+    # cualquier clave cuando se llena. Perder Redis no pierde datos: la fuente de verdad es PostgreSQL.
+    command: >
+      redis-server
+      --maxmemory ${REDIS_MAXMEMORY:-128mb}
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Dos instancias idénticas y sin estado: cualquiera puede atender cualquier solicitud.
+  api1:
+    <<: *api
+
+  # Las dos declaran la misma construcción y la misma etiqueta: la segunda reutiliza la caché de
+  # BuildKit, así la imagen se compila una sola vez.
+  api2:
+    <<: *api
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api1
+      - api2
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
+volumes:
+  postgres-data:
+  images:

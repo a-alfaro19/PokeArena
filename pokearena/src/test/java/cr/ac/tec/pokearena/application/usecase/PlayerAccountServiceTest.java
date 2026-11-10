@@ -134,7 +134,8 @@ class PlayerAccountServiceTest {
         @Test
         @DisplayName("Lee entradas proveedor:sub e ignora las vacías")
         void parsesEntries() {
-            AdminIdentities admins = configuration.adminIdentities(List.of(" google:sub-admin ", "", "dev:dev-admin"));
+            AdminIdentities admins = configuration.adminIdentities(List.of(" google:sub-admin ", "", "dev:dev-admin"),
+                    List.of());
 
             assertThat(admins.roleFor(CONFIGURED_ADMIN)).isEqualTo(Role.ADMIN);
             assertThat(admins.roleFor(new ProviderIdentity("dev", "dev-admin"))).isEqualTo(Role.ADMIN);
@@ -142,9 +143,22 @@ class PlayerAccountServiceTest {
         }
 
         @Test
+        @DisplayName("El administrador de prueba del perfil dev se suma a la lista, aunque APP_ADMIN_IDENTITIES la deje vacía")
+        void devIdentitiesAreAdded() {
+            AdminIdentities admins = configuration.adminIdentities(List.of(), List.of("dev:dev-admin"));
+            AdminIdentities both = configuration.adminIdentities(List.of("google:sub-admin"), List.of("dev:dev-admin"));
+
+            assertThat(admins.roleFor(new ProviderIdentity("dev", "dev-admin"))).isEqualTo(Role.ADMIN);
+            assertThat(both.roleFor(CONFIGURED_ADMIN)).isEqualTo(Role.ADMIN);
+            assertThat(both.roleFor(new ProviderIdentity("dev", "dev-admin"))).isEqualTo(Role.ADMIN);
+            assertThatThrownBy(() -> configuration.adminIdentities(List.of(), List.of("mal")))
+                    .hasMessageContaining("app.admin.dev-identities");
+        }
+
+        @Test
         @DisplayName("Una entrada sin el formato proveedor:sub detiene el arranque con un mensaje claro")
         void rejectsMalformedEntry() {
-            assertThatThrownBy(() -> configuration.adminIdentities(List.of("solo-un-valor")))
+            assertThatThrownBy(() -> configuration.adminIdentities(List.of("solo-un-valor"), List.of()))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("app.admin.identities")
                     .hasMessageContaining("proveedor:sub");

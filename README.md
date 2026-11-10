@@ -71,6 +71,41 @@ En la salida de las pruebas aparecen dos "APPLICATION FAILED TO START" y un avis
 grande faltante: son esperados, porque `JwtSecretStartupIT` y `ThumbnailRetryIT` provocan esas
 fallas a propósito.
 
+## Levantar todo con Docker Compose (un comando)
+
+`pokearena/docker-compose.yml` levanta el sistema completo (sección 12 de la especificación):
+PostgreSQL 17 (con healthcheck y volumen), Redis (con `maxmemory` y `allkeys-lru`), **dos
+instancias de la API** (`api1` y `api2`, sin estado, que comparten el volumen de imágenes) y
+**Nginx** como balanceador en `http://localhost:8080`. La imagen de la API se construye con el
+`Dockerfile` (compila con el wrapper de Maven; no lleva secretos).
+
+Una sola vez, desde la carpeta `pokearena`, crea tu `.env` a partir de la plantilla y completa
+`DB_PASSWORD` y `APP_JWT_SECRET` (`.env` no se sube al repositorio):
+
+```powershell
+Copy-Item .env.example .env
+notepad .env          # DB_PASSWORD, APP_JWT_SECRET y, si quieres, APP_GOOGLE_CLIENT_ID y SPRING_PROFILES_ACTIVE=dev
+```
+
+Después, **un solo comando**:
+
+```powershell
+docker compose up --build
+```
+
+Y abre `http://localhost:8080`. Con `SPRING_PROFILES_ACTIVE=dev` en `.env` aparecen las sesiones
+de prueba. Cada respuesta trae el encabezado `X-Upstream-Instance` con la instancia que la
+atendió, para comprobar el balanceo:
+
+```powershell
+1..4 | ForEach-Object { (Invoke-WebRequest http://localhost:8080/api/v1/configuracion).Headers["X-Upstream-Instance"] }
+```
+
+Para detener: `docker compose down` (con `-v` además se borran la base, las imágenes y la caché).
+Nginx acepta cuerpos de hasta 8 MB para que una imagen de más de 5 MB la rechace la API con su
+error `IMAGE_TOO_LARGE` y no Nginx. Para desarrollo con solo PostgreSQL se conserva
+`docker-compose.dev.yml` (sección siguiente).
+
 ## Ejecutar la aplicación y abrir la interfaz
 
 Desde la carpeta `pokearena`, en una misma ventana de PowerShell (las variables de `$env:` duran
@@ -258,7 +293,10 @@ PokeArena
 ├── CLAUDE.md                     instrucciones para el agente de IA
 ├── README.md
 └── pokearena                     proyecto Maven
+    ├── docker-compose.yml        sistema completo: PostgreSQL, Redis, api1, api2 y Nginx
     ├── docker-compose.dev.yml    PostgreSQL local para desarrollo
+    ├── Dockerfile, nginx.conf    imagen de la API y balanceador
+    ├── .env.example              plantilla de variables (copiar a .env, que no se sube)
     ├── docs                      especificación (fuente de verdad)
     ├── scripts                   seed-10000-cartas.sql (datos de rendimiento)
     └── src
