@@ -71,6 +71,23 @@ En la salida de las pruebas aparecen dos "APPLICATION FAILED TO START" y un avis
 grande faltante: son esperados, porque `JwtSecretStartupIT` y `ThumbnailRetryIT` provocan esas
 fallas a propósito.
 
+## Integración continua (GitHub Actions)
+
+`.github/workflows/ci.yml` define dos trabajos:
+
+- **Compilar y probar** (en cada push y pull request): Java 21 (Temurin), caché de Maven y
+  `./mvnw -B clean verify` en `pokearena/`. Los runners `ubuntu-latest` traen Docker, que usan
+  Testcontainers (PostgreSQL y Redis), y Node.js, que usan las pruebas de JavaScript. Si falla,
+  sube los informes de Surefire y Failsafe como artefacto (`informes-de-pruebas`).
+- **Contrato OpenAPI sin cambios incompatibles** (solo en pull requests): compara
+  `pokearena.yaml` de la rama con el de la rama base usando `oasdiff breaking` (imagen Docker
+  oficial `tufin/oasdiff`) y falla ante un cambio incompatible, por ejemplo quitar una operación.
+  Si el contrato no existe en la rama base, el paso se omite.
+
+Estado: el flujo está escrito y el paso de `oasdiff` se probó localmente con Docker (sin cambios
+incompatibles contra `main`, y falla si se quita una operación), pero **todavía no se ha ejecutado
+en GitHub Actions**: se ejecutará en el primer push o pull request.
+
 ## Levantar todo con Docker Compose (un comando)
 
 `pokearena/docker-compose.yml` levanta el sistema completo (sección 12 de la especificación):
@@ -290,6 +307,7 @@ contenido permite solo desde `accounts.google.com/gsi/`.
 
 ```text
 PokeArena
+├── .github/workflows/ci.yml      integración continua (clean verify y oasdiff)
 ├── CLAUDE.md                     instrucciones para el agente de IA
 ├── README.md
 └── pokearena                     proyecto Maven

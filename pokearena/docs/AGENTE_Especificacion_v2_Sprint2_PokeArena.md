@@ -578,7 +578,7 @@ Una prueba por **cada criterio de aceptación** (Anexo C), con `@DisplayName` en
 | Seguridad | `dev/sesiones` no existe con el perfil `prod` |
 | Contrato | El OpenAPI coincide con la aplicación |
 
-El pipeline de GitHub Actions ejecuta compilación, todas las pruebas y `oasdiff`.
+El pipeline de GitHub Actions (`.github/workflows/ci.yml`) ejecuta compilación y todas las pruebas (`./mvnw -B clean verify`, con Docker para Testcontainers) en cada push y pull request, y en los pull requests `oasdiff breaking` contra el contrato de la rama base (se omite si la base no tiene el archivo).
 
 **Resultados de rendimiento medidos.** Las pruebas de rendimiento cargan `scripts/seed-10000-cartas.sql` (10.000 cartas) en el PostgreSQL de Testcontainers, calientan la JVM y miden 20 solicitudes por caso; el p95 es el valor 19 de 20 ordenados. Exigen p95 menor a 300 ms y que el plan use índices (sin `Seq Scan on card`). Valores de una ejecución de `.\mvnw.cmd clean verify` en un equipo de desarrollo (Windows 11, Docker Desktop), el 10 de noviembre de 2026; varían según la máquina:
 
