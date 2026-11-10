@@ -1,9 +1,9 @@
 /*
  * Propósito: comportamiento de la interfaz web de PokéArena (corrección 1; sección 11).
- * Responsabilidades: sesiones de prueba (POST /api/v1/dev/sesiones), formularios de Crear carta,
- * Crear ubicación y Buscar carta contra la API real, casos de prueba rápidos con imágenes generadas
- * con canvas, y el panel de respuesta.
- * Referencia: sección 11 (solo lo del Sprint 1), 5.2 (sesiones), 5.3 (errores), 5.4 (idempotencia),
+ * Responsabilidades: sesiones, bienvenida y catálogo del jugador, formularios de Crear carta,
+ * Crear ubicación y Buscar carta contra la API real, casos rápidos y panel de respuesta.
+ * Google queda preparado para recibir su clientId de la futura configuración pública del backend.
+ * Referencia: sección 11 (administrador y jugador), 5.2 (sesiones), 5.3 (errores), 5.4 (idempotencia),
  * 5.5 (paginación), 7.1, 7.2 y 7.3.
  *
  * Decisiones:
@@ -17,6 +17,8 @@
  */
 'use strict';
 
+import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, CatalogFilterForm, catalogQuickTests } from './player.js';
+
 (() => {
   // ---------------------------------------------------------------------------------------------
   // Constantes
@@ -26,6 +28,7 @@
     cards: '/api/v1/cartas',
     locations: '/api/v1/ubicaciones',
     devSessions: '/api/v1/dev/sesiones',
+    sessions: '/api/v1/sesiones',
   };
 
   const ROLE_LABELS = { NONE: 'Sin sesión', PLAYER: 'Jugador', ADMIN: 'Administrador' };
@@ -73,7 +76,10 @@
 
   const state = {
     /** Sesión elegida en la barra: la usan los formularios. */
-    session: { role: 'NONE', token: null, player: null, expiresAt: 0 },
+    session: { role: 'NONE', token: null, player: null, expiresAt: 0, initialCollection: null },
+    // Revisiones que impiden restaurar datos o sesiones por respuestas de solicitudes anteriores.
+    sessionVersion: 0,
+    loginVersion: 0,
     /** Tokens de prueba por rol para los casos rápidos, sin cambiar la sesión de la barra. */
     roleTokens: {},
     /** null mientras no se sabe; false si /dev/sesiones responde 404. */
@@ -89,6 +95,13 @@
   // ---------------------------------------------------------------------------------------------
   // Utilidades del DOM (sin innerHTML)
   // ---------------------------------------------------------------------------------------------
+
+  let playerCatalog;
+  let catalogFilterForm;
+  let googleSdk = null;
+  let googleAttempt = null;
+  let googleConfigured = false;
+  let expiryTimer = null;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -159,7 +172,9 @@
       body = JSON.stringify(body);
     }
 
-    showPending(request);
+    const version = state.sessionVersion;
+    const current = () => version === state.sessionVersion && (!request.isCurrent || request.isCurrent());
+    if (current()) showPending(request);
     const started = performance.now();
     let response;
     let text;
@@ -167,7 +182,7 @@
       response = await fetch(request.path, { method: request.method, headers, body, credentials: 'omit' });
       text = await response.text();
     } catch (failure) {
-      showNetworkError(request, failure);
+      if (current()) showNetworkError(request, failure);
       return null;
     }
     const elapsed = Math.round(performance.now() - started);
@@ -184,7 +199,13 @@
       raw: text,
       correlationId: (json && json.correlationId) || response.headers.get('X-Correlation-Id') || '—',
     };
-    showResponse(request, result, elapsed);
+    if (current()) {
+      showResponse(request, result, elapsed);
+      // Un 401 de la sesión activa limpia también los datos privados, no solo el indicador de la barra.
+      if (result.status === 401 && request.token && request.token === state.session.token && !request.expected) {
+        expireSession();
+      }
+    }
     return result;
   }
 
@@ -239,9 +260,9 @@
     $('#response-correlation').textContent = result.correlationId;
     $('#response-time').textContent = elapsed + ' ms';
     $('#response-body').textContent = result.body !== null
-      ? JSON.stringify(result.body, null, 2)
+      ? responseForDisplay(result.body)
       : (result.raw || '(sin cuerpo)');
-    showPreviews(result.body);
+    showPreviews(result.body, request.path.startsWith('/api/v1/catalogo'));
     showExpectation(request.expected, result);
   }
 
@@ -264,13 +285,13 @@
     const got = result === null ? 'sin respuesta'
       : result.status + (errorType(result) ? ' ' + errorType(result) : '');
     box.className = 'expectation ' + (matches ? 'expectation-ok' : 'expectation-bad');
-    box.textContent = (matches ? '✓ Coincide con lo esperado: ' + wanted : '✗ Se esperaba ' + wanted + '; llegó ' + got)
+    box.textContent = (matches ? 'Coincide con lo esperado: ' + wanted : 'Se esperaba ' + wanted + '; llegó ' + got)
       + extra;
     box.hidden = false;
   }
 
   /** Vista previa de las imágenes de la respuesta (ficha o página de resultados). */
-  function showPreviews(body) {
+  function showPreviews(body, large = false) {
     const box = $('#response-images');
     const previews = [];
     const add = (url, caption) => {
@@ -280,7 +301,7 @@
       add(body.imageLargeUrl, 'Versión grande');
       add(body.imageSmallUrl, 'Miniatura');
       if (Array.isArray(body.items)) {
-        body.items.forEach((item) => add(item && item.imageSmallUrl, item && item.code));
+        body.items.forEach((item) => add(item && (large ? item.imageLargeUrl : item.imageSmallUrl), item && item.code));
       }
     }
     if (previews.length === 0) {
@@ -322,12 +343,7 @@
     if (!result || !result.ok || !result.body || !result.body.accessToken) {
       return null;
     }
-    return {
-      role,
-      token: result.body.accessToken,
-      player: result.body.player,
-      expiresAt: Date.now() + result.body.expiresIn * MS_PER_SECOND,
-    };
+    return sessionFromResponse(result.body);
   }
 
   function markDevUnavailable() {
@@ -352,18 +368,64 @@
     }
   }
 
+  /** Cierra únicamente la sesión de esta página; no existe una operación backend de revocación. */
+  function beginSessionChange(message) {
+    const attempt = ++state.loginVersion;
+    state.sessionVersion++;
+    clearTimeout(expiryTimer);
+    state.sessionNotice = '';
+    state.session = { role: 'NONE', token: null, player: null, expiresAt: 0, initialCollection: null };
+    state.roleTokens = {};
+    state.lastCreate = null;
+    state.search = { params: null, token: null, nextCursor: null, shown: 0 };
+    $('#repeat-request').disabled = true;
+    $('#results-body').replaceChildren();
+    $('#results-count').textContent = 'Sin búsqueda todavía.';
+    $('#load-more').hidden = true;
+    $('#response-body').textContent = '{}';
+    $('#response-images').replaceChildren();
+    $('#response-images').hidden = true;
+    $('#response-status').textContent = 'Sin solicitud';
+    $('#response-status').className = 'status status-idle';
+    $('#response-request').textContent = 'Todavía no se envió ninguna solicitud.';
+    ['#response-correlation', '#response-key', '#response-time'].forEach((id) => { $(id).textContent = '—'; });
+    $('#response-expectation').hidden = true;
+    $('#player-quick-status').textContent = '';
+    const form = $('#catalog-form');
+    ['type', 'costMin', 'costMax', 'limit'].forEach((name) => { form.elements[name].value = ''; });
+    form.elements.owned.checked = false;
+    playerCatalog.clear(message);
+    renderSession();
+    return attempt;
+  }
+
+  /** La bienvenida usa el nombre recibido; nunca implementa las reglas de nombre del backend. */
+  function acceptSession(session, source, attempt) {
+    if (attempt !== state.loginVersion || !session) return;
+    state.session = { ...session, source };
+    expiryTimer = setTimeout(expireSession, Math.max(0, session.expiresAt - Date.now()));
+    renderSession();
+    $('#tab-catalog').click();
+    playerCatalog.load();
+  }
+
+  function expireSession() {
+    beginSessionChange('Tu sesión venció. Vuelve a iniciar sesión para consultar tus cartas.');
+    state.sessionNotice = 'Tu sesión venció. Vuelve a iniciar sesión.';
+    renderSession();
+  }
+
   async function chooseSession(role) {
+    const attempt = beginSessionChange();
     if (role === 'NONE') {
-      state.session = { role: 'NONE', token: null, player: null, expiresAt: 0 };
-      renderSession();
+      googleSdk?.disableAutoSelect();
       return;
     }
+    $('#session-detail').textContent = 'Iniciando sesión…';
     const session = await requestDevSession(role, true);
-    if (session) {
-      state.session = session;
-      state.roleTokens[role] = session;
-      renderSession();
-    }
+    if (attempt !== state.loginVersion) return;
+    if (session) acceptSession(session, 'dev', attempt);
+    else $('#session-detail').textContent = 'No se pudo iniciar sesión. Revisa la respuesta e intenta de nuevo.';
   }
 
   /**
@@ -371,10 +433,12 @@
    * No cambia la sesión de la barra.
    */
   async function tokenFor(role) {
+    const version = state.sessionVersion;
     if (role === 'NONE') return null;
     const cached = state.roleTokens[role];
     if (cached && cached.expiresAt - TOKEN_SAFETY_MS > Date.now()) return cached.token;
     const session = await requestDevSession(role, false);
+    if (version !== state.sessionVersion) return undefined;
     if (!session) {
       showMessage('Este caso necesita una sesión de prueba de ' + ROLE_LABELS[role]
         + ', y POST /api/v1/dev/sesiones no está disponible (la aplicación no corre con el perfil dev).');
@@ -386,16 +450,29 @@
 
   function renderSession() {
     const { role, player, expiresAt } = state.session;
+    if (state.session.token && expiresAt <= Date.now()) {
+      expireSession();
+      return;
+    }
+    $('#sign-out').hidden = !state.session.token;
+    $('#welcome-title').textContent = player ? 'Bienvenido, ' + player.displayName : 'Bienvenido a PokéArena';
+    $('#collection-status').textContent = player ? collectionMessage(state.session.initialCollection)
+      : state.sessionNotice || 'Inicia sesión para explorar el catálogo y tu colección.';
+    const adminTabs = ['#tab-card', '#tab-location', '#tab-search'];
+    adminTabs.forEach((id) => { $(id).hidden = role === 'PLAYER'; });
+    if (role === 'PLAYER' && adminTabs.some((id) => $(id).getAttribute('aria-selected') === 'true')) {
+      $('#tab-catalog').click();
+    }
     const badge = $('#session-badge');
     badge.textContent = ROLE_LABELS[role];
     badge.className = 'badge badge-' + role.toLowerCase();
     const detail = $('#session-detail');
     if (role === 'NONE') {
-      detail.textContent = 'Las operaciones de administrador responderán 401.';
+      detail.textContent = state.sessionNotice || 'Inicia sesión para acceder a tus cartas.';
     } else {
       const remaining = expiresAt - Date.now();
       const minutes = Math.max(0, Math.ceil(remaining / (MS_PER_SECOND * SECONDS_PER_MINUTE)));
-      const who = player && player.displayName ? player.displayName : 'jugador de prueba';
+      const who = player?.displayName ?? '';
       detail.textContent = remaining > 0
         ? who + ' · vence en ' + minutes + ' min'
         : who + ' · sesión vencida: elija el rol otra vez';
@@ -502,6 +579,9 @@
 
   /** Envía una creación (POST multipart) con una clave nueva y la recuerda para repetirla. */
   async function sendCreate({ path, token, form, label, expected, idempotencyKey }) {
+    // Una imagen generada por un caso rápido puede terminar después de cerrar o cambiar la sesión.
+    if (token && token !== state.session.token
+        && !Object.values(state.roleTokens).some((session) => session.token === token)) return null;
     const request = {
       method: 'POST', path, token, body: form, label, expected,
       idempotencyKey: idempotencyKey || newIdempotencyKey(),
@@ -734,8 +814,10 @@
 
   /** Busca desde el principio (append = false) o la página siguiente (append = true). */
   async function runSearch({ params, token, append, label, expected }) {
+    const version = state.sessionVersion;
     const cursor = append ? state.search.nextCursor : null;
     const result = await send({ method: 'GET', path: searchPath(params, cursor), token, label, expected });
+    if (version !== state.sessionVersion) return null;
     if (!append) {
       state.search = { params, token, nextCursor: null, shown: 0 };
       $('#results-body').replaceChildren();
@@ -807,6 +889,120 @@
   ];
 
   // ---------------------------------------------------------------------------------------------
+  // Catálogo y bienvenida del jugador (US 43 y presentación de US 35 y 42)
+  // ---------------------------------------------------------------------------------------------
+
+  /** Cada tarjeta usa la imagen grande; los textos del servidor siguen siendo nodos de texto. */
+  function catalogCard(card) {
+    const ability = card.ability || {};
+    return el('article', { className: 'catalog-card' },
+      safeImage(card.imageLargeUrl, card.name || card.code, 'catalog-image'),
+      el('div', { className: 'catalog-card-body' },
+        el('code', { text: card.code }), el('h3', { text: card.name }),
+        el('p', { className: 'muted', text: [card.type?.name, card.rarity?.name].filter(Boolean).join(' · ') }),
+        el('p', { text: 'Costo: ' + card.cost + ' · Poder: ' + card.power }),
+        el('p', { text: 'Habilidad: ' + ability.code + ' · ' + ability.name }),
+        el('p', { className: card.owned ? 'ownership ownership-owned' : 'ownership',
+          text: (card.owned ? 'En tu colección' : 'No la posees') + ' · Copias: ' + card.copies })));
+  }
+
+  function renderCatalog(view) {
+    catalogFilterForm?.update();
+    $('#catalog-cards').replaceChildren(...view.items.map(catalogCard));
+    $('#catalog-cards').setAttribute('aria-busy', String(view.loading));
+    $('#catalog-message').textContent = view.message;
+    $('#catalog-message').className = 'catalog-message' + (view.error ? ' catalog-error' : '');
+    const more = $('#catalog-more');
+    more.hidden = !view.nextCursor;
+    more.disabled = view.loading;
+    more.textContent = view.loading ? 'Cargando…' : 'Cargar más';
+    $('#catalog-form button[type="submit"]').disabled = view.loading;
+  }
+
+  function wireCatalog() {
+    playerCatalog = new PlayerCatalog({ send, getSession: () => state.session, onExpired: expireSession,
+      render: renderCatalog });
+    catalogFilterForm = new CatalogFilterForm($('#catalog-form'), playerCatalog, $('#catalog-filter-status'));
+    $('#catalog-more').addEventListener('click', () => playerCatalog.load({}, true));
+    $('#sign-out').addEventListener('click', () => chooseSession('NONE'));
+    $('#quick-second-login').addEventListener('click', repeatPlayerLogin);
+    $('#quick-invalid-google').addEventListener('click', async () => {
+      const version = state.sessionVersion;
+      const result = await send({ method: 'POST', path: API.sessions,
+        body: { provider: 'google', idToken: 'token-invalido-de-prueba' },
+        label: 'Token de Google inválido', expected: { status: 401, type: 'INVALID_IDENTITY_TOKEN' } });
+      if (version === state.sessionVersion && errorType(result) === 'UNSUPPORTED_PROVIDER') {
+        $('#response-expectation').hidden = true;
+        $('#player-quick-status').textContent = 'Caso no ejecutable: Google no está habilitado en el servidor.';
+      }
+    });
+  }
+
+  /** Solo confirma ALREADY_DELIVERED si el backend lo devuelve, sin inferirlo del catálogo. */
+  async function repeatPlayerLogin() {
+    if (state.session.source !== 'dev' || state.session.role !== 'PLAYER') {
+      $('#player-quick-status').textContent = 'Con Google, cierra e inicia sesión nuevamente para comprobar el estado recibido.';
+      return;
+    }
+    await chooseSession('PLAYER');
+    if (state.session.source !== 'dev') return;
+    $('#player-quick-status').textContent = state.session.initialCollection?.status === 'ALREADY_DELIVERED'
+      ? 'El backend informó ALREADY_DELIVERED: la colección ya se había entregado.'
+      : 'La sesión dev no informó ALREADY_DELIVERED; no se puede confirmar ese criterio desde esta respuesta.';
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Google: transporte al backend existente; la configuración pública pertenece a otro integrante.
+  // ---------------------------------------------------------------------------------------------
+
+  /** Recibe exclusivamente el token que entrega el callback oficial de Google Identity Services. */
+  async function receiveGoogleCredential(response) {
+    const attempt = googleAttempt;
+    if (attempt === null || attempt !== state.loginVersion || typeof response?.credential !== 'string' || !response.credential) return;
+    googleAttempt = null;
+    $('#google-notice').textContent = 'Iniciando sesión…';
+    const result = await send({ ...googleSessionRequest(response.credential), label: 'Inicio de sesión con Google',
+      isCurrent: () => attempt === state.loginVersion });
+    if (attempt !== state.loginVersion) return;
+    const session = result?.ok ? sessionFromResponse(result.body) : null;
+    if (session) {
+      acceptSession(session, 'google', attempt);
+      $('#google-notice').textContent = '';
+    } else {
+      $('#google-notice').textContent = result?.body?.detail || 'No se pudo iniciar sesión. Intenta de nuevo.';
+    }
+  }
+
+  /** Punto de integración frontend: no presupone una ruta ni un esquema de configuración inexistentes. */
+  async function configureGoogle(clientId) {
+    if (googleConfigured || typeof clientId !== 'string' || !clientId.trim()) return;
+    googleConfigured = true;
+    $('#google-notice').textContent = 'Preparando ingreso con Google…';
+    try {
+      if (!window.google?.accounts?.id) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://accounts.google.com/gsi/client';
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.append(script);
+        });
+      }
+      googleSdk = window.google?.accounts?.id;
+      if (!googleSdk) throw new Error('SDK de Google no disponible');
+      $('#google-signin').replaceChildren();
+      mountGoogleButton(googleSdk, clientId, $('#google-signin'), receiveGoogleCredential, () => {
+        googleAttempt = beginSessionChange();
+      });
+      $('#google-notice').textContent = '';
+    } catch (failure) {
+      googleConfigured = false;
+      $('#google-notice').textContent = 'No se pudo cargar Google. Intenta de nuevo más tarde.';
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Casos rápidos, pestañas e inicio
   // ---------------------------------------------------------------------------------------------
 
@@ -840,12 +1036,14 @@
         $('#' + other.getAttribute('aria-controls')).hidden = !selected;
       });
     };
-    tabs.forEach((tab, index) => {
+    tabs.forEach((tab) => {
       tab.addEventListener('click', () => select(tab));
       tab.addEventListener('keydown', (event) => {
         const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
         if (step !== 0) {
-          const next = tabs[(index + step + tabs.length) % tabs.length];
+          const visible = tabs.filter((item) => !item.hidden);
+          const position = visible.indexOf(tab);
+          const next = visible[(position + step + visible.length) % visible.length];
           select(next);
           next.focus();
         }
@@ -856,10 +1054,15 @@
   function start() {
     fillOptions();
     wireTabs();
+    $('#tab-catalog').click();
     wireImageInputs();
     wireCardForm();
     wireLocationForm();
     wireSearchForm();
+    wireCatalog();
+    // El futuro adaptador del endpoint público debe entregar este clientId; no se inventa su contrato.
+    document.addEventListener('pokearena:google-config', (event) => configureGoogle(event.detail?.clientId));
+    renderQuickTests('catalog', catalogQuickTests(catalogFilterForm));
     renderQuickTests('card', CARD_QUICK_TESTS);
     renderQuickTests('location', LOCATION_QUICK_TESTS);
     renderQuickTests('search', SEARCH_QUICK_TESTS);

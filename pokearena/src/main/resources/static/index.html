@@ -5,7 +5,7 @@
   Crear ubicación y Buscar carta), casos de prueba rápidos y panel de respuesta. El comportamiento está
   en app.js y el diseño en styles.css. Sin frameworks ni bibliotecas externas: todo se sirve desde la
   misma aplicación, y habla con la API real en el mismo origen.
-  Referencia: sección 11 (solo lo del Sprint 1) y sección 4.1 (la presentación es la interfaz; la API
+  Referencia: sección 11 (administrador y jugador) y sección 4.1 (la presentación es la interfaz; la API
   es otra capa).
 -->
 <html lang="es">
@@ -14,11 +14,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Solo recursos del mismo origen; las imágenes de reemplazo son data: generadas por app.js. -->
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>PokéArena · Consola del administrador</title>
+        content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' https://accounts.google.com/gsi/style; script-src 'self' https://accounts.google.com/gsi/client; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>PokéArena · Catálogo y administración</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
-  <script src="app.js" defer></script>
+  <script type="module" src="app.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -26,7 +26,7 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <div>
         <h1>PokéArena</h1>
-        <p class="subtitle">Consola del administrador · Sprint 1</p>
+        <p class="subtitle">Catálogo, colección y administración</p>
       </div>
     </div>
 
@@ -36,28 +36,69 @@
         <span id="session-badge" class="badge badge-none">Sin sesión</span>
         <span id="session-detail" class="muted"></span>
       </div>
+      <div class="login-actions">
+        <div id="google-signin"><button type="button" class="btn btn-ghost" disabled>Entrar con Google</button></div>
+        <button type="button" id="sign-out" class="btn btn-ghost" hidden>Cerrar sesión</button>
+      </div>
+      <p id="google-notice" class="muted" role="status">El ingreso con Google aún no está disponible.</p>
       <div id="session-buttons" class="session-buttons" role="group" aria-label="Elegir sesión de prueba">
         <button type="button" class="btn btn-ghost" data-session="NONE">Sin sesión</button>
         <button type="button" class="btn btn-ghost" data-session="PLAYER">Jugador</button>
         <button type="button" class="btn btn-ghost" data-session="ADMIN">Administrador</button>
       </div>
       <p id="session-notice" class="notice" hidden>
-        Las sesiones de prueba solo existen con el perfil <code>dev</code>. El ingreso real llegará con
-        el inicio de sesión con proveedor (Sprint 2).
+        Las sesiones de prueba no están disponibles en este ambiente.
       </p>
     </section>
   </header>
 
   <main class="layout">
     <section class="workspace">
-      <nav class="tabs" role="tablist" aria-label="Operaciones del administrador">
-        <button type="button" role="tab" class="tab" id="tab-card" aria-controls="panel-card" aria-selected="true">Crear carta</button>
+      <section id="player-welcome" class="welcome" aria-live="polite">
+        <h2 id="welcome-title">Bienvenido a PokéArena</h2>
+        <p id="collection-status">Inicia sesión para explorar el catálogo y tu colección.</p>
+      </section>
+      <nav class="tabs" role="tablist" aria-label="Catálogo y operaciones del administrador">
+        <button type="button" role="tab" class="tab" id="tab-catalog" aria-controls="panel-catalog" aria-selected="true">Catálogo y mi colección</button>
+        <button type="button" role="tab" class="tab" id="tab-card" aria-controls="panel-card" aria-selected="false">Crear carta</button>
         <button type="button" role="tab" class="tab" id="tab-location" aria-controls="panel-location" aria-selected="false">Crear ubicación</button>
         <button type="button" role="tab" class="tab" id="tab-search" aria-controls="panel-search" aria-selected="false">Buscar carta</button>
       </nav>
 
+      <!-- Catálogo del jugador: la API decide propiedad, copias y reglas de disponibilidad. -->
+      <section id="panel-catalog" class="panel" role="tabpanel" aria-labelledby="tab-catalog">
+        <div class="panel-head">
+          <h2>Catálogo y mi colección</h2>
+          <p class="muted">Explora las cartas disponibles y consulta cuáles posees.</p>
+        </div>
+        <form id="catalog-form" class="form-grid search-grid" novalidate>
+          <label class="field">Tipo <select name="type" data-options="types" data-empty="Todos los tipos"></select></label>
+          <label class="field">Costo mínimo <input name="costMin" type="number" min="0" max="10" step="1"></label>
+          <label class="field">Costo máximo <input name="costMax" type="number" min="0" max="10" step="1"></label>
+          <label class="field">Cartas por página <input name="limit" type="number" min="1" max="100" step="1" placeholder="20"></label>
+          <label class="owned-filter"><input name="owned" type="checkbox"> Solo mis cartas</label>
+          <div class="actions span-all">
+            <button type="submit" class="btn btn-primary">Aplicar filtros</button>
+            <button type="reset" class="btn btn-ghost">Limpiar filtros</button>
+          </div>
+        </form>
+        <p id="catalog-filter-status" class="muted" role="status" aria-live="polite"></p>
+        <p id="catalog-message" class="catalog-message" role="status" aria-live="polite">Inicia sesión para consultar el catálogo.</p>
+        <div id="catalog-cards" class="catalog-grid" aria-busy="false"></div>
+        <button type="button" id="catalog-more" class="btn btn-ghost load-more" hidden>Cargar más</button>
+        <div class="quick">
+          <h3>Casos de prueba rápidos del jugador</h3>
+          <p class="muted">Consultan la API con tu sesión. El segundo ingreso requiere que la respuesta de sesiones informe el estado de la colección.</p>
+          <div class="quick-grid" data-quick="catalog"></div>
+          <button type="button" id="quick-second-login" class="quick-button">Segundo ingreso del jugador</button>
+          <button type="button" id="quick-invalid-google" class="quick-button">Token de Google inválido</button>
+          <button type="button" id="quick-wrong-audience" class="quick-button" disabled title="Requiere un token real de otra aplicación y Google habilitado">Token de otra aplicación: pendiente de integración</button>
+          <p id="player-quick-status" class="muted" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
       <!-- ===================================================== Crear carta (2.1.1) -->
-      <section id="panel-card" class="panel" role="tabpanel" aria-labelledby="tab-card">
+      <section id="panel-card" class="panel" role="tabpanel" aria-labelledby="tab-card" hidden>
         <div class="panel-head">
           <h2>Crear carta</h2>
           <p class="muted"><code>POST /api/v1/cartas</code> · Historia 2.1.1 · Requiere rol de administrador</p>

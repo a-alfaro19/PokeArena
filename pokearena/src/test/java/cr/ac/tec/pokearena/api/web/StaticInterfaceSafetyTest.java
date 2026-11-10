@@ -41,22 +41,31 @@ class StaticInterfaceSafetyTest {
             "\\beval\\s*\\(", "new Function\\s*\\(" })
     @DisplayName("app.js no inserta HTML ni ejecuta texto: solo textContent y nodos creados a mano")
     void noHtmlInjection(String forbidden) {
-        assertThat(Pattern.compile(forbidden).matcher(read("app.js")).find()).as(forbidden).isFalse();
+        for (String file : new String[] {"app.js", "player.js"}) {
+            assertThat(Pattern.compile(forbidden).matcher(read(file)).find()).as(file + ": " + forbidden).isFalse();
+        }
     }
 
     @Test
     @DisplayName("El token vive solo en memoria: app.js no usa localStorage, sessionStorage ni cookies")
     void tokenOnlyInMemory() {
-        assertThat(read("app.js")).doesNotContain("localStorage", "sessionStorage", "document.cookie");
+        for (String file : new String[] {"app.js", "player.js"}) {
+            assertThat(read(file)).doesNotContain("localStorage", "sessionStorage", "document.cookie");
+        }
     }
 
     @Test
-    @DisplayName("Sin bibliotecas ni CDN: la página solo carga recursos del mismo origen")
+    @DisplayName("La API y los recursos son del mismo origen; CSP permite solo el SDK oficial de Google como excepción")
     void sameOriginOnly() {
         String index = read("index.html");
         assertThat(Pattern.compile("(src|href)\\s*=\\s*\"(https?:)?//").matcher(index).find()).isFalse();
-        assertThat(index).contains("default-src 'self'");
+        assertThat(index).contains("default-src 'self'", "script-src 'self' https://accounts.google.com/gsi/client;",
+                "frame-src https://accounts.google.com/gsi/;")
+                .doesNotContain("'unsafe-inline'", "'unsafe-eval'", "https://*.google.com", "script-src *");
+        // Google es una excepción explícita; ninguna llamada a nuestra API puede salir del mismo origen.
+        assertThat(read("app.js")).contains("script.src = 'https://accounts.google.com/gsi/client'");
         assertThat(Pattern.compile("fetch\\(\\s*['\"`](https?:)?//").matcher(read("app.js")).find()).isFalse();
+        assertThat(Pattern.compile("fetch\\(\\s*['\"`](https?:)?//").matcher(read("player.js")).find()).isFalse();
         assertThat(read("styles.css")).doesNotContain("@import", "url(http");
     }
 }
