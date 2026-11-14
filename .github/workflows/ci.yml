@@ -1,0 +1,82 @@
+# =============================================================================
+# Propósito: integración continua de PokéArena (sección 13: "El pipeline de GitHub Actions ejecuta
+# compilación, todas las pruebas y oasdiff").
+# Responsabilidades:
+#  - build: Java 21, caché de Maven y `./mvnw -B clean verify` en pokearena/ (unitarias, ArchUnit,
+#    integración con Testcontainers, contrato y rendimiento). Los runners ubuntu-latest traen Docker,
+#    que necesita Testcontainers. Si falla, sube los informes de las pruebas como artefacto.
+#  - openapi-breaking: solo en pull requests, compara el contrato de la rama con el de la rama base
+#    con `oasdiff breaking` (imagen Docker oficial) y falla ante un cambio incompatible. Si el archivo
+#    no existe en la base (primer PR que lo agrega), el paso se omite.
+#
+# Nota: Node.js 20 viene instalado en ubuntu-latest, así que PlayerInterfaceBehaviorTest ejecuta las
+# pruebas de JavaScript (no se omiten).
+# =============================================================================
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compilar y probar (clean verify)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pokearena
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: pokearena/pom.xml
+
+      - name: clean verify
+        run: ./mvnw -B clean verify
+
+      - name: Subir informes de pruebas si falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informes-de-pruebas
+          path: |
+            pokearena/target/surefire-reports/
+            pokearena/target/failsafe-reports/
+          if-no-files-found: ignore
+
+  openapi-breaking:
+    name: Contrato OpenAPI sin cambios incompatibles (oasdiff)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CONTRACT: pokearena/src/main/resources/openapi/pokearena.yaml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historial completo para poder leer el contrato de la rama base.
+          fetch-depth: 0
+
+      - name: Obtener el contrato de la rama base
+        id: base
+        run: |
+          mkdir -p "$RUNNER_TEMP/oasdiff"
+          if git show "origin/${{ github.base_ref }}:${CONTRACT}" > "$RUNNER_TEMP/oasdiff/base.yaml" 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "El contrato no existe en ${{ github.base_ref }}: se omite oasdiff."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          cp "$CONTRACT" "$RUNNER_TEMP/oasdiff/revision.yaml"
+
+      - name: oasdiff breaking
+        if: steps.base.outputs.exists == 'true'
+        run: |
+          docker run --rm -v "$RUNNER_TEMP/oasdiff:/specs:ro" tufin/oasdiff \
+            breaking /specs/base.yaml /specs/revision.yaml --fail-on ERR

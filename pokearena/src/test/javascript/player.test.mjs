@@ -1,6 +1,6 @@
 /*
  * Propósito: verificar comportamiento de la interfaz del jugador sin frameworks ni backend simulado como producción.
- * Responsabilidades: controlar respuestas y reloj para probar filtros, aislamiento, paginación y sesiones (US 43, 35 y 42).
+ * Responsabilidades: controlar respuestas y reloj para probar filtros, aislamiento, paginación y sesiones (historias 3.1.2, 1.1.1 y 3.1.1).
  * Ejecución: node --test src/test/javascript/player.test.mjs
  */
 import test from 'node:test';
@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 // Importa exactamente el módulo servido al navegador sin exigir package.json ni dependencias.
 const source = await readFile(new URL('../../main/resources/static/player.js', import.meta.url), 'utf8');
 const { PlayerCatalog, catalogPath, collectionMessage, sessionFromResponse, responseForDisplay,
-  mountGoogleButton, googleSessionRequest, CatalogFilterForm, catalogQuickTests } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  mountGoogleButton, googleSessionRequest, googleClientIdFrom, CatalogFilterForm, catalogQuickTests } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const card = (code, copies = 0) => ({ code, name: code, imageLargeUrl: '/images/large.png', owned: copies > 0, copies });
 const page = (items, nextCursor = null) => ({ status: 200, body: { items, nextCursor, limit: 2 } });
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
@@ -33,13 +33,13 @@ function harness() {
     setClock: (value) => { clock = value; }, expired: () => expired };
 }
 
-test('US 43: combina tipo, rango y propias con rutas relativas; el cursor es opaco', () => {
+test('historia 3.1.2: combina tipo, rango y propias con rutas relativas; el cursor es opaco', () => {
   assert.equal(catalogPath({ type: 'FUE', costMin: '0', costMax: '7', owned: 'true' }, 'abc_-'),
     '/api/v1/catalogo?type=FUE&costMin=0&costMax=7&owned=true&cursor=abc_-');
   assert.equal(catalogPath({}), '/api/v1/catalogo');
 });
 
-test('US 43: muestra carga y conserva propiedad, copias e imagen grande del backend', async () => {
+test('historia 3.1.2: muestra carga y conserva propiedad, copias e imagen grande del backend', async () => {
   const h = harness();
   h.responses.push(page([card('A', 3), card('B')]));
   await h.catalog.load({});
@@ -49,7 +49,7 @@ test('US 43: muestra carga y conserva propiedad, copias e imagen grande del back
   assert.equal(h.requests[0].token, 'token-propio-A');
 });
 
-test('US 43: cargar más conserva filtros y añade la página sin repetir el inicio', async () => {
+test('historia 3.1.2: cargar más conserva filtros y añade la página sin repetir el inicio', async () => {
   const h = harness();
   h.responses.push(page([card('A')], 'MQ'), page([card('B')]));
   await h.catalog.load({ type: 'AGU', costMin: '2', owned: 'true' });
@@ -61,7 +61,7 @@ test('US 43: cargar más conserva filtros y añade la página sin repetir el ini
   assert.equal(h.requests.length, 2);
 });
 
-test('US 43: aplicar nuevos filtros elimina resultados y cursor anteriores', async () => {
+test('historia 3.1.2: aplicar nuevos filtros elimina resultados y cursor anteriores', async () => {
   const h = harness();
   h.responses.push(page([card('A')], 'MQ'), page([card('B')]));
   await h.catalog.load({ type: 'FUE' });
@@ -70,7 +70,7 @@ test('US 43: aplicar nuevos filtros elimina resultados y cursor anteriores', asy
   assert.deepEqual(h.catalog.view.items.map((item) => item.code), ['B']);
 });
 
-test('US 43: lista vacía es un estado normal, también en solo mis cartas', async () => {
+test('historia 3.1.2: lista vacía es un estado normal, también en solo mis cartas', async () => {
   const h = harness();
   h.responses.push(page([]));
   await h.catalog.load({ owned: 'true' });
@@ -79,7 +79,7 @@ test('US 43: lista vacía es un estado normal, también en solo mis cartas', asy
   assert.equal(h.catalog.view.nextCursor, null);
 });
 
-test('US 43: comunica detalle y valores permitidos para filtros inválidos', async () => {
+test('historia 3.1.2: comunica detalle y valores permitidos para filtros inválidos', async () => {
   const h = harness();
   h.responses.push({ status: 400, body: { type: 'INVALID_FIELD', detail: 'Tipo inválido.', allowedValues: ['FUE', 'AGU'] } });
   await h.catalog.load({ type: 'INVALID' });
@@ -87,7 +87,7 @@ test('US 43: comunica detalle y valores permitidos para filtros inválidos', asy
   assert.equal(h.catalog.view.error, true);
 });
 
-test('US 43: error de paginación preserva cartas y cursor para reintentar', async () => {
+test('historia 3.1.2: error de paginación preserva cartas y cursor para reintentar', async () => {
   const h = harness();
   h.responses.push(page([card('A')], 'MQ'), { status: 400, body: { type: 'INVALID_PAGINATION', detail: 'Cursor inválido.' } }, page([card('B')]));
   await h.catalog.load({});
@@ -101,7 +101,7 @@ test('US 43: error de paginación preserva cartas y cursor para reintentar', asy
 
 for (const response of [null, { status: 500, body: { detail: 'Fallo del servidor.' } },
   { status: 200, body: { items: [], nextCursor: 7 } }]) {
-  test('US 43: maneja red, error HTTP o página inválida sin dejar carga activa: ' + JSON.stringify(response), async () => {
+  test('historia 3.1.2: maneja red, error HTTP o página inválida sin dejar carga activa: ' + JSON.stringify(response), async () => {
     const h = harness(); h.responses.push(response);
     await h.catalog.load({});
     assert.equal(h.catalog.view.loading, false);
@@ -109,14 +109,14 @@ for (const response of [null, { status: 500, body: { detail: 'Fallo del servidor
   });
 }
 
-test('US 43: una excepción de transporte también libera el estado de carga', async () => {
+test('historia 3.1.2: una excepción de transporte también libera el estado de carga', async () => {
   const h = harness(); h.catalog.send = async () => { throw new Error('desconectado'); };
   await h.catalog.load({});
   assert.equal(h.catalog.view.loading, false);
   assert.match(h.catalog.view.message, /conectar/);
 });
 
-test('US 43: no consulta sin sesión y limpia datos personales', async () => {
+test('historia 3.1.2: no consulta sin sesión y limpia datos personales', async () => {
   const h = harness(); h.responses.push(page([card('A', 2)]));
   await h.catalog.load({});
   h.setSession({ token: null, expiresAt: 0 });
@@ -125,7 +125,7 @@ test('US 43: no consulta sin sesión y limpia datos personales', async () => {
   assert.equal(h.requests.length, 1);
 });
 
-test('US 35: vencimiento local y 401 borran cartas y piden nuevo ingreso', async () => {
+test('historia 1.1.1: vencimiento local y 401 borran cartas y piden nuevo ingreso', async () => {
   const h = harness(); h.setClock(10000);
   await h.catalog.load({});
   assert.equal(h.expired(), 1);
@@ -136,7 +136,7 @@ test('US 35: vencimiento local y 401 borran cartas y piden nuevo ingreso', async
   assert.deepEqual(other.catalog.view.items, []);
 });
 
-test('US 35: una respuesta recibida después del vencimiento no vuelve a mostrar cartas', async () => {
+test('historia 1.1.1: una respuesta recibida después del vencimiento no vuelve a mostrar cartas', async () => {
   const h = harness(); const pending = deferred(); h.responses.push(pending.promise);
   const load = h.catalog.load({}); h.setClock(10000); pending.resolve(page([card('A', 1)]));
   await load;
@@ -144,7 +144,7 @@ test('US 35: una respuesta recibida después del vencimiento no vuelve a mostrar
   assert.deepEqual(h.catalog.view.items, []);
 });
 
-test('US 43: cambiar o cerrar sesión descarta respuestas personales pendientes', async () => {
+test('historia 3.1.2: cambiar o cerrar sesión descarta respuestas personales pendientes', async () => {
   const h = harness(); const pending = deferred(); h.responses.push(pending.promise);
   const load = h.catalog.load({});
   h.setSession({ token: 'token-propio-B', expiresAt: 10000 }); h.catalog.clear();
@@ -153,34 +153,37 @@ test('US 43: cambiar o cerrar sesión descarta respuestas personales pendientes'
   assert.deepEqual(h.catalog.view.items, []);
 });
 
-test('US 43: consultas fuera de orden no reemplazan los filtros más recientes', async () => {
+test('historia 3.1.2: consultas fuera de orden no reemplazan los filtros más recientes', async () => {
   const h = harness(); const old = deferred(); h.responses.push(old.promise, page([card('NUEVA')]));
   const first = h.catalog.load({ type: 'FUE' }); await h.catalog.load({ type: 'AGU' });
   old.resolve(page([card('ANTERIOR')])); await first;
   assert.deepEqual(h.catalog.view.items.map((item) => item.code), ['NUEVA']);
 });
 
-test('US 43: doble clic en cargar más solo envía una solicitud', async () => {
+test('historia 3.1.2: doble clic en cargar más solo envía una solicitud', async () => {
   const h = harness(); const pending = deferred(); h.responses.push(page([card('A')], 'MQ'), pending.promise);
   await h.catalog.load({}); const next = h.catalog.load({}, true); await h.catalog.load({}, true);
   assert.equal(h.requests.length, 2); pending.resolve(page([card('B')])); await next;
   assert.deepEqual(h.catalog.view.items.map((item) => item.code), ['A', 'B']);
 });
 
-test('US 42: presenta entrega realizada y previa exclusivamente según initialCollection', () => {
-  assert.match(collectionMessage({ status: 'DELIVERED' }), /15 cartas y 1.000 cubos/);
+test('historia 3.1.1: presenta entrega realizada y previa exclusivamente según initialCollection', () => {
+  // Sin cifras fijas: la cantidad de cartas y cubos es configuración del servidor.
+  assert.match(collectionMessage({ status: 'DELIVERED', message: null }), /Recibiste tu colección inicial/);
+  assert.equal(/\d/.test(collectionMessage({ status: 'DELIVERED' })), false);
+  assert.equal(collectionMessage({ status: 'DELIVERED', message: 'Texto del servidor.' }), 'Texto del servidor.');
   assert.match(collectionMessage({ status: 'ALREADY_DELIVERED' }), /no vuelve a entregarla/);
   assert.match(collectionMessage(null), /no informa/);
   assert.match(collectionMessage({ status: 'DESCONOCIDO' }), /no reconocido/);
 });
 
 for (const status of ['PENDING_NO_CARDS', 'PENDING_ERROR']) {
-  test('US 42: muestra el mensaje del backend para ' + status, () => {
+  test('historia 3.1.1: muestra el mensaje del backend para ' + status, () => {
     assert.equal(collectionMessage({ status, message: 'Mensaje exacto del servidor.' }), 'Mensaje exacto del servidor.');
   });
 }
 
-test('US 35 y 42: reutiliza credenciales propias y datos de sesión sin inventar colección en dev', () => {
+test('historias 1.1.1 y 3.1.1: reutiliza credenciales propias y datos de sesión sin inventar colección en dev', () => {
   const body = { accessToken: 'propio', expiresIn: 900, player: { id: 'id', role: 'ADMIN', displayName: 'Nombre recibido' } };
   const session = sessionFromResponse(body, 1000);
   assert.equal(session.token, 'propio'); assert.equal(session.role, 'ADMIN');
@@ -191,7 +194,7 @@ test('US 35 y 42: reutiliza credenciales propias y datos de sesión sin inventar
   assert.equal(sessionFromResponse({}), null);
 });
 
-test('US 35: el SDK recibe el clientId proporcionado y su callback envía el token solo a sesiones', () => {
+test('historia 1.1.1: el SDK recibe el clientId proporcionado y su callback envía el token solo a sesiones', () => {
   let initialization; let rendering; let request; let clicks = 0;
   const sdk = { initialize: (config) => { initialization = config; }, renderButton: (...args) => { rendering = args; } };
   const container = {};
@@ -205,7 +208,16 @@ test('US 35: el SDK recibe el clientId proporcionado y su callback envía el tok
   assert.deepEqual(request, { method: 'POST', path: '/api/v1/sesiones', body: { provider: 'google', idToken: 'token-externo' } });
 });
 
-test('US 35: diagnóstico oculta tokens propios y externos sin cambiar el cuerpo original', () => {
+test('historia 1.1.1: el client id sale solo de GET /api/v1/configuracion; null o vacío deshabilita Google', () => {
+  assert.equal(googleClientIdFrom({ status: 200, body: { googleClientId: ' id.apps.googleusercontent.com ' } }),
+    'id.apps.googleusercontent.com');
+  assert.equal(googleClientIdFrom({ status: 200, body: { googleClientId: null } }), null);
+  assert.equal(googleClientIdFrom({ status: 200, body: { googleClientId: '  ' } }), null);
+  assert.equal(googleClientIdFrom({ status: 500, body: { googleClientId: 'id' } }), null);
+  assert.equal(googleClientIdFrom(null), null);
+});
+
+test('historia 1.1.1: diagnóstico oculta tokens propios y externos sin cambiar el cuerpo original', () => {
   const body = { accessToken: 'secreto', nested: { idToken: 'externo' }, initialCollection: { status: 'DELIVERED' } };
   const shown = responseForDisplay(body);
   assert.equal(shown.includes('secreto'), false); assert.equal(shown.includes('externo'), false);
@@ -226,7 +238,7 @@ function filterForm() {
   return form;
 }
 
-test('US 43: acciones reales de casos rápidos sincronizan formulario, filtros activos y consulta enviada', async () => {
+test('historia 3.1.2: acciones reales de casos rápidos sincronizan formulario, filtros activos y consulta enviada', async () => {
   const h = harness();
   const form = filterForm();
   const status = { textContent: '' };
@@ -290,7 +302,7 @@ test('US 43: acciones reales de casos rápidos sincronizan formulario, filtros a
   assert.match(status.textContent, /por página: 0.*formulario coincide/);
 });
 
-test('US 43: limpiar el formulario consulta sin filtros y descarta la edición pendiente', async () => {
+test('historia 3.1.2: limpiar el formulario consulta sin filtros y descarta la edición pendiente', async () => {
   const h = harness(); const form = filterForm(); const status = { textContent: '' };
   const binding = new CatalogFilterForm(form, h.catalog, status);
   form.elements.costMin.value = '4'; form.elements.owned.checked = true;

@@ -6,6 +6,7 @@ import cr.ac.tec.pokearena.application.dto.CardDetails;
 import cr.ac.tec.pokearena.application.dto.CreateCardCommand;
 import cr.ac.tec.pokearena.application.dto.IdempotentRequest;
 import cr.ac.tec.pokearena.application.dto.IdempotentResult;
+import cr.ac.tec.pokearena.application.port.CatalogCache;
 import cr.ac.tec.pokearena.application.port.Clock;
 import cr.ac.tec.pokearena.application.port.ImageProcessor;
 import cr.ac.tec.pokearena.application.port.ImageStorage;
@@ -71,10 +72,11 @@ public class CreateCardUseCase {
     private final ImageProcessor imageProcessor;
     private final ImageStorage imageStorage;
     private final Clock clock;
+    private final CatalogCache catalogCache;
 
     public CreateCardUseCase(IdempotencyGuard idempotency, ImageCreationSteps imageCreation,
             CardCatalogRepository catalog, AbilityRepository abilities, CardRepository cards,
-            ImageProcessor imageProcessor, ImageStorage imageStorage, Clock clock) {
+            ImageProcessor imageProcessor, ImageStorage imageStorage, Clock clock, CatalogCache catalogCache) {
         this.idempotency = idempotency;
         this.imageCreation = imageCreation;
         this.catalog = catalog;
@@ -83,6 +85,7 @@ public class CreateCardUseCase {
         this.imageProcessor = imageProcessor;
         this.imageStorage = imageStorage;
         this.clock = clock;
+        this.catalogCache = catalogCache;
     }
 
     /**
@@ -125,8 +128,7 @@ public class CreateCardUseCase {
 
         // Paso 10 (mensajes 17 a 20): una sola transacción con la carta y la clave de idempotencia.
         // Si falla, se revierte y se borran los archivos; si otra solicitud igual ganó, se repite su respuesta.
-        // Paso 11 (mensajes 21 y 22): con el resultado, la API responde 201 con la ficha.
-        return imageCreation.commitOrCompensate(request, stored, CardDetails.class, () -> {
+        IdempotentResult<CardDetails> result = imageCreation.commitOrCompensate(request, stored, CardDetails.class, () -> {
             // Consecutivo del tipo: si la transacción se revierte, no se consume.
             CardCode code = CardCode.of(fields.type().code(), cards.nextNumber(fields.type().code()));
             // Evolución contra el código real que va a recibir la carta.
@@ -135,6 +137,15 @@ public class CreateCardUseCase {
             cards.save(card);
             return CardDetails.of(card);
         });
+
+        // Después de confirmar la transacción (sección 9, "Invalidación"): incrementar catalog:version para
+        // que la carta nueva aparezca en el catálogo y en la búsqueda sin esperar el vencimiento de las
+        // páginas cacheadas. Fuera de la transacción: Redis no participa en ella, y una falla de la caché
+        // nunca revierte ni rechaza una carta ya guardada.
+        catalogCache.invalidate();
+
+        // Paso 11 (mensajes 21 y 22): con el resultado, la API responde 201 con la ficha.
+        return result;
     }
 
     private Ability validateAbility(String abilityCode) {

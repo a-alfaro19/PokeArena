@@ -68,9 +68,10 @@ Cada una debe verificarse en la lista final (sección 17).
 | Identidad | Verificación del token del proveedor con una biblioteca JWT (por ejemplo `nimbus-jose-jwt`) más JWKS; credenciales propias firmadas con la misma biblioteca |
 | Contrato de API | OpenAPI escrito a mano **antes** del código, validado con una prueba de contrato |
 | Contenedores | Docker Compose, Nginx y 2 instancias de la API |
-| Pruebas | JUnit 5, AssertJ, **Testcontainers** (PostgreSQL y Redis), ArchUnit, jqwik, y un servidor simulado del proveedor de identidad |
+| Pruebas | JUnit 5, AssertJ, **Testcontainers** (PostgreSQL y Redis), ArchUnit y un servidor simulado del proveedor de identidad |
 | CI | GitHub Actions |
 | Interfaz | HTML, CSS y JavaScript sin frameworks, servida desde `static/` |
+| Pruebas de la interfaz | **Node.js 20 o superior, requisito opcional**: `node --test` sin paquetes npm. Sin Node (o con una versión menor), `PlayerInterfaceBehaviorTest` se **omite** con un aviso y el build sigue |
 
 ---
 
@@ -185,6 +186,7 @@ Cada clase lleva un comentario inicial con su propósito y responsabilidades. Lo
 | Crear ubicación | `POST /api/v1/ubicaciones` (multipart/form-data) | Administrador |
 | Explorar catálogo y mi colección | `GET /api/v1/catalogo` | Jugador autenticado |
 | Credenciales de prueba (solo perfil `dev`) | `POST /api/v1/dev/sesiones` | Público en `dev` |
+| Configuración pública de la interfaz | `GET /api/v1/configuracion` | Público |
 
 Los identificadores de Java van en inglés; los mensajes al usuario, en español.
 
@@ -201,6 +203,8 @@ Los identificadores de Java van en inglés; los mensajes al usuario, en español
 - **Limitación conocida:** el token se acepta durante toda su vigencia (15 minutos) sin consultar el estado del jugador. Por ejemplo, un cambio de rol se refleja en el siguiente ingreso, no en los tokens ya emitidos. Es aceptable en este sprint porque el vencimiento es corto y la desactivación de cuentas no está en el alcance; se documenta también en el ADR de almacenamiento.
 - `POST /api/v1/dev/sesiones` emite credenciales de prueba para ADMIN o PLAYER, **solo con el perfil `dev`** (`@Profile("dev")`). Una prueba debe comprobar que con el perfil `prod` no existe (RNF-SEG-10).
 - Las credenciales de prueba **pertenecen a jugadores reales**: `dev/sesiones` crea (o reutiliza) un jugador con proveedor `dev`, por la misma vía que el inicio de sesión (fila en `player` y en `player_identity`, sección 6). Así el `sub` del token siempre es un `player(id)` existente y los datos de prueba (colección, cubos, copias, claves de idempotencia) cumplen las mismas reglas y claves foráneas que los reales.
+- El administrador de prueba (`dev:dev-admin`) se declara en `app.admin.dev-identities`, que solo define el perfil `dev` y **se suma** a `app.admin.identities`. No se escribe en `app.admin.identities` porque Spring Boot enlaza la variable de entorno `APP_ADMIN_IDENTITIES` directamente con esa propiedad y la reemplaza entera (Docker Compose la pasa aunque esté vacía).
+- **Respuesta de `dev/sesiones`:** la misma forma que el inicio de sesión (8.1, paso 8) sin `firstLogin`: `{ accessToken, tokenType, expiresIn, player, initialCollection: { status, message } }`. El jugador de prueba de rol PLAYER recibe la colección inicial por la misma vía y `initialCollection` informa su resultado (`DELIVERED`, `ALREADY_DELIVERED`, `PENDING_NO_CARDS` o `PENDING_ERROR`); el administrador de prueba no la recibe y `initialCollection` es `null`.
 
 ### 5.3 Formato único de errores (RNF-API-03)
 
@@ -431,7 +435,7 @@ Crear una ubicación solo agrega una fila disponible para partidas **nuevas**; n
 | 3 | El verificador valida **firma** (con las llaves públicas del proveedor), **emisor**, **vencimiento** y **audiencia** (debe ser el `client id` configurado en `app.identity.google.client-id`) | `INVALID_IDENTITY_TOKEN` |
 | 4 | Obtiene la identidad verificada: `proveedor`, `sub`, correo, nombre | |
 | 5 | `UnitOfWork`: busca el jugador por `(proveedor, sub)`; si no existe lo crea con rol `PLAYER` (o `ADMIN` si la identidad está en `app.admin.identities`), `elo` 0 y `initial_collection_status` `PENDING`. La unicidad la garantiza la restricción de la base: `INSERT ... ON CONFLICT DO NOTHING` y luego leer | |
-| 6 | Invoca la entrega de la colección inicial (8.2) por el puerto `InitialCollectionDelivery`, cuyo único bean es `DeliverInitialCollectionUseCase`. Ocurre **después** de crear o recuperar la cuenta y en **otra transacción**: si la entrega se revierte, la cuenta sigue existiendo. **Nunca impide el ingreso:** si lanza una excepción, se registra un aviso en el log (con el `correlationId` de la solicitud, que viaja en el MDC) y la sesión se abre igual con `PENDING_ERROR`; como la entrega es todo o nada, no queda nada parcial y el siguiente ingreso la reintenta. Mensajes: `DELIVERED` y `ALREADY_DELIVERED` sin mensaje (`null`); `PENDING_NO_CARDS` "El juego aún no está disponible: todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior."; `PENDING_ERROR` "No pudimos entregar tu colección, se reintentará en tu próximo ingreso." Las credenciales de prueba (`dev/sesiones`, solo perfil `dev`) entregan la colección al jugador de prueba de rol PLAYER por la misma vía, sin cambiar su respuesta y sin impedir la sesión si falla | no bloquea el ingreso (`PENDING_ERROR`) |
+| 6 | Invoca la entrega de la colección inicial (8.2) por el puerto `InitialCollectionDelivery`, cuyo único bean es `DeliverInitialCollectionUseCase`. Ocurre **después** de crear o recuperar la cuenta y en **otra transacción**: si la entrega se revierte, la cuenta sigue existiendo. **Nunca impide el ingreso:** si lanza una excepción, se registra un aviso en el log (con el `correlationId` de la solicitud, que viaja en el MDC) y la sesión se abre igual con `PENDING_ERROR`; como la entrega es todo o nada, no queda nada parcial y el siguiente ingreso la reintenta. Mensajes: `DELIVERED` y `ALREADY_DELIVERED` sin mensaje (`null`); `PENDING_NO_CARDS` "El juego aún no está disponible: todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior."; `PENDING_ERROR` "No pudimos entregar tu colección, se reintentará en tu próximo ingreso." Las credenciales de prueba (`dev/sesiones`, solo perfil `dev`) entregan la colección al jugador de prueba de rol PLAYER por la misma vía, informan su resultado en `initialCollection` igual que el paso 8 (`null` para el administrador de prueba, ver 5.2) y no impiden la sesión si falla | no bloquea el ingreso (`PENDING_ERROR`) |
 | 7 | Emite las credenciales propias (JWT con vencimiento corto) | |
 | 8 | Responde **200** con `{ accessToken, tokenType, expiresIn, player: { id, displayName, email, role }, firstLogin, initialCollection: { status, message } }`, donde `status` es `DELIVERED`, `ALREADY_DELIVERED`, `PENDING_NO_CARDS` o `PENDING_ERROR` y `message` es un texto descriptivo cuando está pendiente (`null` si no lo está). El mensaje va dentro del objeto porque pertenece al estado | |
 
@@ -503,10 +507,12 @@ Estas decisiones se documentan en dos ADRs en la wiki; el código debe respetarl
 - **Clave:** `catalog:v<versión>:<espacio>:<hash de filtros>:<cursor>:<limit>`, donde `<espacio>` separa catálogo de jugador y búsqueda de administrador (ven datos distintos).
 - **Invalidación:** una clave `catalog:version` que se incrementa al crear o cambiar una carta; las claves viejas quedan huérfanas y expiran solas por su vencimiento.
 - **Vencimiento (TTL):** `app.cache.catalog-ttl` = 30 segundos, configurable.
-- **Pendiente para la tarea de Redis:** hoy el puerto `CatalogCache` solo tiene obtener y guardar una página, y su implementación (`NoCatalogCache`) no guarda nada, que es el mismo comportamiento exigido cuando Redis falla. La tarea de Redis agrega la operación **`invalidate()`** al puerto (incrementa `catalog:version`) y la propiedad **`app.cache.catalog-ttl`**, y debe **llamar a `invalidate()` desde Crear carta** (y desde toda operación futura que cambie una carta) después de confirmar la transacción.
+- **Implementación (hecha):** el puerto `CatalogCache` tiene `get`, `put` e **`invalidate()`** (incrementa `catalog:version`). `RedisCatalogCache` (`infrastructure.cache`) guarda cada página como JSON con `SET ... PX <ttl>` y la clave anterior; `CacheConfiguration` la elige si `REDIS_HOST` (`app.cache.redis-host`) tiene valor, y si no usa `NoCatalogCache`, que no guarda nada (mismo comportamiento que con Redis caído): así las pruebas y el desarrollo local funcionan sin Redis. **Crear carta llama a `invalidate()` después de confirmar la transacción** (no en un reintento con la misma clave), y también la tarea de reintentos de miniaturas cuando intentó alguna carta, porque cambia su disponibilidad y su estado de imagen.
+- **Tiempos de espera y pausa:** `REDIS_TIMEOUT` y `REDIS_CONNECT_TIMEOUT` (250 ms por defecto). Tras una falla, `get` y `put` no vuelven a usar Redis durante `app.cache.failure-backoff` (`PT5S`), para que con Redis caído no todas las solicitudes paguen el tiempo de espera; `invalidate()` sí lo intenta siempre.
+- **Carrera aceptada:** si una carta se crea entre que una solicitud lee una página de la base y la guarda, esa página puede quedar sin la carta hasta su vencimiento (30 s). Lo permiten los criterios C.3 y C.6 ("puede tardar algunos segundos").
 - **Memoria:** Redis con `maxmemory` y política `allkeys-lru`.
 - **Falla de Redis:** se ignora la caché y se consulta la base (nunca error).
-- **Protección contra avalancha:** un bloqueo corto por clave al recalcular una página muy pedida (opcional, solo si hay tiempo).
+- **Protección contra avalancha:** un bloqueo corto por clave al recalcular una página muy pedida (opcional, solo si hay tiempo). **No se implementó** en este sprint.
 
 ---
 
@@ -521,7 +527,8 @@ Un único contrato `src/main/resources/openapi/pokearena.yaml`, escrito **antes*
 Una sola aplicación en `src/main/resources/static/` (`index.html`, `app.js`, `styles.css`), sin frameworks, servida por la misma API en `http://localhost:8080`. Habla con la API real, no con datos falsos.
 
 **Estructura**
-- **Pantalla de ingreso:** botón "Entrar con Google" (Google Identity Services, con el `client id` leído de un endpoint de configuración). Solo con el perfil `dev`, también botones "Entrar como administrador de prueba" y "Entrar como jugador de prueba".
+- **Pantalla de ingreso:** botón "Entrar con Google" (Google Identity Services, con el `client id` leído al cargar de `GET /api/v1/configuracion`, pública, que responde **solo** `{ "googleClientId": "<id>" | null }` a partir de `app.identity.google.client-id`). Sin `client id` configurado, el botón queda deshabilitado con el aviso "falta APP_GOOGLE_CLIENT_ID". La política de seguridad de contenido (CSP) solo permite `accounts.google.com/gsi/` para el script, el estilo, el marco y las conexiones del botón de Google. Solo con el perfil `dev`, también botones "Entrar como administrador de prueba" y "Entrar como jugador de prueba".
+- **Bienvenida:** muestra el estado de la colección inicial que informa el servidor (`initialCollection`), tanto en el inicio de sesión con Google como en las credenciales de prueba. Sin cifras fijas en la interfaz: la cantidad de cartas y cubos es configuración del servidor.
 - **Vista de administrador:** pestañas **Crear carta**, **Crear ubicación** y **Buscar carta**, con los formularios y la tabla de resultados con miniatura y estado de imagen y "Cargar más".
 - **Vista de jugador:** panel de bienvenida con el resultado de la colección inicial (mensaje claro si está pendiente) y la vista **Catálogo y mi colección** con filtros de tipo y costo, la casilla "solo mis cartas", la imagen grande de cada carta y las copias.
 - **Panel de respuesta** en cada operación: método, ruta, **código HTTP con color**, el JSON, el `correlationId` y las imágenes en vista previa.
@@ -540,7 +547,7 @@ Una sola aplicación en `src/main/resources/static/` (`index.html`, `app.js`, `s
 | Búsqueda sin resultados, rango invertido | 200 vacío, `INVALID_SEARCH_CRITERIA` |
 | Inicio de sesión con token inválido o de otra aplicación | 401 `INVALID_IDENTITY_TOKEN` |
 | Catálogo con tipo inexistente, `limit` 0 | 400 con valores permitidos, `INVALID_PAGINATION` |
-| Segundo ingreso del jugador | `ALREADY_DELIVERED`, sin cartas nuevas |
+| Segundo ingreso del jugador | `ALREADY_DELIVERED`, sin cartas nuevas (con el jugador de prueba del perfil `dev`, el estado llega en la respuesta de `dev/sesiones`) |
 
 La claridad de cómo se prueban las historias importa más que la estética.
 
@@ -571,7 +578,25 @@ Una prueba por **cada criterio de aceptación** (Anexo C), con `@DisplayName` en
 | Seguridad | `dev/sesiones` no existe con el perfil `prod` |
 | Contrato | El OpenAPI coincide con la aplicación |
 
-El pipeline de GitHub Actions ejecuta compilación, todas las pruebas y `oasdiff`.
+El pipeline de GitHub Actions (`.github/workflows/ci.yml`) ejecuta compilación y todas las pruebas (`./mvnw -B clean verify`, con Docker para Testcontainers) en cada push y pull request, y en los pull requests `oasdiff breaking` contra el contrato de la rama base (se omite si la base no tiene el archivo).
+
+**Resultados de rendimiento medidos.** Las pruebas de rendimiento cargan `scripts/seed-10000-cartas.sql` (10.000 cartas) en el PostgreSQL de Testcontainers, calientan la JVM y miden 20 solicitudes por caso; el p95 es el valor 19 de 20 ordenados. Exigen p95 menor a 300 ms y que el plan use índices (sin `Seq Scan on card`). Valores de una ejecución de `.\mvnw.cmd clean verify` en un equipo de desarrollo (Windows 11, Docker Desktop), el 10 de noviembre de 2026; varían según la máquina:
+
+| Prueba | Caso | p95 |
+|---|---|---|
+| `CardSearchPerformanceIT` (Buscar carta, por HTTP) | Sin criterios | 6 ms |
+| | Nombre parcial (índice trigram) | 8 ms |
+| | Tipo y rango de costo | 6 ms |
+| | Rareza y poder | 5 ms |
+| | Límite máximo (100) | 6 ms |
+| | Código exacto | 4 ms |
+| | Recorrido completo (100 páginas de 100) | 11 ms por página |
+| `CatalogIT` (Catálogo del jugador, por HTTP) | `limit=100` | 8 ms |
+| | `type=FUE&costMin=3&costMax=5` | 6 ms |
+| | `owned=true&limit=100` | 8 ms |
+| `InitialCollectionPerformanceIT` (Recibir colección inicial) | Selección y entrega de 15 Comunes | 24 ms |
+
+Cada ejecución vuelve a medir: los valores actuales quedan en la salida de las pruebas y, para el catálogo, en `target/catalog-performance.txt` (con los planes de `EXPLAIN`).
 
 **Ejecución en secuencia.** Las pruebas de integración comparten un solo contenedor de PostgreSQL, y varias vacían el catálogo (`DELETE FROM card`) para partir de datos conocidos (por ejemplo `CardSearchIT`, `DeliverInitialCollectionIT` y las pruebas de rendimiento). Por eso deben ejecutarse **en secuencia**, que es lo que hace Maven por defecto. **No se debe activar la ejecución en paralelo** (`parallel` o `forkCount` mayor que 1 en Failsafe, ni `junit.jupiter.execution.parallel.enabled`): una prueba borraría las cartas que otra está usando.
 

@@ -15,7 +15,9 @@ import cr.ac.tec.pokearena.domain.model.Role;
 /**
  * Propósito: credenciales de prueba para ADMIN o PLAYER (sección 5.1, "Credenciales de prueba").
  * Responsabilidades: recibir el rol pedido y devolver credenciales propias de un jugador real con
- * proveedor dev. Es público: sirve justamente para obtener un token en desarrollo.
+ * proveedor dev, junto con el estado de su colección inicial ({@code initialCollection}, igual que el
+ * inicio de sesión; {@code null} para el administrador de prueba). Es público: sirve justamente para
+ * obtener un token en desarrollo.
  * Referencia: sección 5.2 y RNF-SEG-10.
  *
  * <p>{@code @Profile("dev")}: con cualquier otro perfil (por ejemplo prod) Spring no crea este

@@ -23,6 +23,8 @@ import org.testcontainers.utility.DockerImageName;
  *   <li>También entrega el secreto JWT, sin el cual la aplicación no arranca (sección 5.2).</li>
  *   <li>Y aleja la tarea programada de reintentos de miniaturas, para que no actúe sola en medio de
  *       una prueba.</li>
+ *   <li>Reduce el pool de conexiones de cada contexto, porque todos los contextos en caché comparten
+ *       este contenedor y su límite de conexiones.</li>
  * </ul>
  *
  * <p>Uso: la prueba extiende esta clase y declara su propio {@code @SpringBootTest}, porque
@@ -45,6 +47,24 @@ public abstract class PostgresIntegrationTestBase {
     /** Intervalo más largo que cualquier ejecución de las pruebas. */
     private static final String SCHEDULED_TASKS_NEVER_DURING_TESTS = "PT24H";
 
+    /**
+     * Conexiones máximas de cada contexto de Spring de las pruebas. Spring guarda en caché un contexto
+     * por cada configuración distinta (perfiles, propiedades, beans de prueba; hoy unos 13), y cada uno
+     * conserva su propio pool de HikariCP contra este MISMO contenedor. Con el valor por defecto de
+     * HikariCP (10) se llegaba a 130 conexiones, más que el máximo de PostgreSQL (100), y el CI fallaba
+     * con "too many clients already" según el orden de las clases. Con 5, el peor caso es 13 × 5 = 65.
+     * No es menor para que las pruebas de concurrencia sigan teniendo varias transacciones a la vez
+     * (por ejemplo, una fila bloqueada mientras otra transacción la salta con SKIP LOCKED).
+     * Solo afecta a las pruebas: producción conserva la configuración por defecto.
+     */
+    private static final String TEST_POOL_MAX_SIZE = "5";
+
+    /**
+     * Conexiones inactivas mínimas: ninguna. Así un pool no abre conexiones por adelantado hasta su
+     * máximo al arrancar el contexto, sino solo las que la prueba usa.
+     */
+    private static final String TEST_POOL_MIN_IDLE = "0";
+
     static {
         POSTGRES.start();
     }
@@ -55,5 +75,9 @@ public abstract class PostgresIntegrationTestBase {
         // La tarea programada de reintentos no corre sola durante las pruebas: podría tomar las cartas
         // PENDING_RETRY que otra prueba está revisando. Las pruebas de reintentos invocan el caso de uso.
         registry.add("app.images.retry-interval", () -> SCHEDULED_TASKS_NEVER_DURING_TESTS);
+        // Todos los contextos en caché comparten el contenedor: pools pequeños para no agotar sus
+        // conexiones (ver TEST_POOL_MAX_SIZE).
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> TEST_POOL_MAX_SIZE);
+        registry.add("spring.datasource.hikari.minimum-idle", () -> TEST_POOL_MIN_IDLE);
     }
 }

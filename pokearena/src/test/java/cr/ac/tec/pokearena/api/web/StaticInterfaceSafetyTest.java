@@ -55,6 +55,31 @@ class StaticInterfaceSafetyTest {
     }
 
     @Test
+    @DisplayName("11: el client id de Google sale de GET /api/v1/configuracion, sin eventos ad hoc; sin él, el botón queda deshabilitado")
+    void googleConfigurationFromServer() {
+        String app = read("app.js");
+        assertThat(app).contains("'/api/v1/configuracion'", "loadPublicConfiguration()", "falta APP_GOOGLE_CLIENT_ID")
+                .doesNotContain("pokearena:google-config");
+        assertThat(read("index.html")).contains("id=\"google-signin\"");
+    }
+
+    @Test
+    @DisplayName("11: la interfaz no repite cifras de la configuración del servidor (cartas y cubos de la colección inicial)")
+    void noConfiguredFiguresInInterface() {
+        for (String file : new String[] {"app.js", "player.js", "index.html"}) {
+            assertThat(read(file)).as(file).doesNotContain("15 cartas", "1.000 cubos", "1000 cubos");
+        }
+    }
+
+    @Test
+    @DisplayName("Las historias se citan por su número (3.1.2, 1.1.1, 3.1.1), no por identificadores internos US")
+    void storiesByNumber() {
+        for (String file : new String[] {"app.js", "player.js", "index.html"}) {
+            assertThat(Pattern.compile("\\bUS ?\\d").matcher(read(file)).find()).as(file).isFalse();
+        }
+    }
+
+    @Test
     @DisplayName("La API y los recursos son del mismo origen; CSP permite solo el SDK oficial de Google como excepción")
     void sameOriginOnly() {
         String index = read("index.html");

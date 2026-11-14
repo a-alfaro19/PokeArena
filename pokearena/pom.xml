@@ -67,6 +67,13 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<!-- Caché del catálogo (sección 9): Redis con Lettuce. Solo se usa en infrastructure.cache;
+		     sin REDIS_HOST la aplicación usa NoCatalogCache y no se conecta a nada. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
+
 		<!-- JWT: solo firma y verificación de las credenciales propias (HS256). Las decisiones
 		     (qué claims, vencimiento, roles) son del equipo, no de un framework (RES-01). Solo
 		     se usa en infrastructure.identity; ArchUnit lo verifica. -->
@@ -117,6 +124,13 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- Redis real para las pruebas de la caché (sección 9): GenericContainer del núcleo de
+		     Testcontainers (no hay módulo de Redis en Testcontainers 2.x). -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
