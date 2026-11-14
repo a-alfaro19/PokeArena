@@ -1,5 +1,5 @@
 /*
- * Propósito: estado de la vista del jugador, independiente del DOM y de frameworks (US 43, sección 11).
+ * Propósito: estado de la vista del jugador, independiente del DOM y de frameworks (historia 3.1.2, sección 11).
  * Responsabilidades: conservar filtros y cursores, descartar respuestas antiguas y presentar únicamente
  * estados de colección entregados por el backend. Las sesiones y las solicitudes HTTP se inyectan.
  */
@@ -20,7 +20,8 @@ export function sessionFromResponse(body, now = Date.now()) {
 export function collectionMessage(collection) {
   if (!collection) return 'Esta sesión no informa el estado de la colección inicial.';
   switch (collection.status) {
-    case 'DELIVERED': return 'Tu colección inicial fue entregada: 15 cartas y 1.000 cubos.';
+    // Sin cifras: la cantidad de cartas y de cubos es configuración del servidor, no de la interfaz.
+    case 'DELIVERED': return collection.message || 'Recibiste tu colección inicial de cartas y cubos.';
     case 'ALREADY_DELIVERED': return 'Ya recibiste tu colección inicial; este ingreso no vuelve a entregarla.';
     case 'PENDING_NO_CARDS':
     case 'PENDING_ERROR': return collection.message || 'La colección inicial está pendiente. Vuelve a iniciar sesión más tarde.';
@@ -45,7 +46,16 @@ export function googleSessionRequest(credential) {
   return { method: 'POST', path: '/api/v1/sesiones', body: { provider: 'google', idToken: credential } };
 }
 
-/** Configura únicamente el SDK oficial; quien provee clientId sigue siendo la integración de sesiones. */
+/**
+ * Client id de Google en la respuesta de GET /api/v1/configuracion, o null si el servidor no lo tiene
+ * configurado (o la respuesta no es válida): entonces el botón de Google queda deshabilitado.
+ */
+export function googleClientIdFrom(result) {
+  const clientId = result && result.status === 200 ? result.body?.googleClientId : null;
+  return typeof clientId === 'string' && clientId.trim() ? clientId.trim() : null;
+}
+
+/** Configura únicamente el SDK oficial con el clientId que entregó GET /api/v1/configuracion. */
 export function mountGoogleButton(sdk, clientId, container, callback, onClick) {
   if (typeof clientId !== 'string' || !clientId.trim() || !sdk) return false;
   sdk.initialize({ client_id: clientId, callback, auto_select: false });

@@ -2,7 +2,8 @@
  * Propósito: comportamiento de la interfaz web de PokéArena (corrección 1; sección 11).
  * Responsabilidades: sesiones, bienvenida y catálogo del jugador, formularios de Crear carta,
  * Crear ubicación y Buscar carta contra la API real, casos rápidos y panel de respuesta.
- * Google queda preparado para recibir su clientId de la futura configuración pública del backend.
+ * Al cargar pide GET /api/v1/configuracion: con el client id de Google inicializa Google Identity
+ * Services y habilita "Entrar con Google"; sin él, deja el botón deshabilitado con un aviso.
  * Referencia: sección 11 (administrador y jugador), 5.2 (sesiones), 5.3 (errores), 5.4 (idempotencia),
  * 5.5 (paginación), 7.1, 7.2 y 7.3.
  *
@@ -17,7 +18,7 @@
  */
 'use strict';
 
-import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, CatalogFilterForm, catalogQuickTests } from './player.js';
+import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, googleClientIdFrom, CatalogFilterForm, catalogQuickTests } from './player.js';
 
 (() => {
   // ---------------------------------------------------------------------------------------------
@@ -29,6 +30,7 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     locations: '/api/v1/ubicaciones',
     devSessions: '/api/v1/dev/sesiones',
     sessions: '/api/v1/sesiones',
+    configuration: '/api/v1/configuracion',
   };
 
   const ROLE_LABELS = { NONE: 'Sin sesión', PLAYER: 'Jugador', ADMIN: 'Administrador' };
@@ -889,7 +891,7 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
   ];
 
   // ---------------------------------------------------------------------------------------------
-  // Catálogo y bienvenida del jugador (US 43 y presentación de US 35 y 42)
+  // Catálogo y bienvenida del jugador (historia 3.1.2 y presentación de 1.1.1 y 3.1.1)
   // ---------------------------------------------------------------------------------------------
 
   /** Cada tarjeta usa la imagen grande; los textos del servidor siguen siendo nodos de texto. */
@@ -938,21 +940,34 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     });
   }
 
-  /** Solo confirma ALREADY_DELIVERED si el backend lo devuelve, sin inferirlo del catálogo. */
+  /**
+   * Caso rápido "Segundo ingreso del jugador" (sección 11): vuelve a pedir la sesión del jugador de prueba
+   * (perfil dev) y confirma ALREADY_DELIVERED solo si el backend lo informa, sin inferirlo del catálogo.
+   * Si este ingreso resultó ser el primero (DELIVERED), hace un segundo ingreso para comprobarlo.
+   */
   async function repeatPlayerLogin() {
-    if (state.session.source !== 'dev' || state.session.role !== 'PLAYER') {
+    if (state.session.source === 'google') {
       $('#player-quick-status').textContent = 'Con Google, cierra e inicia sesión nuevamente para comprobar el estado recibido.';
+      return;
+    }
+    if (state.devAvailable === false) {
+      $('#player-quick-status').textContent = 'Este caso usa la sesión de prueba del jugador, que solo existe con el perfil dev.';
       return;
     }
     await chooseSession('PLAYER');
     if (state.session.source !== 'dev') return;
-    $('#player-quick-status').textContent = state.session.initialCollection?.status === 'ALREADY_DELIVERED'
-      ? 'El backend informó ALREADY_DELIVERED: la colección ya se había entregado.'
-      : 'La sesión dev no informó ALREADY_DELIVERED; no se puede confirmar ese criterio desde esta respuesta.';
+    if (state.session.initialCollection?.status === 'DELIVERED') {
+      await chooseSession('PLAYER');
+      if (state.session.source !== 'dev') return;
+    }
+    const status = state.session.initialCollection?.status;
+    $('#player-quick-status').textContent = status === 'ALREADY_DELIVERED'
+      ? 'Coincide con lo esperado: el backend informó ALREADY_DELIVERED y no entregó cartas nuevas.'
+      : 'Se esperaba ALREADY_DELIVERED; el backend informó ' + (status || 'una sesión sin estado de colección') + '.';
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Google: transporte al backend existente; la configuración pública pertenece a otro integrante.
+  // Google: client id desde GET /api/v1/configuracion; el token de Google solo viaja a /sesiones.
   // ---------------------------------------------------------------------------------------------
 
   /** Recibe exclusivamente el token que entrega el callback oficial de Google Identity Services. */
@@ -973,7 +988,7 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     }
   }
 
-  /** Punto de integración frontend: no presupone una ruta ni un esquema de configuración inexistentes. */
+  /** Carga el SDK oficial de Google y dibuja su botón con el client id recibido del servidor. */
   async function configureGoogle(clientId) {
     if (googleConfigured || typeof clientId !== 'string' || !clientId.trim()) return;
     googleConfigured = true;
@@ -999,6 +1014,31 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     } catch (failure) {
       googleConfigured = false;
       $('#google-notice').textContent = 'No se pudo cargar Google. Intenta de nuevo más tarde.';
+    }
+  }
+
+  /** Deja el botón de Google deshabilitado, con el motivo visible. */
+  function disableGoogle(reason) {
+    $('#google-signin').replaceChildren(el('button', { className: 'btn btn-ghost', text: 'Entrar con Google',
+      attrs: { type: 'button', disabled: '' } }));
+    $('#google-notice').textContent = reason;
+  }
+
+  /** Pide la configuración pública al cargar; sin client id, Google queda deshabilitado con un aviso claro. */
+  async function loadPublicConfiguration() {
+    let result = null;
+    try {
+      const response = await fetch(API.configuration, { headers: { Accept: 'application/json' }, credentials: 'omit' });
+      result = { status: response.status, body: await response.json().catch(() => null) };
+    } catch (failure) {
+      disableGoogle('No se pudo leer la configuración del servidor: el ingreso con Google no está disponible.');
+      return;
+    }
+    const clientId = googleClientIdFrom(result);
+    if (clientId) {
+      configureGoogle(clientId);
+    } else {
+      disableGoogle('Ingreso con Google deshabilitado: falta APP_GOOGLE_CLIENT_ID en el servidor.');
     }
   }
 
@@ -1060,8 +1100,6 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     wireLocationForm();
     wireSearchForm();
     wireCatalog();
-    // El futuro adaptador del endpoint público debe entregar este clientId; no se inventa su contrato.
-    document.addEventListener('pokearena:google-config', (event) => configureGoogle(event.detail?.clientId));
     renderQuickTests('catalog', catalogQuickTests(catalogFilterForm));
     renderQuickTests('card', CARD_QUICK_TESTS);
     renderQuickTests('location', LOCATION_QUICK_TESTS);
@@ -1073,6 +1111,7 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     renderSession();
     setInterval(renderSession, SESSION_REFRESH_MS);
     probeDevSessions();
+    loadPublicConfiguration();
   }
 
   start();

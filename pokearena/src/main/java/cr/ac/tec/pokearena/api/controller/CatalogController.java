@@ -15,9 +15,20 @@ import cr.ac.tec.pokearena.application.usecase.ExploreCatalogUseCase;
 import cr.ac.tec.pokearena.domain.model.Role;
 
 /**
- * Propósito: GET /api/v1/catalogo (US 43, sección 8.3 y mensajes 2 a 5 de A.6).
- * Responsabilidades: tomar la identidad exclusivamente del usuario verificado por el interceptor
- * y traducir la página al contrato HTTP. PLAYER y ADMIN tienen acceso explícito, sin jerarquía.
+ * Propósito: API del catálogo del jugador (historia 3.1.2; sección 5.1).
+ * Responsabilidades: traducir {@code GET /api/v1/catalogo} a un comando de Explorar el catálogo, con el
+ * jugador tomado EXCLUSIVAMENTE de la sesión verificada por el interceptor, y su resultado a la respuesta
+ * 200 con la página. No contiene reglas: filtros y paginación los valida el caso de uso.
+ * Referencia: sección 8.3 y Anexo A.6 (mensajes 2 a 5, 17 y 18).
+ *
+ * <p>Decisiones:
+ * <ul>
+ *   <li>{@code @RequiresRole({PLAYER, ADMIN})} en la clase: la lista es explícita y sin jerarquía
+ *       (sección 5.2); un administrador también es jugador. 401 sin sesión, 403 sin uno de esos roles.</li>
+ *   <li>Los parámetros llegan en un {@code MultiValueMap}, como en Buscar carta: así un filtro
+ *       desconocido, repetido o vacío lo informa el dominio con su error tipado, su {@code field} y sus
+ *       {@code allowedValues}, en lugar de un error genérico del enlace de parámetros de Spring.</li>
+ * </ul>
  */
 @RestController
 @RequestMapping("/api/v1/catalogo")
@@ -30,10 +41,15 @@ public class CatalogController {
         this.explore = explore;
     }
 
-    /** Conserva las repeticiones para que filtros y paginación inválidos tengan errores tipados. */
+    /**
+     * Explora el catálogo.
+     *
+     * <p>Orden: el interceptor ya autorizó (mensajes 3 y 4); el caso de uso valida y consulta (mensaje 5).
+     */
     @GetMapping
     public PageResponse<CatalogCardResponse> explore(AuthenticatedUser user,
             @RequestParam MultiValueMap<String, String> parameters) {
+        // Mensaje 5: explorarCatálogo(jugador, filtros, cursor, límite). Mensajes 17 y 18: 200 con las cartas.
         return PageResponse.from(explore.execute(new ExploreCatalogCommand(user.playerId(), parameters)),
                 CatalogCardResponse::from);
     }

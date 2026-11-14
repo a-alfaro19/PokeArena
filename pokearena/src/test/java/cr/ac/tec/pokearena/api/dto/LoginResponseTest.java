@@ -38,7 +38,7 @@ class LoginResponseTest {
         LoginResult result = new LoginResult(new Session(player, new IssuedToken("token", TTL, NOW.plus(TTL))),
                 true, status);
 
-        LoginResponse.InitialCollectionResponse collection = LoginResponse.from(result).initialCollection();
+        InitialCollectionResponse collection = LoginResponse.from(result).initialCollection();
 
         assertThat(collection.status()).isEqualTo(status.name());
         if (status.name().startsWith("PENDING_")) {

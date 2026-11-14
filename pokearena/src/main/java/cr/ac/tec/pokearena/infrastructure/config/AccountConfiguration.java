@@ -32,12 +32,26 @@ public class AccountConfiguration {
     private static final String IDENTITY_SEPARATOR = ":";
 
     /**
-     * Identidades administradoras, a partir de una lista {@code proveedor:sub} separada por comas.
-     * Una entrada mal escrita detiene el arranque: un error aquí daría o quitaría permisos sin aviso.
+     * Identidades administradoras, a partir de listas {@code proveedor:sub} separadas por comas: las de
+     * {@code app.admin.identities} más las de {@code app.admin.dev-identities} (solo el perfil dev la define,
+     * con el administrador de prueba). Una entrada mal escrita detiene el arranque: un error aquí daría o
+     * quitaría permisos sin aviso.
+     *
+     * <p>Son dos propiedades y no una porque Spring Boot enlaza la variable de entorno
+     * {@code APP_ADMIN_IDENTITIES} directamente con {@code app.admin.identities} y la reemplaza entera: si el
+     * perfil dev agregara su administrador en esa misma lista, definir la variable (aunque vacía, como hace
+     * Docker Compose) le quitaría el rol al administrador de prueba.
      */
     @Bean
-    public AdminIdentities adminIdentities(@Value("${app.admin.identities:}") List<String> entries) {
+    public AdminIdentities adminIdentities(@Value("${app.admin.identities:}") List<String> entries,
+            @Value("${app.admin.dev-identities:}") List<String> devEntries) {
         Set<ProviderIdentity> identities = new LinkedHashSet<>();
+        addAll(identities, "app.admin.identities", entries);
+        addAll(identities, "app.admin.dev-identities", devEntries);
+        return new AdminIdentities(identities);
+    }
+
+    private static void addAll(Set<ProviderIdentity> identities, String property, List<String> entries) {
         for (String entry : entries) {
             String value = entry.trim();
             if (value.isEmpty()) {
@@ -45,12 +59,11 @@ public class AccountConfiguration {
             }
             int separator = value.indexOf(IDENTITY_SEPARATOR);
             if (separator <= 0 || separator == value.length() - 1) {
-                throw new IllegalStateException("app.admin.identities tiene una entrada inválida: '" + value
+                throw new IllegalStateException(property + " tiene una entrada inválida: '" + value
                         + "'. El formato es proveedor:sub, por ejemplo google:1234567890.");
             }
             identities.add(new ProviderIdentity(value.substring(0, separator), value.substring(separator + 1)));
         }
-        return new AdminIdentities(identities);
     }
 
     @Bean

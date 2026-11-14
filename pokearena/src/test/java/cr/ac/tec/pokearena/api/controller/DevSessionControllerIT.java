@@ -32,7 +32,8 @@ import tools.jackson.databind.json.JsonMapper;
  * Responsabilidades: comprobar que emite credenciales válidas de ADMIN y PLAYER, que pertenecen a
  * jugadores reales con proveedor dev, que dos llamadas con el mismo rol reutilizan el mismo jugador,
  * que el jugador de prueba PLAYER recibe la colección inicial por la misma vía que el inicio de sesión
- * y que un rol ausente o desconocido se rechaza con el formato único.
+ * (y que la respuesta informa su estado en {@code initialCollection}) y que un rol ausente o
+ * desconocido se rechaza con el formato único.
  * Referencia: sección 5.2 y sección 6 (las credenciales de prueba crean jugadores reales).
  *
  * <p>El perfil dev cambia los logs a texto, y Spring Boot guarda esa configuración en propiedades
@@ -84,12 +85,12 @@ class DevSessionControllerIT extends PostgresIntegrationTestBase {
     }
 
     @Test
-    @DisplayName("8.2: el jugador de prueba PLAYER recibe la colección inicial por la misma vía (una sola vez); la respuesta mantiene su contrato")
+    @DisplayName("8.2: el jugador de prueba PLAYER recibe la colección inicial por la misma vía (una sola vez) y la respuesta informa DELIVERED y luego ALREADY_DELIVERED")
     void devPlayerReceivesInitialCollection() throws Exception {
         catalog.commons(DEV_CATALOG_COMMONS);
 
         JsonNode first = post("{\"role\":\"PLAYER\"}").body();
-        post("{\"role\":\"PLAYER\"}");
+        JsonNode second = post("{\"role\":\"PLAYER\"}").body();
 
         String player = playerOf("dev-player");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM player_card WHERE player_id = ?::uuid", Integer.class,
@@ -98,15 +99,23 @@ class DevSessionControllerIT extends PostgresIntegrationTestBase {
                 .isEqualTo(INITIAL_CUBES);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM cube_movement WHERE player_id = ?::uuid", Integer.class,
                 player)).isEqualTo(1);
-        // El contrato de dev/sesiones no cambia: no informa la colección.
-        assertThat(first.propertyNames()).containsExactlyInAnyOrder("accessToken", "tokenType", "expiresIn", "player");
+        // Misma forma que el inicio de sesión (sección 8.1, paso 8), sin firstLogin.
+        assertThat(first.propertyNames()).containsExactlyInAnyOrder("accessToken", "tokenType", "expiresIn", "player",
+                "initialCollection");
+        assertThat(first.get("initialCollection").get("status").asString()).isEqualTo("DELIVERED");
+        assertThat(first.get("initialCollection").get("message").isNull()).isTrue();
+        // Caso rápido "Segundo ingreso del jugador" (sección 11): no se vuelve a entregar.
+        assertThat(second.get("initialCollection").get("status").asString()).isEqualTo("ALREADY_DELIVERED");
     }
 
     @Test
     @DisplayName("8.2: el administrador de prueba no recibe la colección, y sin Comunes suficientes la sesión de prueba se abre igual")
     void adminWithoutCollectionAndPlayerWithoutCards() throws Exception {
         catalog.commons(DEV_CATALOG_COMMONS);
-        assertThat(post("{\"role\":\"ADMIN\"}").status()).isEqualTo(200);
+        Result admin = post("{\"role\":\"ADMIN\"}");
+        assertThat(admin.status()).isEqualTo(200);
+        // El administrador de prueba no recibe colección: el campo existe y es null.
+        assertThat(admin.body().get("initialCollection").isNull()).isTrue();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM player_card WHERE player_id = ?::uuid", Integer.class,
                 playerOf("dev-admin"))).isZero();
 
@@ -115,6 +124,8 @@ class DevSessionControllerIT extends PostgresIntegrationTestBase {
 
         assertThat(player.status()).isEqualTo(200);
         assertThat(player.body().get("accessToken").asString()).isNotBlank();
+        assertThat(player.body().get("initialCollection").get("status").asString()).isEqualTo("PENDING_NO_CARDS");
+        assertThat(player.body().get("initialCollection").get("message").asString()).isNotBlank();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM player_card WHERE player_id = ?::uuid", Integer.class,
                 playerOf("dev-player"))).isZero();
     }

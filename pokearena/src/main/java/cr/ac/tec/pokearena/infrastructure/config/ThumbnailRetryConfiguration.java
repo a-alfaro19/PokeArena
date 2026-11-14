@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+import cr.ac.tec.pokearena.application.port.CatalogCache;
 import cr.ac.tec.pokearena.application.port.ImageProcessor;
 import cr.ac.tec.pokearena.application.port.ImageStorage;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
@@ -25,7 +26,7 @@ public class ThumbnailRetryConfiguration {
     @Bean
     public ThumbnailRetryUseCase thumbnailRetryUseCase(UnitOfWork unitOfWork, PendingImageRepository pending,
             ImageStorage imageStorage, ImageProcessor imageProcessor,
-            @Value("${app.images.max-retries}") int maxRetries) {
-        return new ThumbnailRetryUseCase(unitOfWork, pending, imageStorage, imageProcessor, maxRetries);
+            @Value("${app.images.max-retries}") int maxRetries, CatalogCache catalogCache) {
+        return new ThumbnailRetryUseCase(unitOfWork, pending, imageStorage, imageProcessor, maxRetries, catalogCache);
     }
 }

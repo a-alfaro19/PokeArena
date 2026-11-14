@@ -1,5 +1,6 @@
-# Propósito: base de datos local para desarrollo, mientras no exista el Docker Compose
-# completo de la sección 12 (Redis, 2 instancias de la API y Nginx llegan en la fase 5).
+# Propósito: base de datos local para desarrollo (la aplicación corre con mvnw spring-boot:run).
+# El sistema completo de la sección 12 (Redis, 2 instancias de la API y Nginx) está en
+# docker-compose.yml.
 # Responsabilidades: levantar SOLO PostgreSQL, con la misma imagen que usan las pruebas
 # (Testcontainers), un volumen para no perder los datos y un healthcheck.
 #

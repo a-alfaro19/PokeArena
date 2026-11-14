@@ -32,12 +32,14 @@ import cr.ac.tec.pokearena.domain.repository.CollectibleCardRepository;
 import cr.ac.tec.pokearena.domain.repository.PlayerCatalogRepository;
 
 /**
- * Propósito: implementación JDBC de {@link CardRepository} y {@link CollectibleCardRepository} (tablas
- * card y card_type_counter).
+ * Propósito: implementación JDBC de {@link CardRepository}, {@link CollectibleCardRepository} y
+ * {@link PlayerCatalogRepository} (tablas card, card_type_counter y, para la propiedad, player_card).
  * Responsabilidades: entregar el consecutivo de cada tipo de forma atómica, guardar cartas, leer el
- * destino de evolución de la habilidad de una carta, buscar cartas por criterios y elegir al azar las
- * cartas de la colección inicial, además del catálogo y las copias privadas de 8.3.
- * Referencia: sección 7.1 ("Código único" y paso 10), sección 7.3 (búsqueda) y sección 8.2 (pasos 3 y 4).
+ * destino de evolución de la habilidad de una carta, buscar cartas por criterios, elegir al azar las
+ * cartas de la colección inicial y, para el catálogo del jugador, leer las cartas disponibles y activas,
+ * las cartas propias con sus copias y las copias de los códigos de una página.
+ * Referencia: sección 7.1 ("Código único" y paso 10), sección 7.3 (búsqueda), sección 8.2 (pasos 3 y 4)
+ * y sección 8.3 (catálogo y colección, Anexo A.6).
  *
  * <p>El consecutivo usa una sola sentencia {@code UPDATE ... RETURNING}: PostgreSQL bloquea la fila
  * del tipo hasta que la transacción termina, así dos transacciones del mismo tipo nunca reciben el

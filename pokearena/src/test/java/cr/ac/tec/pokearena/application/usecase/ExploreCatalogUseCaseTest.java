@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import cr.ac.tec.pokearena.application.dto.CardDetails;
@@ -35,10 +36,16 @@ import cr.ac.tec.pokearena.domain.repository.CardCatalogRepository;
 import cr.ac.tec.pokearena.domain.repository.PlayerCatalogRepository;
 
 /**
- * Propósito: verificar la frontera entre caché pública y colecciones privadas sin Spring (A.6).
- * Responsabilidades: demostrar que un hit no reutiliza copias y que owned omite la caché.
+ * Propósito: pruebas unitarias del caso de uso de la historia 3.1.2 "Explorar el catálogo y mi colección",
+ * sin Spring (criterios C.6).
+ * Responsabilidades: verificar la frontera entre la caché pública y las colecciones privadas: un acierto de
+ * la caché no reutiliza copias, {@code owned=true} omite la caché, la validación ocurre antes de leer nada
+ * y las claves de la caché usan los filtros normalizados.
+ * Referencia: sección 8.3, sección 9 y Anexo A.6.
+ *
+ * <p>Misma estructura que las demás historias: {@code @Nested} Éxito, Errores y Alternos citando C.6.
  */
-@DisplayName("US 43: caché pública y propiedad privada")
+@DisplayName("Historia 3.1.2: caché pública y propiedad privada")
 class ExploreCatalogUseCaseTest {
 
     private static final UUID FIRST = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -48,61 +55,86 @@ class ExploreCatalogUseCaseTest {
     private final MemoryCache cache = new MemoryCache();
     private final ExploreCatalogUseCase useCase = new ExploreCatalogUseCase(new Pagination(2, 5), data, data, cache);
 
-    @Test
-    @DisplayName("A.6: página compartida sin copias; cada jugador y cada hit consultan su colección en un lote")
-    void cachedPageNeverContainsOwnership() {
-        data.copies.put(FIRST, 3);
-        Page<CatalogCardDetails> a = explore(FIRST, Map.of());
-        Page<CatalogCardDetails> b = explore(SECOND, Map.of());
-        data.copies.put(FIRST, 7);
-        Page<CatalogCardDetails> updated = explore(FIRST, Map.of());
+    @Nested
+    @DisplayName("Éxito")
+    class Success {
 
-        assertThat(a.items().getFirst().copies()).isEqualTo(3);
-        assertThat(b.items().getFirst().copies()).isZero();
-        assertThat(b.items().getFirst().owned()).isFalse();
-        assertThat(updated.items().getFirst().copies()).isEqualTo(7);
-        assertThat(data.availableReads).isEqualTo(1);
-        assertThat(data.collectionReads).containsExactly(FIRST, SECOND, FIRST);
-        assertThat(data.requestedCodes).containsExactly(List.of(CODE), List.of(CODE), List.of(CODE));
-        assertThat(cache.pages.values().iterator().next().items().getFirst()).isInstanceOf(CardDetails.class);
-        assertThat(cache.pages.keySet().iterator().next()).startsWith(CatalogCacheKey.PLAYER_CATALOG + ":")
-                .doesNotStartWith(CatalogCacheKey.ADMIN_SEARCH + ":");
-    }
+        @Test
+        @DisplayName("C.6 éxito: cada carta indica si el jugador la posee y cuántas copias tiene; la página compartida no lleva copias y cada consulta las lee en un lote (A.6)")
+        void cachedPageNeverContainsOwnership() {
+            data.copies.put(FIRST, 3);
+            Page<CatalogCardDetails> a = explore(FIRST, Map.of());
+            Page<CatalogCardDetails> b = explore(SECOND, Map.of());
+            data.copies.put(FIRST, 7);
+            Page<CatalogCardDetails> updated = explore(FIRST, Map.of());
 
-    @Test
-    @DisplayName("A.6: owned=true lee cartas y copias juntas sin caché ni consulta extra de copias")
-    void ownedBypassesCache() {
-        data.copies.put(FIRST, 4);
-        assertThat(explore(FIRST, Map.of("owned", List.of("true"))).items().getFirst().copies()).isEqualTo(4);
-        assertThat(explore(SECOND, Map.of("owned", List.of("true"))).items()).isEmpty();
-        assertThat(data.ownedReads).containsExactly(FIRST, SECOND);
-        assertThat(data.availableReads).isZero();
-        assertThat(data.collectionReads).isEmpty();
-        assertThat(cache.gets).isZero();
-        assertThat(cache.pages).isEmpty();
-    }
-
-    @Test
-    @DisplayName("8.3: filtros y paginación inválidos no consultan páginas, propiedad ni caché")
-    void validatesBeforeReadingPages() {
-        for (Map<String, List<String>> parameters : List.of(Map.of("type", List.of("INVALID")),
-                Map.of("limit", List.of("0")), Map.of("owned", List.of("yes")))) {
-            assertThatThrownBy(() -> explore(FIRST, parameters)).isInstanceOf(ValidationException.class);
+            assertThat(a.items().getFirst().copies()).isEqualTo(3);
+            assertThat(b.items().getFirst().copies()).isZero();
+            assertThat(b.items().getFirst().owned()).isFalse();
+            assertThat(updated.items().getFirst().copies()).isEqualTo(7);
+            assertThat(data.availableReads).isEqualTo(1);
+            assertThat(data.collectionReads).containsExactly(FIRST, SECOND, FIRST);
+            assertThat(data.requestedCodes).containsExactly(List.of(CODE), List.of(CODE), List.of(CODE));
+            assertThat(cache.pages.values().iterator().next().items().getFirst()).isInstanceOf(CardDetails.class);
+            assertThat(cache.pages.keySet().iterator().next()).startsWith(CatalogCacheKey.PLAYER_CATALOG + ":")
+                    .doesNotStartWith(CatalogCacheKey.ADMIN_SEARCH + ":");
         }
-        assertThat(data.availableReads).isZero();
-        assertThat(data.collectionReads).isEmpty();
-        assertThat(cache.gets).isZero();
+
+        @Test
+        @DisplayName("C.6 éxito: el filtro de cartas propias lee cartas y copias juntas, sin caché ni consulta extra de copias (A.6)")
+        void ownedBypassesCache() {
+            data.copies.put(FIRST, 4);
+            assertThat(explore(FIRST, Map.of("owned", List.of("true"))).items().getFirst().copies()).isEqualTo(4);
+            assertThat(explore(SECOND, Map.of("owned", List.of("true"))).items()).isEmpty();
+            assertThat(data.ownedReads).containsExactly(FIRST, SECOND);
+            assertThat(data.availableReads).isZero();
+            assertThat(data.collectionReads).isEmpty();
+            assertThat(cache.gets).isZero();
+            assertThat(cache.pages).isEmpty();
+        }
     }
 
-    @Test
-    @DisplayName("9: filtros equivalentes comparten clave; filtros distintos y cursores separan páginas")
-    void normalizedKeys() {
-        explore(FIRST, Map.of("costMin", List.of(" 3 ")));
-        explore(SECOND, Map.of("costMin", List.of("3"), "owned", List.of("false")));
-        assertThat(cache.pages).hasSize(1);
-        explore(FIRST, Map.of("costMin", List.of("4")));
-        explore(FIRST, Map.of("costMin", List.of("3"), "cursor", List.of(Pagination.encode(1))));
-        assertThat(cache.pages).hasSize(3);
+    @Nested
+    @DisplayName("Errores")
+    class Errors {
+
+        @Test
+        @DisplayName("C.6 errores: filtros o paginación inválidos se rechazan sin consultar páginas, propiedad ni caché (A.6, mensaje 6)")
+        void validatesBeforeReadingPages() {
+            for (Map<String, List<String>> parameters : List.of(Map.of("type", List.of("INVALID")),
+                    Map.of("limit", List.of("0")), Map.of("owned", List.of("yes")))) {
+                assertThatThrownBy(() -> explore(FIRST, parameters)).isInstanceOf(ValidationException.class);
+            }
+            assertThat(data.availableReads).isZero();
+            assertThat(data.collectionReads).isEmpty();
+            assertThat(cache.gets).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("Alternos")
+    class Alternatives {
+
+        @Test
+        @DisplayName("C.6 alternos: una página sin resultados devuelve una lista vacía, no un error, y no pide copias de cartas inexistentes")
+        void emptyPage() {
+            Page<CatalogCardDetails> empty = explore(FIRST, Map.of("cursor", List.of(Pagination.encode(1))));
+
+            assertThat(empty.items()).isEmpty();
+            assertThat(empty.nextCursor()).isNull();
+            assertThat(data.requestedCodes).containsExactly(List.of());
+        }
+
+        @Test
+        @DisplayName("Sección 9: filtros equivalentes comparten página en la caché; filtros distintos y cursores las separan")
+        void normalizedKeys() {
+            explore(FIRST, Map.of("costMin", List.of(" 3 ")));
+            explore(SECOND, Map.of("costMin", List.of("3"), "owned", List.of("false")));
+            assertThat(cache.pages).hasSize(1);
+            explore(FIRST, Map.of("costMin", List.of("4")));
+            explore(FIRST, Map.of("costMin", List.of("3"), "cursor", List.of(Pagination.encode(1))));
+            assertThat(cache.pages).hasSize(3);
+        }
     }
 
     private Page<CatalogCardDetails> explore(UUID player, Map<String, List<String>> parameters) {
@@ -157,6 +189,7 @@ class ExploreCatalogUseCaseTest {
     private static final class MemoryCache implements CatalogCache {
         final Map<String, Page<?>> pages = new HashMap<>();
         int gets;
+        int invalidations;
 
         @Override
         @SuppressWarnings("unchecked")
@@ -168,6 +201,11 @@ class ExploreCatalogUseCaseTest {
         @Override
         public void put(CatalogCacheKey key, Page<?> page) {
             pages.put(key.asText(), page);
+        }
+
+        @Override
+        public void invalidate() {
+            invalidations++;
         }
     }
 }

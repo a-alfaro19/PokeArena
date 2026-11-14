@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import cr.ac.tec.pokearena.application.dto.DevSessionResult;
 import cr.ac.tec.pokearena.application.dto.Session;
 import cr.ac.tec.pokearena.application.port.InitialCollectionDelivery;
 import cr.ac.tec.pokearena.application.port.InitialCollectionStatus;
@@ -133,7 +134,8 @@ class PlayerAccountServiceTest {
         @Test
         @DisplayName("Lee entradas proveedor:sub e ignora las vacías")
         void parsesEntries() {
-            AdminIdentities admins = configuration.adminIdentities(List.of(" google:sub-admin ", "", "dev:dev-admin"));
+            AdminIdentities admins = configuration.adminIdentities(List.of(" google:sub-admin ", "", "dev:dev-admin"),
+                    List.of());
 
             assertThat(admins.roleFor(CONFIGURED_ADMIN)).isEqualTo(Role.ADMIN);
             assertThat(admins.roleFor(new ProviderIdentity("dev", "dev-admin"))).isEqualTo(Role.ADMIN);
@@ -141,9 +143,22 @@ class PlayerAccountServiceTest {
         }
 
         @Test
+        @DisplayName("El administrador de prueba del perfil dev se suma a la lista, aunque APP_ADMIN_IDENTITIES la deje vacía")
+        void devIdentitiesAreAdded() {
+            AdminIdentities admins = configuration.adminIdentities(List.of(), List.of("dev:dev-admin"));
+            AdminIdentities both = configuration.adminIdentities(List.of("google:sub-admin"), List.of("dev:dev-admin"));
+
+            assertThat(admins.roleFor(new ProviderIdentity("dev", "dev-admin"))).isEqualTo(Role.ADMIN);
+            assertThat(both.roleFor(CONFIGURED_ADMIN)).isEqualTo(Role.ADMIN);
+            assertThat(both.roleFor(new ProviderIdentity("dev", "dev-admin"))).isEqualTo(Role.ADMIN);
+            assertThatThrownBy(() -> configuration.adminIdentities(List.of(), List.of("mal")))
+                    .hasMessageContaining("app.admin.dev-identities");
+        }
+
+        @Test
         @DisplayName("Una entrada sin el formato proveedor:sub detiene el arranque con un mensaje claro")
         void rejectsMalformedEntry() {
-            assertThatThrownBy(() -> configuration.adminIdentities(List.of("solo-un-valor")))
+            assertThatThrownBy(() -> configuration.adminIdentities(List.of("solo-un-valor"), List.of()))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("app.admin.identities")
                     .hasMessageContaining("proveedor:sub");
@@ -170,8 +185,8 @@ class PlayerAccountServiceTest {
             IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(
                     service(Set.of(new ProviderIdentity("dev", "dev-admin"))), recordingDelivery, issuer);
 
-            Session admin = useCase.execute(Role.ADMIN);
-            Session player = useCase.execute(Role.PLAYER);
+            Session admin = useCase.execute(Role.ADMIN).session();
+            Session player = useCase.execute(Role.PLAYER).session();
 
             assertThat(admin.player().role()).isEqualTo(Role.ADMIN);
             assertThat(player.player().role()).isEqualTo(Role.PLAYER);
@@ -190,15 +205,17 @@ class PlayerAccountServiceTest {
         }
 
         @Test
-        @DisplayName("El jugador de prueba PLAYER recibe la colección inicial por la misma vía; el ADMIN de prueba no")
+        @DisplayName("El jugador de prueba PLAYER recibe la colección inicial por la misma vía y su estado; el ADMIN de prueba no")
         void onlyDevPlayerReceivesCollection() {
             IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(
                     service(Set.of(new ProviderIdentity("dev", "dev-admin"))), recordingDelivery, issuer);
 
-            useCase.execute(Role.ADMIN);
-            Session player = useCase.execute(Role.PLAYER);
+            DevSessionResult admin = useCase.execute(Role.ADMIN);
+            DevSessionResult player = useCase.execute(Role.PLAYER);
 
-            assertThat(deliveries).containsExactly(player.player().id());
+            assertThat(deliveries).containsExactly(player.session().player().id());
+            assertThat(player.initialCollection()).isEqualTo(InitialCollectionStatus.DELIVERED);
+            assertThat(admin.initialCollection()).isNull();
         }
 
         @Test
@@ -208,9 +225,10 @@ class PlayerAccountServiceTest {
                 throw new IllegalStateException("falla simulada");
             }, issuer);
 
-            Session player = useCase.execute(Role.PLAYER);
+            DevSessionResult player = useCase.execute(Role.PLAYER);
 
-            assertThat(player.token().value()).isNotBlank();
+            assertThat(player.session().token().value()).isNotBlank();
+            assertThat(player.initialCollection()).isEqualTo(InitialCollectionStatus.PENDING_ERROR);
         }
     }
 }

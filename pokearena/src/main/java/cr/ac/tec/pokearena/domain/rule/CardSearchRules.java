@@ -2,7 +2,6 @@ package cr.ac.tec.pokearena.domain.rule;
 
 import java.util.List;
 import java.util.Map;
-import java.util.TreeSet;
 
 import cr.ac.tec.pokearena.domain.error.ValidationException;
 import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
@@ -17,6 +16,10 @@ import cr.ac.tec.pokearena.domain.model.Rarity;
  * inexistente, un valor exacto combinado con un rango del mismo campo o un mínimo mayor que el máximo.
  * Referencia: sección 7.3 y criterio C.3 ("un criterio con un valor inválido es rechazado indicando
  * el criterio").
+ *
+ * <p>La lectura que comparte con el catálogo del jugador (nombres desconocidos, repetidos o vacíos,
+ * enteros acotados y rangos invertidos) está en {@link QueryParameters}; aquí quedan el tipo de error
+ * y los mensajes de esta historia.
  *
  * <p>Portado de {@code CardSearchCriteria} del código original del Sprint 1 (etiqueta
  * {@code sprint1-original}) con los nombres de la especificación
@@ -87,24 +90,20 @@ public final class CardSearchRules {
     // ---------------------------------------------------------------------------------------------
 
     private static void rejectUnknown(Map<String, List<String>> parameters) {
-        // TreeSet: si hay varios desconocidos, se informa siempre el primero en orden alfabético.
-        for (String name : new TreeSet<>(parameters.keySet())) {
-            if (!CRITERIA.contains(name)) {
-                throw ValidationException.invalidSearchCriteria(name,
-                        "El criterio de búsqueda '" + name + "' no existe.", CRITERIA);
-            }
-        }
+        // Si hay varios desconocidos, se informa siempre el primero en orden alfabético.
+        QueryParameters.firstUnknown(parameters, CRITERIA).ifPresent(name -> {
+            throw ValidationException.invalidSearchCriteria(name,
+                    "El criterio de búsqueda '" + name + "' no existe.", CRITERIA);
+        });
     }
 
     private static void rejectRepeatedOrBlank(String name, List<String> values) {
-        if (values.size() > 1) {
-            throw ValidationException.invalidSearchCriteria(name,
-                    "El criterio '" + name + "' solo puede indicarse una vez.", null);
-        }
-        if (values.isEmpty() || values.getFirst() == null || values.getFirst().isBlank()) {
-            throw ValidationException.invalidSearchCriteria(name,
-                    "El criterio '" + name + "' no puede estar vacío.", null);
-        }
+        QueryParameters.valueProblem(values).ifPresent(problem -> {
+            throw ValidationException.invalidSearchCriteria(name, switch (problem) {
+                case REPEATED -> "El criterio '" + name + "' solo puede indicarse una vez.";
+                case BLANK -> "El criterio '" + name + "' no puede estar vacío.";
+            }, null);
+        });
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -113,8 +112,7 @@ public final class CardSearchRules {
 
     /** Valor del criterio sin espacios al inicio ni al final, o {@code null} si no se indicó. */
     private static String text(Map<String, List<String>> parameters, String name) {
-        List<String> values = parameters.get(name);
-        return values == null ? null : values.getFirst().strip();
+        return QueryParameters.text(parameters, name);
     }
 
     /**
@@ -145,7 +143,7 @@ public final class CardSearchRules {
             throw ValidationException.invalidSearchCriteria(exactName, "No combine un valor exacto de " + label
                     + " ('" + exactName + "') con un rango ('" + minName + "' o '" + maxName + "').", null);
         }
-        if (min != null && max != null && min > max) {
+        if (QueryParameters.inverted(min, max)) {
             throw ValidationException.invalidSearchCriteria(exactName, "El mínimo de " + label + " (" + min
                     + ") no puede ser mayor que el máximo (" + max + ").", null);
         }
@@ -154,24 +152,15 @@ public final class CardSearchRules {
 
     /** Entero entre {@code lowest} y {@code highest}, o {@code null} si el criterio no se indicó. */
     private static Integer integer(Map<String, List<String>> parameters, String name, int lowest, int highest) {
-        String value = text(parameters, name);
-        if (value == null) {
-            return null;
-        }
         List<String> allowed = List.of(lowest + ".." + highest);
-        int number;
-        try {
-            number = Integer.parseInt(value);
-        } catch (NumberFormatException notAnInteger) {
-            // Un decimal ("1.5") o un texto ("abc") tienen el mismo error que un valor fuera de rango.
-            throw ValidationException.invalidSearchCriteria(name, "El criterio '" + name
-                    + "' debe ser un número entero entre " + lowest + " y " + highest + ".", allowed);
-        }
-        if (number < lowest || number > highest) {
-            throw ValidationException.invalidSearchCriteria(name, "El criterio '" + name
-                    + "' debe estar entre " + lowest + " y " + highest + ".", allowed);
-        }
-        return number;
+        // Un decimal ("1.5") o un texto ("abc") tienen el mismo tipo de error que un valor fuera de rango.
+        return QueryParameters.boundedInteger(parameters, name, lowest, highest,
+                problem -> ValidationException.invalidSearchCriteria(name, switch (problem) {
+                    case NOT_AN_INTEGER -> "El criterio '" + name + "' debe ser un número entero entre "
+                            + lowest + " y " + highest + ".";
+                    case OUT_OF_RANGE -> "El criterio '" + name + "' debe estar entre " + lowest + " y "
+                            + highest + ".";
+                }, allowed));
     }
 
     /** Código de un catálogo (tipo o rareza) que debe existir, o {@code null} si no se indicó. */

@@ -7,63 +7,90 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.opentest4j.TestAbortedException;
 
 /**
- * Propósito: ejecutar las pruebas funcionales JavaScript en clean verify, sin frameworks.
- * Responsabilidades: exigir Node.js 20 o superior, propagar fallos y limitar el tiempo de ejecución.
- * Los logs de esta prueba viven fuera del repositorio en el directorio temporal de JUnit.
+ * Propósito: ejecutar las pruebas funcionales JavaScript de la interfaz del jugador en clean verify, sin
+ * frameworks ni paquetes npm (sección 11).
+ * Responsabilidades: buscar Node.js 20 o superior, ejecutar {@code node --test}, propagar sus fallos y
+ * limitar el tiempo de ejecución. Los logs viven fuera del repositorio, en el directorio temporal de JUnit.
+ * Referencia: sección 11 (interfaz web) y sección 3 (Node 20 es un requisito opcional).
+ *
+ * <p>Decisión: Node es un requisito <b>opcional</b> del proyecto (sección 3 y README). Si no está en
+ * {@code PATH}, o su versión es menor que 20, la prueba se <b>omite</b> con un aviso claro (JUnit
+ * Assumptions) en lugar de fallar, para que {@code clean verify} pase en una máquina con solo Java y
+ * Docker. Si Node está disponible, cualquier falla de las pruebas JavaScript sí hace fallar el build.
  */
 @DisplayName("Comportamiento de la interfaz del jugador")
 class PlayerInterfaceBehaviorTest {
 
     private static final long MAX_SECONDS = 45;
     private static final int MIN_NODE_MAJOR = 20;
-    private static final String NODE_REQUIRED = "Las pruebas de interfaz requieren Node.js 20 o superior en PATH. "
-            + "Instala Node.js, abre una terminal nueva y comprueba node --version. "
-            + "Consulta la sección Requisitos del README. La prueba no se omite.";
+    private static final Pattern NODE_VERSION = Pattern.compile("^v(\\d+)\\.");
+    private static final String NODE_SKIPPED = "Pruebas de JavaScript OMITIDAS: requieren Node.js "
+            + MIN_NODE_MAJOR + " o superior en PATH (requisito opcional; ver la sección Requisitos del README). "
+            + "Comprueba con node --version.";
 
     @TempDir
     Path temporaryDirectory;
 
     @Test
-    @DisplayName("US 43, 35 y 42: filtros, paginación, sesión, privacidad y presentación de colección")
+    @DisplayName("Historias 3.1.2, 1.1.1 y 3.1.1: filtros, paginación, sesión, privacidad y presentación de la colección")
     void javascriptBehavior() throws Exception {
         String node = System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node";
-        String version = runNode(node, temporaryDirectory.resolve("node-version.log"), "--version").strip();
-        var major = Pattern.compile("^v(\\d+)\\.").matcher(version);
-        assertThat(major.find()).as("%s Versión recibida: %s", NODE_REQUIRED, version).isTrue();
-        assertThat(Integer.parseInt(major.group(1))).as(NODE_REQUIRED).isGreaterThanOrEqualTo(MIN_NODE_MAJOR);
+        requireNode(node, temporaryDirectory.resolve("node-version.log"));
 
         // Ejecuta los comportamientos reales, incluidos eventos del formulario y acciones de casos rápidos.
-        runNode(node, temporaryDirectory.resolve("player-tests.log"), "--test", "src/test/javascript/player.test.mjs");
+        String output = runNode(node, temporaryDirectory.resolve("player-tests.log"),
+                "--test", "src/test/javascript/player.test.mjs");
+        assertThat(output).as("node --test no ejecutó ninguna prueba").contains("pass");
     }
 
     @Test
-    @DisplayName("Sin Node disponible, falla con un diagnóstico útil y no omite las pruebas")
-    void missingNodeHasDiagnostic() {
+    @DisplayName("Sin Node disponible, la prueba se omite con un aviso claro en lugar de fallar")
+    void missingNodeSkipsWithNotice() {
         String absent = temporaryDirectory.resolve("node-inexistente").toString();
-        assertThatThrownBy(() -> runNode(absent, temporaryDirectory.resolve("missing-node.log"), "--version"))
-                .isInstanceOf(AssertionError.class).hasMessageContaining("Node.js 20 o superior")
-                .hasMessageContaining("PATH").hasMessageContaining("node --version")
-                .hasCauseInstanceOf(IOException.class);
+
+        assertThatThrownBy(() -> requireNode(absent, temporaryDirectory.resolve("missing-node.log")))
+                .isInstanceOf(TestAbortedException.class)
+                .hasMessageContaining("OMITIDAS").hasMessageContaining("Node.js 20 o superior")
+                .hasMessageContaining("PATH");
     }
 
-    /** Distingue un ejecutable ausente de los fallos reales del conjunto de pruebas. */
+    /** Omite la prueba si Node no existe o es anterior a la versión 20. */
+    private static void requireNode(String node, Path output) throws Exception {
+        Process process;
+        try {
+            process = new ProcessBuilder(node, "--version").redirectErrorStream(true)
+                    .redirectOutput(output.toFile()).start();
+        } catch (IOException unavailable) {
+            Assumptions.abort(NODE_SKIPPED + " No se encontró el ejecutable.");
+            return;
+        }
+        boolean completed = process.waitFor(MAX_SECONDS, TimeUnit.SECONDS);
+        if (!completed) {
+            process.destroyForcibly();
+        }
+        String version = Files.readString(output).strip();
+        Matcher major = NODE_VERSION.matcher(version);
+        Assumptions.assumeTrue(completed && process.exitValue() == 0 && major.find()
+                && Integer.parseInt(major.group(1)) >= MIN_NODE_MAJOR,
+                () -> NODE_SKIPPED + " Versión encontrada: " + (version.isEmpty() ? "desconocida" : version));
+    }
+
+    /** Ejecuta Node y exige que termine a tiempo y sin errores. */
     private static String runNode(String node, Path output, String... arguments) throws Exception {
         String[] command = new String[arguments.length + 1];
         command[0] = node;
         System.arraycopy(arguments, 0, command, 1, arguments.length);
-        Process process;
-        try {
-            process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output.toFile()).start();
-        } catch (IOException unavailable) {
-            throw new AssertionError(NODE_REQUIRED, unavailable);
-        }
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output.toFile()).start();
         boolean completed = process.waitFor(MAX_SECONDS, TimeUnit.SECONDS);
         if (!completed) {
             process.destroyForcibly();

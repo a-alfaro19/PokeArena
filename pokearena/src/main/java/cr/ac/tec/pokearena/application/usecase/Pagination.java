@@ -16,7 +16,7 @@ import cr.ac.tec.pokearena.domain.error.ValidationException;
  * Propósito: la única estrategia de paginación del sistema (corrección 8 del profesor; sección 5.5).
  * Responsabilidades: validar {@code limit} y {@code cursor} (INVALID_PAGINATION), y armar la página a
  * partir de las filas leídas: recortar la fila extra y calcular {@code nextCursor}. La usan la búsqueda
- * del administrador (7.3) y, más adelante, el catálogo del jugador (8.3).
+ * del administrador (7.3) y el catálogo del jugador (8.3), con los mismos límites configurables.
  * Referencia: sección 5.5.
  *
  * <p>Decisiones:

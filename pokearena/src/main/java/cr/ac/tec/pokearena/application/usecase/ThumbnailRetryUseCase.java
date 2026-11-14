@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import cr.ac.tec.pokearena.application.dto.ThumbnailRetryResult;
 import cr.ac.tec.pokearena.application.dto.ThumbnailRetryResult.Outcome;
+import cr.ac.tec.pokearena.application.port.CatalogCache;
 import cr.ac.tec.pokearena.application.port.ImageProcessor;
 import cr.ac.tec.pokearena.application.port.ImageStorage;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
@@ -66,12 +67,13 @@ public class ThumbnailRetryUseCase {
     private final ImageStorage imageStorage;
     private final ImageProcessor imageProcessor;
     private final int maxRetries;
+    private final CatalogCache catalogCache;
 
     /**
      * @param maxRetries intentos máximos de la tarea antes de pasar a {@code FAILED} ({@code app.images.max-retries})
      */
     public ThumbnailRetryUseCase(UnitOfWork unitOfWork, PendingImageRepository pending, ImageStorage imageStorage,
-            ImageProcessor imageProcessor, int maxRetries) {
+            ImageProcessor imageProcessor, int maxRetries, CatalogCache catalogCache) {
         if (maxRetries < 1) {
             throw new IllegalArgumentException("app.images.max-retries debe ser al menos 1; recibió " + maxRetries);
         }
@@ -80,6 +82,7 @@ public class ThumbnailRetryUseCase {
         this.imageStorage = imageStorage;
         this.imageProcessor = imageProcessor;
         this.maxRetries = maxRetries;
+        this.catalogCache = catalogCache;
     }
 
     /**
@@ -96,6 +99,11 @@ public class ThumbnailRetryUseCase {
                 results.add(result.get());
                 afterId = result.get().id();
             }
+        }
+        // Un intento sobre una carta cambia lo que muestran el catálogo y la búsqueda (disponibilidad y
+        // estado de imagen): se invalida la caché una vez, después de confirmar (sección 9).
+        if (results.stream().anyMatch(result -> result.kind() == ImageRules.Kind.CARD)) {
+            catalogCache.invalidate();
         }
         return results;
     }

@@ -9,7 +9,7 @@ import cr.ac.tec.pokearena.application.dto.Page;
  * Propósito: cuerpo HTTP de una página de resultados, con la forma única de la sección 5.5.
  * Responsabilidades: definir el JSON {@code { "items": [...], "nextCursor": "..." | null, "limit": 20 }}.
  * {@code nextCursor} se escribe siempre, con {@code null} en la última página. La usan la búsqueda del
- * administrador (7.3) y, más adelante, el catálogo del jugador (8.3).
+ * administrador (7.3) y el catálogo del jugador (8.3).
  * Referencia: sección 5.5.
  *
  * @param items      elementos de la página
