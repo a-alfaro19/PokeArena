@@ -1,14 +1,14 @@
 package cr.ac.tec.pokearena.domain.effect;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Supplier;
 
 /**
  * Propósito: plug-in del efecto "Bonificación por tipo" (criterio C.2).
  * Responsabilidades: exigir un tipo de carta existente ({@code type}) y una cantidad de poder entera de
- * -5 a +5 ({@code amount}).
+ * -5 a +5 ({@code amount}), y describir esos parámetros para la interfaz.
  * Referencia: sección 7.2, tabla de plug-ins de efecto.
  */
 public final class TypeBonusEffect implements LocationEffectType {
@@ -20,6 +20,11 @@ public final class TypeBonusEffect implements LocationEffectType {
     /** Cantidad de poder: de -5 a +5. */
     public static final int MIN_AMOUNT = -5;
     public static final int MAX_AMOUNT = 5;
+
+    /** Parámetros del efecto: los únicos permitidos, con las mismas constantes que valida. */
+    private static final List<EffectParameterSpec> PARAMETERS = List.of(
+            EffectParameterSpec.cardType(TYPE, "Tipo", true),
+            EffectParameterSpec.integer(AMOUNT, "Monto", true, MIN_AMOUNT, MAX_AMOUNT));
 
     private final Supplier<? extends Collection<String>> existingTypes;
 
@@ -34,8 +39,18 @@ public final class TypeBonusEffect implements LocationEffectType {
     }
 
     @Override
+    public String name() {
+        return "Bonificación por tipo";
+    }
+
+    @Override
+    public List<EffectParameterSpec> parameters() {
+        return PARAMETERS;
+    }
+
+    @Override
     public void validate(Map<String, Object> parameters) {
-        EffectParameters.allowOnly(CODE, parameters, Set.of(TYPE, AMOUNT));
+        EffectParameters.allowOnly(CODE, parameters, PARAMETERS);
         EffectParameters.requireType(CODE, parameters, TYPE, existingTypes.get());
         EffectParameters.requireInteger(CODE, parameters, AMOUNT, MIN_AMOUNT, MAX_AMOUNT);
     }

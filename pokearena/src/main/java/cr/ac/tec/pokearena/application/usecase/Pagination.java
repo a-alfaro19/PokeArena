@@ -40,7 +40,7 @@ public final class Pagination {
     public static final Set<String> PARAMETERS = Set.of(LIMIT, CURSOR);
 
     /** Tamaño mínimo de una página. */
-    private static final int MIN_LIMIT = 1;
+    public static final int MIN_LIMIT = 1;
 
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
@@ -59,6 +59,16 @@ public final class Pagination {
         }
         this.defaultLimit = defaultLimit;
         this.maxLimit = maxLimit;
+    }
+
+    /** Tamaño de página cuando el cliente no indica {@code limit} ({@code app.pagination.default-limit}). */
+    public int defaultLimit() {
+        return defaultLimit;
+    }
+
+    /** Tamaño máximo de página ({@code app.pagination.max-limit}). */
+    public int maxLimit() {
+        return maxLimit;
     }
 
     /** Los parámetros de la solicitud sin {@code limit} ni {@code cursor}: los criterios de la búsqueda. */

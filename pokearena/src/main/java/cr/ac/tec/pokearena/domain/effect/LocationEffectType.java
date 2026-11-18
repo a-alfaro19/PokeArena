@@ -1,5 +1,6 @@
 package cr.ac.tec.pokearena.domain.effect;
 
+import java.util.List;
 import java.util.Map;
 
 import cr.ac.tec.pokearena.domain.error.ValidationException;
@@ -7,14 +8,24 @@ import cr.ac.tec.pokearena.domain.error.ValidationException;
 /**
  * Propósito: un tipo de efecto de ubicación, como plug-in (patrón Strategy, sección 4.4; ADR-001,
  * refinamiento 1: el motor usa microkernel por dentro).
- * Responsabilidades: decir su código y validar sus propios parámetros. Cada efecto es una clase;
- * agregar uno nuevo es agregar una clase y registrarla, SIN modificar el caso de uso.
- * Referencia: sección 7.2 ("Plug-ins de efecto") y criterio C.2.
+ * Responsabilidades: decir su código, su nombre y la descripción de sus parámetros, y validar sus propios
+ * parámetros. Cada efecto es una clase; agregar uno nuevo es agregar una clase y registrarla, SIN
+ * modificar el caso de uso ni la interfaz web (que arma el formulario con {@link #parameters()}).
+ * Referencia: sección 7.2 ("Plug-ins de efecto"), criterio C.2 y {@code GET /api/v1/opciones/creacion}.
  */
 public interface LocationEffectType {
 
     /** Código del efecto, por ejemplo {@code TYPE_BONUS}. */
     String code();
+
+    /** Nombre del efecto para el usuario, por ejemplo "Bonificación por tipo". */
+    String name();
+
+    /**
+     * Parámetros que acepta, en el orden en que se muestran. Son los únicos permitidos: {@link #validate}
+     * rechaza cualquier otro.
+     */
+    List<EffectParameterSpec> parameters();
 
     /**
      * Valida los parámetros del efecto.

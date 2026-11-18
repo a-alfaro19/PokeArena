@@ -47,6 +47,7 @@ import cr.ac.tec.pokearena.domain.repository.CardCatalogRepository;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
 import cr.ac.tec.pokearena.infrastructure.storage.ImageIoProcessor;
+import cr.ac.tec.pokearena.support.InMemoryAbilityRepository;
 import cr.ac.tec.pokearena.support.TestImages;
 
 /**
@@ -79,7 +80,7 @@ class CreateCardUseCaseTest {
 
     private final CreateCardUseCase useCase = new CreateCardUseCase(guard,
             new ImageCreationSteps(guard, processor, storage, new SnapshotUnitOfWork()), new FixedCatalog(),
-            code -> Optional.ofNullable(abilityTable.get(code)), cards, processor, storage, () -> NOW, catalogCache);
+            new InMemoryAbilityRepository(abilityTable), cards, processor, storage, () -> NOW, catalogCache);
 
     private final UUID admin = UUID.randomUUID();
 

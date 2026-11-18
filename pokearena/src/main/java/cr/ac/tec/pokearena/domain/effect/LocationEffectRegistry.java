@@ -12,7 +12,8 @@ import cr.ac.tec.pokearena.domain.model.LocationEffect;
 /**
  * Propósito: catálogo de tipos de efecto de ubicación (patrón Registry, sección 4.4; participante
  * "Registro de efectos de ubicación" del diagrama A.2).
- * Responsabilidades: encontrar el plug-in de un código y pedirle que valide los parámetros. Recibe la
+ * Responsabilidades: encontrar el plug-in de un código y pedirle que valide los parámetros, y listar los
+ * efectos registrados con la descripción de sus parámetros. Recibe la
  * lista de plug-ins desde afuera: agregar un efecto es agregar una clase a esa lista, sin modificar
  * este registro ni el caso de uso (abierto/cerrado).
  * Referencia: sección 7.2, paso 6, y criterio C.2.
@@ -33,6 +34,15 @@ public final class LocationEffectRegistry {
     /** Códigos de los efectos registrados, ordenados. */
     public List<String> codes() {
         return List.copyOf(types.keySet());
+    }
+
+    /**
+     * Efectos registrados, ordenados por código, con su nombre y la descripción de sus parámetros. Los
+     * usa la interfaz para armar el formulario de Crear ubicación ({@code GET /api/v1/opciones/creacion}):
+     * un efecto nuevo aparece ahí sin cambiar este registro ni la interfaz.
+     */
+    public List<LocationEffectType> types() {
+        return List.copyOf(types.values());
     }
 
     /**
