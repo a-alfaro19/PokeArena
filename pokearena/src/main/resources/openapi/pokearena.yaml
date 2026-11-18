@@ -1,7 +1,8 @@
 # =============================================================================
 # Contrato HTTP de PokéArena (RNF-API-01; sección 10 de la especificación).
-# Propósito: describir las operaciones de la API de las seis historias, con sus
-# parámetros, cuerpos, respuestas y el formato único de errores (sección 5.3):
+# Propósito: describir las operaciones de la API de las seis historias de esta entrega
+# (Sprint 1 rehecho y Sprint 2), con sus parámetros, cuerpos, respuestas y el formato
+# único de errores (sección 5.3):
 #   - 1.1.1 Inicio de sesión con proveedor ....... POST /api/v1/sesiones
 #   - 3.1.1 Recibir colección inicial ............. durante el inicio de sesión
 #                                                    (campo initialCollection)
@@ -9,8 +10,12 @@
 #   - 2.1.1 Crear carta ........................... POST /api/v1/cartas
 #   - 2.1.2 Buscar carta .......................... GET  /api/v1/cartas
 #   - 2.2.1 Crear ubicación ....................... POST /api/v1/ubicaciones
-# Además: la entrega de imágenes (GET /images/...) y la configuración pública que
-# la interfaz web lee al cargar (GET /api/v1/configuracion: client id de Google).
+# Además, lo que usa la interfaz web (sección 11):
+#   - Configuración pública al cargar ......... GET  /api/v1/configuracion (client id de Google)
+#   - Opciones de filtros (3.1.2 y 2.1.2) ...... GET  /api/v1/opciones/catalogo
+#   - Opciones de creación (2.1.1 y 2.2.1) ..... GET  /api/v1/opciones/creacion
+#   - Entrega de imágenes ...................... GET  /images/...
+# Cada etiqueta que usa una operación está declarada en "tags" (OpenApiContractTest lo comprueba).
 # Se escribe a mano y lo verifica OpenApiContractIT en los dos sentidos: todo lo
 # documentado existe en la aplicación, y toda operación de la aplicación está aquí.
 # No documenta POST /api/v1/dev/sesiones: solo existe con el perfil dev.
@@ -39,7 +44,8 @@ info:
     Recibir colección inicial (durante el inicio de sesión, campo `initialCollection`); 3.1.2
     Explorar el catálogo y mi colección (`GET /api/v1/catalogo`); 2.1.1 Crear carta
     (`POST /api/v1/cartas`); 2.1.2 Buscar carta (`GET /api/v1/cartas`); 2.2.1 Crear ubicación
-    (`POST /api/v1/ubicaciones`).
+    (`POST /api/v1/ubicaciones`). La interfaz web pide antes las opciones de sus filtros y
+    formularios (`GET /api/v1/opciones/catalogo` y `GET /api/v1/opciones/creacion`).
 
     **Configuración que cambia el contrato** (`application.properties`; entre paréntesis,
     el valor por defecto o la variable de entorno):
