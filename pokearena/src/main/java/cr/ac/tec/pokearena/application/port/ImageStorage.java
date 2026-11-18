@@ -27,7 +27,12 @@ public interface ImageStorage {
      */
     StoredImages save(ImageRules rules, ValidatedImage large, byte[] thumbnail);
 
-    /** Borra todo lo guardado con {@code storageKey}. No falla si ya no existe. */
+    /**
+     * Borra todo lo guardado con {@code storageKey}. No falla si ya no existe.
+     *
+     * @throws java.io.UncheckedIOException si no se pudo borrar; al compensar, {@code ImageCreationSteps} lo
+     *         registra como aviso y conserva el error original
+     */
     void delete(String storageKey);
 
     /**

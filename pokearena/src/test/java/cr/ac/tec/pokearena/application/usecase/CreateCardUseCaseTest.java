@@ -3,6 +3,8 @@ package cr.ac.tec.pokearena.application.usecase;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -264,6 +266,21 @@ class CreateCardUseCaseTest {
         }
 
         @Test
+        @DisplayName("Sección 9: si borrar los archivos falla al compensar, se conserva el error original (INVALID_EVOLUTION, no un 500) y el fallo del borrado queda adjunto")
+        void failedCompensationKeepsOriginalError() {
+            abilityTable.put("HAB-EVO", new Ability("HAB-EVO", "Evoluciona a sí misma", null, "PKA-FUE-001"));
+            storage.failOnDelete = true;
+
+            assertThatThrownBy(() -> create("k1", command("FUE", "HAB-EVO")))
+                    .isInstanceOfSatisfying(DomainException.class, error -> {
+                        assertThat(error.type()).isEqualTo(ErrorType.INVALID_EVOLUTION);
+                        assertThat(error.getSuppressed()).singleElement().isInstanceOf(UncheckedIOException.class);
+                    });
+            assertThat(cards.saved).isEmpty();
+            assertThat(keys.responses).isEmpty();
+        }
+
+        @Test
         @DisplayName("Una habilidad que formaría un ciclo de evoluciones es INVALID_EVOLUTION")
         void evolutionCycle() {
             // Ya existe PKA-AGU-001, cuya habilidad evoluciona a PKA-FUE-001: la carta nueva cerraría el ciclo.
@@ -482,6 +499,8 @@ class CreateCardUseCaseTest {
     private static final class InMemoryImageStorage implements ImageStorage {
         final List<String> saved = new ArrayList<>();
         final List<String> deleted = new ArrayList<>();
+        // Simula un disco que no deja borrar (por ejemplo, permisos o archivo en uso).
+        volatile boolean failOnDelete;
 
         @Override
         public StoredImages save(ImageRules rules, ValidatedImage large, byte[] thumbnail) {
@@ -493,6 +512,9 @@ class CreateCardUseCaseTest {
 
         @Override
         public void delete(String storageKey) {
+            if (failOnDelete) {
+                throw new UncheckedIOException(new IOException("Falla simulada al borrar " + storageKey));
+            }
             deleted.add(storageKey);
         }
 

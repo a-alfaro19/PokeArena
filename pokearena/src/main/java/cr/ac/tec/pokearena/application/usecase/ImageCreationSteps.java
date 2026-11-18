@@ -1,5 +1,6 @@
 package cr.ac.tec.pokearena.application.usecase;
 
+import java.io.UncheckedIOException;
 import java.util.function.Supplier;
 
 import cr.ac.tec.pokearena.application.dto.IdempotentRequest;
@@ -23,6 +24,12 @@ import cr.ac.tec.pokearena.domain.rule.ImageRules;
  *
  * <p>No reemplaza a los casos de uso: cada uno sigue mostrando sus pasos en orden y llama a estos
  * métodos en el paso que corresponde. Aquí solo vive lo que sería idéntico en los dos.
+ *
+ * <p>Decisión: la compensación nunca reemplaza el resultado. Si el borrado de los archivos falla, se registra
+ * un aviso y se conserva lo que iba a pasar: la falla original (por ejemplo INVALID_EVOLUTION, que debe
+ * llegar al cliente como 400 y no como 500) o la respuesta de la solicitud que ganó. Los archivos que no se
+ * pudieron borrar quedan huérfanos; es la limitación conocida de la sección 9 (su limpieza periódica es una
+ * mejora futura).
  */
 public class ImageCreationSteps {
 
@@ -67,6 +74,8 @@ public class ImageCreationSteps {
      *       devuelve la respuesta de la otra (sección 5.4).</li>
      *   <li>Si falla cualquier otra cosa, la transacción se revierte, se borran los archivos del
      *       paso 9 (compensación, sección 9) y la falla se propaga sin cambios.</li>
+     *   <li>Si el borrado falla, se registra un aviso y no cambia nada de lo anterior: la falla del borrado
+     *       queda adjunta ({@code addSuppressed}) a la falla original, que es la que se propaga.</li>
      * </ul>
      *
      * @param stored       archivos guardados en el paso 9, que se borran si la transacción falla
@@ -82,11 +91,26 @@ public class ImageCreationSteps {
             });
             return IdempotentResult.executed(request, created);
         } catch (IdempotencyConflictException conflict) {
-            imageStorage.delete(stored.storageKey());
+            compensate(stored, conflict);
             return idempotency.resolveConflict(request, resultType);
         } catch (RuntimeException failure) {
-            imageStorage.delete(stored.storageKey());
+            compensate(stored, failure);
             throw failure;
+        }
+    }
+
+    /**
+     * Borra los archivos del paso 9 sin reemplazar la causa: si el borrado falla, lo registra como aviso y lo
+     * adjunta a {@code cause}, y quien llama sigue con su resultado o su excepción original.
+     */
+    private void compensate(StoredImages stored, RuntimeException cause) {
+        try {
+            imageStorage.delete(stored.storageKey());
+        } catch (UncheckedIOException deleteFailure) {
+            cause.addSuppressed(deleteFailure);
+            LOG.log(System.Logger.Level.WARNING, "No se pudieron borrar los archivos " + stored.storageKey()
+                    + " al compensar; quedan huérfanos (sección 9) y se conserva el error original "
+                    + cause.getClass().getSimpleName(), deleteFailure);
         }
     }
 }
