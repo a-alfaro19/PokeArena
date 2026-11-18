@@ -81,7 +81,7 @@ class StaticInterfaceSafetyTest {
                 "value=\"HAB-000\"", "min=\"", "max=\"");
         assertThat(read("app.js")).doesNotContain("const TYPES", "const RARITIES", "const TURNS", "MAX_IMAGE_BYTES",
                 "'Fuego'", "'Común'", "obligatorio, 0 a 3", "|| '10'");
-        assertThat(read("player.js")).doesNotContain("|| '10'", "|| '0'");
+        assertThat(read("player.js")).doesNotContain("|| '10'", "|| '0'", "* 1000");
         assertThat(read("options.js")).contains("'/api/v1/opciones/catalogo'", "'/api/v1/opciones/creacion'");
     }
 

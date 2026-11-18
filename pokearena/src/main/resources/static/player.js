@@ -4,13 +4,16 @@
  * estados de colección entregados por el backend. Las sesiones y las solicitudes HTTP se inyectan.
  */
 
+/** Unidad de expiresIn (segundos, sección 8.1) a la del reloj del navegador (milisegundos). */
+const MS_PER_SECOND = 1000;
+
 /** Traduce la respuesta existente; nunca inventa el nombre ni el estado de colección del jugador. */
 export function sessionFromResponse(body, now = Date.now()) {
   if (!body || !body.accessToken || !body.player || !['PLAYER', 'ADMIN'].includes(body.player.role)
       || !Number.isFinite(body.expiresIn) || body.expiresIn <= 0) return null;
   return {
     role: body.player.role, token: body.accessToken, player: body.player,
-    expiresAt: now + body.expiresIn * 1000,
+    expiresAt: now + body.expiresIn * MS_PER_SECOND,
     initialCollection: body.initialCollection || null,
     firstLogin: body.firstLogin,
   };

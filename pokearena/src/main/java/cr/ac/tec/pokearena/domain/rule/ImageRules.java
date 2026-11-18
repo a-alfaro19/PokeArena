@@ -37,7 +37,10 @@ public record ImageRules(Kind kind, int ratioWidth, int ratioHeight, int minWidt
     private static final int BYTES_PER_MEGABYTE = 1024 * 1024;
     private static final int MAX_FILE_MEGABYTES = 5;
 
-    /** Peso máximo: 5 MB. Debe coincidir con {@code app.images.max-file-size} (una prueba lo comprueba). */
+    /**
+     * Peso máximo: 5 MB. Es la fuente del valor: {@code app.images.max-file-size} debe coincidir, y
+     * {@code ImageSizeLimitCheck} detiene el arranque si no es así.
+     */
     public static final long MAX_FILE_BYTES = (long) MAX_FILE_MEGABYTES * BYTES_PER_MEGABYTE;
 
     /** Tolerancia de la proporción: 1 %. */
