@@ -18,7 +18,8 @@ import cr.ac.tec.pokearena.domain.rule.LocationFieldRules;
  * pide antes del POST.
  * Responsabilidades: listar las habilidades activas y los efectos registrados, y tomar los rangos, las
  * modalidades de energía y los requisitos de imagen de las mismas clases que validan la creación.
- * Referencia: Anexos A.1 y A.2 (la interfaz pide las opciones antes del POST); secciones 7.1 y 7.2.
+ * Referencia: Anexos A.1 y A.2 (mensajes 1 a 9: la interfaz pide las opciones antes del POST); secciones
+ * 7.1 y 7.2.
  *
  * <h2>Misma plantilla que los demás casos de uso (corrección 7)</h2>
  * <ol>
@@ -52,15 +53,17 @@ public class GetCreationOptionsUseCase {
 
     /** Opciones de los formularios de creación. */
     public CreationOptions execute() {
-        // La interfaz pide las opciones antes del POST (Anexos A.1 y A.2); la seguridad ya validó el rol.
+        // Mensajes 1 a 5 de A.1 y A.2: la interfaz pidió las opciones antes del POST y la seguridad validó el
+        // rol de administrador. Mensajes 6 a 9: leer las opciones y responder.
         return new CreationOptions(
-                // Habilidades activas desde su repositorio: las mismas que acepta el paso 6 de Crear carta.
+                // Mensajes 6 y 7 de A.1: habilidades activas, las mismas que acepta el paso 6 de Crear carta.
                 abilities.findAllActive(),
                 new ValueRange(CardFieldRules.MIN_COST, CardFieldRules.MAX_COST),
                 new ValueRange(CardFieldRules.MIN_POWER, CardFieldRules.MAX_POWER),
                 new ValueRange(LocationFieldRules.MIN_CARD_LIMIT, LocationFieldRules.MAX_CARD_LIMIT),
                 ExtraEnergy.DEFAULT_MODE,
                 List.of(ExtraEnergy.Mode.values()),
+                // Mensajes 6 y 7 de A.2: efectos registrados con la descripción de sus parámetros.
                 effects.types(),
                 new CreationOptions.ImageOptions(allowedFormats(), ImageRules.MAX_FILE_BYTES, ImageRules.CARD,
                         ImageRules.LOCATION));

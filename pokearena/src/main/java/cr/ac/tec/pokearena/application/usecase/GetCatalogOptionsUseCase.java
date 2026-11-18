@@ -10,7 +10,8 @@ import cr.ac.tec.pokearena.domain.rule.CardFieldRules;
  * (2.1.2), que la interfaz pide antes de mostrarlos.
  * Responsabilidades: leer tipos y rarezas de sus repositorios y tomar el rango de costo y los límites de
  * paginación de las mismas clases que validan las consultas.
- * Referencia: Anexos A.3 y A.6 (la interfaz pide las opciones antes del filtro); secciones 5.5, 7.3 y 8.3.
+ * Referencia: Anexos A.3 y A.6 (mensajes 1 a 9: la interfaz pide las opciones antes del filtro); secciones
+ * 5.5, 7.3 y 8.3.
  *
  * <h2>Misma plantilla que los demás casos de uso (corrección 7)</h2>
  * <ol>
@@ -44,9 +45,10 @@ public class GetCatalogOptionsUseCase {
 
     /** Opciones de los filtros. */
     public CatalogOptions execute() {
-        // La interfaz pide las opciones antes del filtro (Anexos A.3 y A.6); la seguridad ya validó la sesión.
+        // Mensajes 1 a 5 de A.3 y A.6: la interfaz pidió las opciones antes del filtro y la seguridad validó
+        // la sesión. Mensajes 6 a 9: leer las opciones y responder.
         return new CatalogOptions(
-                // Tipos y rarezas desde sus repositorios (tablas card_type y rarity).
+                // Mensajes 6 y 7: tipos y rarezas desde sus repositorios (tablas card_type y rarity).
                 catalog.findAllTypes(),
                 catalog.findAllRarities(),
                 new ValueRange(CardFieldRules.MIN_COST, CardFieldRules.MAX_COST),

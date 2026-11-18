@@ -15,7 +15,8 @@ import cr.ac.tec.pokearena.domain.model.Role;
  * Propósito: API de las opciones que la interfaz web pide antes de mostrar filtros y formularios.
  * Responsabilidades: traducir {@code GET /api/v1/opciones/catalogo} y {@code GET /api/v1/opciones/creacion}
  * a sus casos de uso y su resultado a la respuesta 200. No contiene reglas ni valores propios.
- * Referencia: Anexos A.1, A.2, A.3 y A.6 (la interfaz pide las opciones antes del POST o del filtro).
+ * Referencia: Anexos A.1, A.2, A.3 y A.6, mensajes 2 a 5 y 9 (la interfaz pide las opciones antes del POST
+ * o del filtro; la seguridad valida la sesión y el rol; la API responde 200).
  *
  * <p>Decisiones:
  * <ul>

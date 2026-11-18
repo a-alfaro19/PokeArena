@@ -26,16 +26,16 @@ import cr.ac.tec.pokearena.domain.rule.CatalogRules;
  *
  * <h2>Misma plantilla que Buscar carta (corrección 7; ver {@link SearchCardsUseCase})</h2>
  * <ol>
- *   <li><b>Autorizar</b> (mensajes 1 a 5): ya ocurrió en la API. El interceptor verificó la sesión y el
+ *   <li><b>Autorizar</b> (mensajes 10 a 14): ya ocurrió en la API. El interceptor verificó la sesión y el
  *       rol ({@code @RequiresRole({PLAYER, ADMIN})} en {@code CatalogController}); el caso de uso no vuelve
  *       a comprobarlo. El jugador sale siempre de la sesión verificada, nunca de un parámetro.</li>
  *   <li><b>Idempotencia</b>: no aplica. Es una consulta (GET) que no cambia nada; repetirla da el mismo
  *       efecto (sección 5.4 pide la clave solo a los POST de creación).</li>
- *   <li><b>Validar</b> (mensaje 6): filtros y paginación, con errores tipados (INVALID_FIELD,
+ *   <li><b>Validar</b> (mensajes 15 a 17): filtros y paginación, con errores tipados (INVALID_FIELD,
  *       INVALID_PAGINATION), <b>antes</b> de tocar la caché o la base.</li>
- *   <li><b>Ejecutar</b> (mensajes 7 a 16): rama "Solo mis cartas" o rama "Todo el catálogo". No usa
+ *   <li><b>Ejecutar</b> (mensajes 18 a 27): rama "Solo mis cartas" o rama "Todo el catálogo". No usa
  *       {@code UnitOfWork}, igual que Buscar carta: son lecturas sin nada que confirmar ni revertir.</li>
- *   <li><b>Responder</b> (mensajes 17 a 19): la API responde 200 con la página; sin resultados, una lista
+ *   <li><b>Responder</b> (mensajes 28 a 30): la API responde 200 con la página; sin resultados, una lista
  *       vacía, no un error (criterio C.6).</li>
  * </ol>
  *
@@ -74,15 +74,15 @@ public class ExploreCatalogUseCase {
      * @return la página, en orden de {@code id}, con propiedad y copias, y el cursor de la siguiente
      */
     public Page<CatalogCardDetails> execute(ExploreCatalogCommand command) {
-        // Mensajes 1 a 5 del diagrama A.6: la interfaz envió el GET y la seguridad validó la sesión; el
+        // Mensajes 10 a 14 del diagrama A.6: la interfaz envió el GET y la seguridad validó la sesión; el
         // controlador llamó al caso de uso con el jugador verificado, los filtros, el cursor y el límite.
 
-        // Mensaje 6: validar filtros y paginación, antes de leer páginas o colecciones.
+        // Mensajes 15 a 17: validar filtros y paginación, antes de leer páginas o colecciones.
         CatalogCriteria criteria = CatalogRules.validate(Pagination.withoutPagination(command.parameters()),
                 catalog.findAllTypes());
         PageRequest request = pagination.parse(command.parameters());
 
-        // Mensajes 7 y 8 (rama "Solo mis cartas"): cartas propias con filtros y unión a la colección, con sus
+        // Mensajes 18 y 19 (rama "Solo mis cartas"): cartas propias con filtros y unión a la colección, con sus
         // copias en la misma consulta. Depende del jugador: nunca se cachea.
         if (criteria.owned()) {
             return pagination.toPage(cards.owned(command.playerId(), criteria, request.afterId(), request.fetchSize()),
@@ -90,7 +90,7 @@ public class ExploreCatalogUseCase {
                     .map(row -> new CatalogCardDetails(CardDetails.of(row.stored().card()), row.copies()));
         }
 
-        // Mensajes 9 y 10 (rama "Todo el catálogo"): consultar la página en la caché; 10 es el acierto. La página no lleva
+        // Mensajes 20 y 21 (rama "Todo el catálogo"): consultar la página en la caché; 21 es el acierto. La página no lleva
         // datos del jugador, así que es compartible entre jugadores.
         CatalogCacheKey key = CatalogPageKeys.of(CatalogCacheKey.PLAYER_CATALOG, criteria.cardCriteria(), request);
         Optional<Page<CardDetails>> cached = cache.get(key, CardDetails.class);
@@ -98,21 +98,21 @@ public class ExploreCatalogUseCase {
         if (cached.isPresent()) {
             page = cached.get();
         } else {
-            // Mensajes 11 a 13: la página no está; consultar cartas disponibles con filtros, id mayor al
+            // Mensajes 22 a 24: la página no está; consultar cartas disponibles con filtros, id mayor al
             // cursor, orden por id y límite más uno.
             List<StoredCard> rows = cards.available(criteria, request.afterId(), request.fetchSize());
             page = pagination.toPage(rows, request, StoredCard::id).map(row -> CardDetails.of(row.card()));
 
-            // Mensaje 14: guardar la página con vencimiento.
+            // Mensaje 25: guardar la página con vencimiento.
             cache.put(key, page);
         }
 
-        // Mensajes 15 y 16: copias del jugador para los códigos de la página, en una sola consulta y sin
+        // Mensajes 26 y 27: copias del jugador para los códigos de la página, en una sola consulta y sin
         // caché, también cuando la página vino de la caché.
         Map<String, Integer> copies = cards.findCopies(command.playerId(),
                 page.items().stream().map(CardDetails::code).toList());
 
-        // Mensajes 17 a 19: con la página combinada, la API responde 200 con las cartas y el cursor.
+        // Mensajes 28 a 30: con la página combinada, la API responde 200 con las cartas y el cursor.
         return page.map(card -> new CatalogCardDetails(card, copies.getOrDefault(card.code(), 0)));
     }
 }

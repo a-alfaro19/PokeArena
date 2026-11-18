@@ -17,7 +17,7 @@ import cr.ac.tec.pokearena.domain.model.CatalogCriteria;
  * inexistente, un costo fuera de 0 a 10, un mínimo mayor que el máximo o un {@code owned} que no sea
  * {@code true} ni {@code false}. La paginación ({@code limit}, {@code cursor}) la valida aparte la
  * aplicación ({@code Pagination}).
- * Referencia: sección 8.3, Anexo A.6 (mensaje 6) y criterio C.6 ("un filtro con un valor inválido es
+ * Referencia: sección 8.3, Anexo A.6 (mensajes 15 a 17) y criterio C.6 ("un filtro con un valor inválido es
  * rechazado indicando los valores permitidos").
  *
  * <p>Decisiones:
@@ -51,7 +51,7 @@ public final class CatalogRules {
     }
 
     /**
-     * Valida los filtros antes de consultar páginas o colecciones (mensaje 6 de A.6). {@code parameters}
+     * Valida los filtros antes de consultar páginas o colecciones (mensajes 15 a 17 de A.6). {@code parameters}
      * no debe incluir los de la paginación.
      *
      * @param types tipos existentes: los mismos del catálogo que usa Crear carta
