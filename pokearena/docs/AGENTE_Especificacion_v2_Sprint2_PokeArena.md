@@ -527,7 +527,7 @@ Un único contrato `src/main/resources/openapi/pokearena.yaml`, escrito **antes*
 
 ## 11. Interfaz web (presentación)
 
-Una sola aplicación en `src/main/resources/static/` (`index.html`, `app.js`, `styles.css`), sin frameworks, servida por la misma API en `http://localhost:8080`. Habla con la API real, no con datos falsos.
+Una sola aplicación en `src/main/resources/static/` (`index.html`, `app.js`, `player.js`, `options.js` y `styles.css`), sin frameworks, servida por la misma API en `http://localhost:8080`. Habla con la API real, no con datos falsos.
 
 **Estructura**
 - **Pantalla de ingreso:** botón "Entrar con Google" (Google Identity Services, con el `client id` leído al cargar de `GET /api/v1/configuracion`, pública, que responde **solo** `{ "googleClientId": "<id>" | null }` a partir de `app.identity.google.client-id`). Sin `client id` configurado, el botón queda deshabilitado con el aviso "falta APP_GOOGLE_CLIENT_ID". La política de seguridad de contenido (CSP) solo permite `accounts.google.com/gsi/` para el script, el estilo, el marco y las conexiones del botón de Google. Solo con el perfil `dev`, también botones "Entrar como administrador de prueba" y "Entrar como jugador de prueba".

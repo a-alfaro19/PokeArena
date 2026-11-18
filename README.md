@@ -17,6 +17,7 @@ fuente de verdad del proyecto, está en
 | 1.1.1 Inicio de sesión con proveedor | `POST /api/v1/sesiones` (pública) y `GET /api/v1/configuracion` (client id de Google, pública) | Botón "Entrar con Google" en la barra de sesión | Sprint 2, terminada |
 | 3.1.1 Recibir colección inicial | Durante `POST /api/v1/sesiones` (campo `initialCollection`) y, en el perfil `dev`, para el jugador de prueba | Bienvenida con el estado de la colección; caso rápido "Segundo ingreso del jugador" | Sprint 2, terminada |
 | 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` (jugador o administrador) | Pestaña "Catálogo y mi colección" | Sprint 2, terminada |
+| Opciones de la interfaz (Refactory SP2) | `GET /api/v1/opciones/catalogo` (jugador o administrador) y `GET /api/v1/opciones/creacion` (administrador) | Tipos, rarezas, rangos, habilidades, energía extra, efectos y requisitos de imagen de filtros y formularios | Terminada |
 
 Para desarrollo y demostraciones, el perfil `dev` ofrece además credenciales de prueba
 (`POST /api/v1/dev/sesiones`), que no existen con ningún otro perfil.
@@ -29,11 +30,12 @@ y una prueba de contrato lo compara con la aplicación en los dos sentidos.
 
 - **Java 21** (JDK). Maven no hace falta: el proyecto trae su propio wrapper (`mvnw.cmd`).
 - **Docker Desktop** encendido: lo usan las pruebas de integración (Testcontainers) y la base local.
-- **Node.js 20 o superior (opcional)**, en `PATH`: las pruebas de comportamiento de la interfaz del
-  jugador (`src/test/javascript/player.test.mjs`) usan `node:test`, sin paquetes npm, y Maven las
-  ejecuta con `PlayerInterfaceBehaviorTest`. Sin Node, o con una versión menor, esa prueba se
+- **Node.js 20 o superior (opcional)**, en `PATH`: las pruebas de comportamiento de la interfaz
+  (`src/test/javascript/player.test.mjs` y `options.test.mjs`) usan `node:test`, sin paquetes npm, y
+  Maven las ejecuta con `PlayerInterfaceBehaviorTest`. Sin Node, o con una versión menor, esa prueba se
   **omite** con un aviso ("Pruebas de JavaScript OMITIDAS") y el build sigue. Comprueba la
-  instalación con `node --version`, o ejecútalas solas con `node --test src/test/javascript/player.test.mjs`.
+  instalación con `node --version`, o ejecútalas solas con
+  `node --test src/test/javascript/player.test.mjs src/test/javascript/options.test.mjs`.
 - Git y PowerShell (los comandos de este documento son de PowerShell, en Windows).
 
 ## Compilar y ejecutar las pruebas
@@ -270,7 +272,7 @@ Para volver a los logs en JSON y quitar las sesiones de prueba: `Remove-Item Env
 ### Interfaz web
 
 La interfaz (sección 11 de la especificación) es una sola página en
-`pokearena/src/main/resources/static/` (`index.html`, `app.js`, `player.js` y `styles.css`), sin
+`pokearena/src/main/resources/static/` (`index.html`, `app.js`, `player.js`, `options.js` y `styles.css`), sin
 frameworks ni bibliotecas externas, que habla con la API real en el mismo origen. La única
 excepción es el script oficial de Google Identity Services, que la política de seguridad de
 contenido permite solo desde `accounts.google.com/gsi/`.
@@ -279,19 +281,24 @@ contenido permite solo desde `accounts.google.com/gsi/`.
   `APP_GOOGLE_CLIENT_ID`, ver arriba) y, con el perfil `dev`, "Sin sesión", "Jugador" y
   "Administrador", que piden un token a `POST /api/v1/dev/sesiones`. El token vive **solo en
   memoria**: al recargar la página se vuelve a "Sin sesión". Sin el perfil `dev`, la interfaz oculta
-  los botones de prueba.
+  los botones de prueba y muestra el aviso "Las sesiones de prueba no están disponibles en este
+  ambiente."
 - **Bienvenida y catálogo del jugador (historias 1.1.1, 3.1.1 y 3.1.2):** la bienvenida muestra el
   estado de la colección inicial que informa el servidor (`initialCollection`, también en las
   sesiones de prueba). La pestaña "Catálogo y mi colección" filtra por tipo y costo, con la casilla
   "Solo mis cartas", la imagen grande, las copias y "Cargar más". Sus casos rápidos incluyen tipo
   inexistente, límite 0, token de Google inválido y "Segundo ingreso del jugador", que vuelve a pedir
   la sesión del jugador de prueba y confirma `ALREADY_DELIVERED`.
-- **Crear carta, Crear ubicación y Buscar carta:** formularios con todos los campos. Tipos y
-  rarezas son listas fijas (las semillas de la base) y la habilidad es un texto con `HAB-000` como
-  valor inicial. "Generar imagen" crea con `canvas` una imagen válida del tamaño exacto. La
-  ubicación arma el JSON del campo `effect` según el tipo de efecto y muestra `NONE` seleccionada
-  por defecto en la energía extra. La búsqueda muestra una tabla con miniatura y estado de imagen,
-  y "Cargar más" pide la página siguiente con el cursor.
+- **Opciones desde la API:** la interfaz no tiene escritos tipos, rarezas, rangos, habilidades,
+  modalidades de energía, efectos ni requisitos de imagen. Después de iniciar sesión pide
+  `GET /api/v1/opciones/catalogo` y, como administrador, `GET /api/v1/opciones/creacion`; si la carga
+  falla, muestra el error y deshabilita los formularios de creación, sin valores de respaldo.
+- **Crear carta, Crear ubicación y Buscar carta:** formularios con todos los campos. La habilidad se
+  elige en una lista de las habilidades activas. "Generar imagen" crea con `canvas` una imagen válida
+  con la resolución mínima que informa el servidor. La ubicación arma los campos y el JSON de `effect`
+  con la descripción de parámetros de cada efecto, y muestra seleccionada la modalidad de energía por
+  defecto que informa el servidor (`NONE`). La búsqueda muestra una tabla con miniatura y estado de
+  imagen, y "Cargar más" pide la página siguiente con el cursor.
 - **Idempotencia:** cada creación genera su `Idempotency-Key` en el navegador; "Repetir con la
   misma clave" reenvía la última creación con la misma clave, el mismo contenido y la misma sesión,
   y debe devolver la misma respuesta sin crear nada nuevo.
@@ -324,10 +331,10 @@ PokeArena
         │       ├── application.properties, application-dev.properties
         │       ├── db/migration          migraciones Flyway (V1 esquema y semillas, V2, ...)
         │       ├── openapi/pokearena.yaml contrato HTTP
-        │       └── static                interfaz web (index.html, app.js, player.js, styles.css)
+        │       └── static                interfaz web (index.html, app.js, player.js, options.js, styles.css)
         └── test
             ├── java/cr/ac/tec/pokearena  pruebas (*Test unitarias, *IT de integración, support/)
-            └── javascript                pruebas de la interfaz del jugador (node --test)
+            └── javascript                pruebas de la interfaz (player y opciones, node --test)
 ```
 
 El código vive en `cr.ac.tec.pokearena`, organizado en capas (sección 4.1 de la especificación).
@@ -335,8 +342,8 @@ Cada paquete tiene un `package-info.java` que explica su responsabilidad y lo qu
 
 | Capa | Paquete | Qué contiene | Puede usar |
 |---|---|---|---|
-| Presentación | `src/main/resources/static/` | Interfaz web: `index.html` (estructura), `app.js` (sesiones, formularios del administrador, casos rápidos y panel de respuesta), `player.js` (estado del catálogo del jugador, bienvenida y Google, sin DOM: lo prueban las pruebas de JavaScript) y `styles.css` | La API por HTTP |
-| API | `api.controller` | `SessionController` (inicio de sesión), `CatalogController` (catálogo del jugador), `CardController`, `LocationController`, `ImageFileController`, `ConfigurationController` (client id de Google) y `DevSessionController` (solo `dev`) | `application` |
+| Presentación | `src/main/resources/static/` | Interfaz web: `index.html` (estructura), `app.js` (sesiones, formularios del administrador, casos rápidos y panel de respuesta), `player.js` (estado del catálogo del jugador, bienvenida y Google, sin DOM), `options.js` (lectura de las opciones de la API, sin DOM; ambos los prueban las pruebas de JavaScript) y `styles.css` | La API por HTTP |
+| API | `api.controller` | `SessionController` (inicio de sesión), `CatalogController` (catálogo del jugador), `CardController`, `LocationController`, `ImageFileController`, `ConfigurationController` (client id de Google), `OptionsController` (opciones de filtros y formularios) y `DevSessionController` (solo `dev`) | `application` |
 | | `api.dto` | Cuerpos HTTP: fichas, páginas y sesiones | |
 | | `api.error` | `ApiErrorHandler` (único manejador global) y el formato único `ApiError` | |
 | | `api.security` | `AuthorizationInterceptor`, `@RequiresRole`, `@PublicRoute` | |
@@ -349,11 +356,11 @@ Cada paquete tiene un `package-info.java` que explica su responsabilidad y lo qu
 | | `domain.effect` | Plug-ins de efectos de ubicación y su registro | |
 | | `domain.error` | `DomainException` y sus familias | |
 | | `domain.repository` | Puertos de persistencia | |
-| Infraestructura | `infrastructure.persistence` | Repositorios JDBC y `TransactionalUnitOfWork` | `domain` y `application` |
+| Infraestructura | `infrastructure.persistence` | Repositorios JDBC (un adaptador por puerto, con el mapeo de cartas compartido en `CardRows`) y `TransactionalUnitOfWork` | `domain` y `application` |
 | | `infrastructure.storage` | Procesador y almacenamiento de imágenes, tarea de reintentos | |
 | | `infrastructure.identity` | Emisión y verificación de las credenciales propias (JWT) y `GoogleIdentityProvider`, el verificador de los tokens de Google (firma con las llaves públicas JWKS, emisor, vencimiento y audiencia) | |
 | | `infrastructure.cache` | Caché del catálogo: `RedisCatalogCache` (con `REDIS_HOST`) y `NoCatalogCache` (sin Redis) | |
-| | `infrastructure.config` | Ensamblado de los casos de uso con sus puertos | |
+| | `infrastructure.config` | Ensamblado de los casos de uso con sus puertos y comprobaciones al arrancar (por ejemplo, `ImageSizeLimitCheck`: el peso máximo de imagen tiene una sola fuente) | |
 
 Las reglas de dependencia se verifican con ArchUnit en cada `.\mvnw.cmd clean verify`.
 
