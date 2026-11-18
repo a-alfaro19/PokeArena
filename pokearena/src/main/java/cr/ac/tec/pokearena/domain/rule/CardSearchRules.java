@@ -67,9 +67,9 @@ public final class CardSearchRules {
 
         String code = text(parameters, CODE);
         String nameFragment = nameFragment(parameters);
-        Range cost = range(parameters, COST, COST_MIN, COST_MAX, "el costo",
+        QueryParameters.Bounds cost = range(parameters, COST, COST_MIN, COST_MAX, "el costo",
                 CardFieldRules.MIN_COST, CardFieldRules.MAX_COST);
-        Range power = range(parameters, POWER, POWER_MIN, POWER_MAX, "el poder",
+        QueryParameters.Bounds power = range(parameters, POWER, POWER_MIN, POWER_MAX, "el poder",
                 CardFieldRules.MIN_POWER, CardFieldRules.MAX_POWER);
 
         CardSearchCriteria.Builder criteria = CardSearchCriteria.builder()
@@ -125,51 +125,46 @@ public final class CardSearchRules {
         return name == null ? null : NameNormalizer.normalize(name);
     }
 
-    /** Rango de un campo numérico; un extremo {@code null} es un rango abierto por ese lado. */
-    private record Range(Integer min, Integer max) {
-    }
-
     /**
      * Rango de costo o poder. Un valor exacto ({@code cost=3}) es el rango de un solo valor
      * ({@code 3..3}). Rechaza combinar el valor exacto con un rango del mismo campo y un mínimo mayor
      * que el máximo; en ambos casos el criterio informado es el del campo ({@code cost} o {@code power}).
      */
-    private static Range range(Map<String, List<String>> parameters, String exactName, String minName,
-            String maxName, String label, int lowest, int highest) {
-        Integer exact = integer(parameters, exactName, lowest, highest);
-        Integer min = integer(parameters, minName, lowest, highest);
-        Integer max = integer(parameters, maxName, lowest, highest);
-        if (exact != null && (min != null || max != null)) {
+    private static QueryParameters.Bounds range(Map<String, List<String>> parameters, String exactName,
+            String minName, String maxName, String label, int lowest, int highest) {
+        Integer exact = QueryParameters.boundedInteger(parameters, exactName, lowest, highest,
+                problem -> integerError(exactName, problem, lowest, highest));
+        // Los extremos se leen igual que en el catálogo del jugador (QueryParameters.bounds).
+        QueryParameters.Bounds bounds = QueryParameters.bounds(parameters, minName, maxName, lowest, highest,
+                (name, problem) -> integerError(name, problem, lowest, highest));
+        if (exact != null && (bounds.min() != null || bounds.max() != null)) {
             throw ValidationException.invalidSearchCriteria(exactName, "No combine un valor exacto de " + label
                     + " ('" + exactName + "') con un rango ('" + minName + "' o '" + maxName + "').", null);
         }
-        if (QueryParameters.inverted(min, max)) {
-            throw ValidationException.invalidSearchCriteria(exactName, "El mínimo de " + label + " (" + min
-                    + ") no puede ser mayor que el máximo (" + max + ").", null);
+        if (bounds.inverted()) {
+            throw ValidationException.invalidSearchCriteria(exactName, "El mínimo de " + label + " ("
+                    + bounds.min() + ") no puede ser mayor que el máximo (" + bounds.max() + ").", null);
         }
-        return exact != null ? new Range(exact, exact) : new Range(min, max);
+        return exact != null ? new QueryParameters.Bounds(exact, exact) : bounds;
     }
 
-    /** Entero entre {@code lowest} y {@code highest}, o {@code null} si el criterio no se indicó. */
-    private static Integer integer(Map<String, List<String>> parameters, String name, int lowest, int highest) {
-        List<String> allowed = List.of(lowest + ".." + highest);
-        // Un decimal ("1.5") o un texto ("abc") tienen el mismo tipo de error que un valor fuera de rango.
-        return QueryParameters.boundedInteger(parameters, name, lowest, highest,
-                problem -> ValidationException.invalidSearchCriteria(name, switch (problem) {
-                    case NOT_AN_INTEGER -> "El criterio '" + name + "' debe ser un número entero entre "
-                            + lowest + " y " + highest + ".";
-                    case OUT_OF_RANGE -> "El criterio '" + name + "' debe estar entre " + lowest + " y "
-                            + highest + ".";
-                }, allowed));
+    /**
+     * Error de un criterio entero. Un decimal ("1.5") o un texto ("abc") tienen el mismo tipo de error que un
+     * valor fuera de rango.
+     */
+    private static ValidationException integerError(String name, QueryParameters.IntegerProblem problem, int lowest,
+            int highest) {
+        return ValidationException.invalidSearchCriteria(name, switch (problem) {
+            case NOT_AN_INTEGER -> "El criterio '" + name + "' debe ser un número entero entre " + lowest + " y "
+                    + highest + ".";
+            case OUT_OF_RANGE -> "El criterio '" + name + "' debe estar entre " + lowest + " y " + highest + ".";
+        }, List.of(lowest + ".." + highest));
     }
 
     /** Código de un catálogo (tipo o rareza) que debe existir, o {@code null} si no se indicó. */
     private static String catalogValue(Map<String, List<String>> parameters, String name, String label,
             List<String> allowed) {
-        String value = text(parameters, name);
-        if (value != null && !allowed.contains(value)) {
-            throw ValidationException.invalidSearchCriteria(name, label + " '" + value + "' no existe.", allowed);
-        }
-        return value;
+        return QueryParameters.existingCode(parameters, name, allowed, unknown ->
+                ValidationException.invalidSearchCriteria(name, label + " '" + unknown + "' no existe.", allowed));
     }
 }

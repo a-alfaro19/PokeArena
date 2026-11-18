@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeSet;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import cr.ac.tec.pokearena.domain.error.ValidationException;
@@ -13,7 +14,9 @@ import cr.ac.tec.pokearena.domain.error.ValidationException;
  * Propósito: lectura común de los parámetros de consulta de la búsqueda del administrador (7.3) y del
  * catálogo del jugador (8.3).
  * Responsabilidades: detectar nombres desconocidos y valores repetidos o vacíos, leer un texto sin
- * espacios, leer un entero acotado y detectar un rango con el mínimo mayor que el máximo.
+ * espacios, leer un entero acotado, leer los dos extremos de un rango (por ejemplo {@code costMin} y
+ * {@code costMax}), detectar un rango con el mínimo mayor que el máximo y comprobar que un código exista
+ * en su catálogo (por ejemplo el tipo).
  * Referencia: secciones 7.3 y 8.3 (corrección 7: una sola lógica para las historias).
  *
  * <p>Decisión: aquí está solo lo que las dos historias hacen igual. El <b>tipo</b> de error y su
@@ -37,6 +40,20 @@ final class QueryParameters {
         NOT_AN_INTEGER,
         /** Entero fuera de los límites. */
         OUT_OF_RANGE
+    }
+
+    /**
+     * Extremos de un rango leídos de dos parámetros; un extremo {@code null} es un rango abierto por ese lado.
+     *
+     * @param min mínimo inclusivo, o {@code null}
+     * @param max máximo inclusivo, o {@code null}
+     */
+    record Bounds(Integer min, Integer max) {
+
+        /** {@code true} si los dos extremos están y el mínimo es mayor que el máximo. */
+        boolean inverted() {
+            return QueryParameters.inverted(min, max);
+        }
     }
 
     private QueryParameters() {
@@ -87,6 +104,34 @@ final class QueryParameters {
             throw onProblem.apply(IntegerProblem.OUT_OF_RANGE);
         }
         return number;
+    }
+
+    /**
+     * Lee los dos extremos de un rango, cada uno como entero entre {@code lowest} y {@code highest}, primero
+     * el mínimo y después el máximo. No comprueba el orden de los extremos: cada historia decide cuándo y con
+     * qué error rechazar un rango invertido ({@link Bounds#inverted()}).
+     *
+     * @param onProblem arma el error de la historia para el parámetro y el problema encontrados
+     */
+    static Bounds bounds(Map<String, List<String>> parameters, String minName, String maxName, int lowest,
+            int highest, BiFunction<String, IntegerProblem, ValidationException> onProblem) {
+        Integer min = boundedInteger(parameters, minName, lowest, highest, problem -> onProblem.apply(minName, problem));
+        Integer max = boundedInteger(parameters, maxName, lowest, highest, problem -> onProblem.apply(maxName, problem));
+        return new Bounds(min, max);
+    }
+
+    /**
+     * Código de un catálogo (tipo o rareza) que debe existir, o {@code null} si el parámetro no se indicó.
+     *
+     * @param onUnknown arma el error de la historia con el valor que no existe
+     */
+    static String existingCode(Map<String, List<String>> parameters, String name, Collection<String> allowed,
+            Function<String, ValidationException> onUnknown) {
+        String value = text(parameters, name);
+        if (value != null && !allowed.contains(value)) {
+            throw onUnknown.apply(value);
+        }
+        return value;
     }
 
     /** {@code true} si los dos extremos están y el mínimo es mayor que el máximo. */
