@@ -1,45 +1,28 @@
 package cr.ac.tec.pokearena.infrastructure.persistence;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import cr.ac.tec.pokearena.domain.model.Card;
-import cr.ac.tec.pokearena.domain.model.CardCode;
-import cr.ac.tec.pokearena.domain.model.CardFields;
 import cr.ac.tec.pokearena.domain.model.CardSearchCriteria;
-import cr.ac.tec.pokearena.domain.model.CardType;
-import cr.ac.tec.pokearena.domain.model.CatalogCriteria;
-import cr.ac.tec.pokearena.domain.model.OwnedCard;
-import cr.ac.tec.pokearena.domain.model.ImageStatus;
-import cr.ac.tec.pokearena.domain.model.Rarity;
 import cr.ac.tec.pokearena.domain.model.StoredCard;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
-import cr.ac.tec.pokearena.domain.repository.CollectibleCardRepository;
-import cr.ac.tec.pokearena.domain.repository.PlayerCatalogRepository;
 
 /**
- * Propósito: implementación JDBC de {@link CardRepository}, {@link CollectibleCardRepository} y
- * {@link PlayerCatalogRepository} (tablas card, card_type_counter y, para la propiedad, player_card).
- * Responsabilidades: entregar el consecutivo de cada tipo de forma atómica, guardar cartas, leer el
- * destino de evolución de la habilidad de una carta, buscar cartas por criterios, elegir al azar las
- * cartas de la colección inicial y, para el catálogo del jugador, leer las cartas disponibles y activas,
- * las cartas propias con sus copias y las copias de los códigos de una página.
- * Referencia: sección 7.1 ("Código único" y paso 10), sección 7.3 (búsqueda), sección 8.2 (pasos 3 y 4)
- * y sección 8.3 (catálogo y colección, Anexo A.6).
+ * Propósito: implementación JDBC de {@link CardRepository}: las cartas tal como las administra el
+ * administrador (tablas card y card_type_counter).
+ * Responsabilidades: entregar el consecutivo de cada tipo de forma atómica, guardar cartas, leer el destino
+ * de evolución de la habilidad de una carta y buscar cartas por criterios. Las cartas que un jugador puede
+ * recibir están en {@link JdbcCollectibleCardRepository} y el catálogo del jugador en
+ * {@link JdbcPlayerCatalogRepository} (un adaptador por puerto, SRP); el mapeo de filas lo comparten en
+ * {@link CardRows}.
+ * Referencia: sección 7.1 ("Código único" y paso 10) y sección 7.3 (búsqueda).
  *
  * <p>El consecutivo usa una sola sentencia {@code UPDATE ... RETURNING}: PostgreSQL bloquea la fila
  * del tipo hasta que la transacción termina, así dos transacciones del mismo tipo nunca reciben el
@@ -47,25 +30,14 @@ import cr.ac.tec.pokearena.domain.repository.PlayerCatalogRepository;
  * Por eso esta operación exige una transacción abierta.
  */
 @Repository
-public class JdbcCardRepository implements CardRepository, CollectibleCardRepository, PlayerCatalogRepository {
-
-    /**
-     * Selección al azar de la colección inicial (parámetros: rareza, semilla como texto y cantidad).
-     * Es pública para que la prueba de rendimiento pida el plan de esta misma consulta.
-     */
-    public static final String PICK_COLLECTIBLE_SQL = """
-            SELECT code FROM card
-            WHERE rarity_code = ? AND available AND active
-            ORDER BY md5(code || ?), code
-            LIMIT ?
-            """;
+public class JdbcCardRepository implements CardRepository {
 
     private final JdbcTemplate jdbc;
-    private final AbilityRows abilityRows;
+    private final CardRows cardRows;
 
-    public JdbcCardRepository(JdbcTemplate jdbc, AbilityRows abilityRows) {
+    public JdbcCardRepository(JdbcTemplate jdbc, CardRows cardRows) {
         this.jdbc = jdbc;
-        this.abilityRows = abilityRows;
+        this.cardRows = cardRows;
     }
 
     @Override
@@ -109,74 +81,6 @@ public class JdbcCardRepository implements CardRepository, CollectibleCardReposi
     @Override
     public List<StoredCard> search(CardSearchCriteria criteria, long afterId, int maxRows) {
         CardSearchSql.Query query = CardSearchSql.build(criteria, afterId, maxRows);
-        return jdbc.query(query.sql(), (rs, row) -> storedCard(rs), query.arguments().toArray());
-    }
-
-    /** Catálogo compartible: mantiene la visibilidad del jugador dentro de la consulta paginada. */
-    @Override
-    public List<StoredCard> available(CatalogCriteria criteria, long afterId, int maxRows) {
-        CardSearchSql.Query query = CardSearchSql.catalog(criteria.cardCriteria(), afterId, maxRows, null);
-        return jdbc.query(query.sql(), (rs, row) -> storedCard(rs), query.arguments().toArray());
-    }
-
-    /** Colección privada: filtra antes del límite y obtiene las copias en la misma consulta. */
-    @Override
-    public List<OwnedCard> owned(UUID playerId, CatalogCriteria criteria, long afterId, int maxRows) {
-        CardSearchSql.Query query = CardSearchSql.catalog(criteria.cardCriteria(), afterId, maxRows, playerId);
-        return jdbc.query(query.sql(), (rs, row) -> new OwnedCard(storedCard(rs), rs.getInt("copies")),
-                query.arguments().toArray());
-    }
-
-    /** Una consulta por página, no una por carta; no consulta nada para una página vacía. */
-    @Override
-    public Map<String, Integer> findCopies(UUID playerId, Collection<String> cardCodes) {
-        if (cardCodes.isEmpty()) {
-            return Map.of();
-        }
-        // Solo se genera la cantidad de placeholders; jugador y códigos siguen parametrizados.
-        String placeholders = String.join(",", Collections.nCopies(cardCodes.size(), "?"));
-        List<Object> arguments = new ArrayList<>();
-        arguments.add(playerId);
-        arguments.addAll(cardCodes);
-        Map<String, Integer> copies = new HashMap<>();
-        jdbc.query("SELECT card_code, copies FROM player_card WHERE player_id = ? AND card_code IN ("
-                + placeholders + ")", (org.springframework.jdbc.core.RowCallbackHandler) rs ->
-                        copies.put(rs.getString("card_code"), rs.getInt("copies")), arguments.toArray());
-        return copies;
-    }
-
-    private StoredCard storedCard(ResultSet rs) throws SQLException {
-        CardFields fields = new CardFields(rs.getString("name"), rs.getString("name_normalized"),
-                rs.getInt("cost"), rs.getInt("power"),
-                new CardType(rs.getString("type_code"), rs.getString("type_name")),
-                new Rarity(rs.getString("rarity_code"), rs.getString("rarity_name")));
-        Card card = new Card(new CardCode(rs.getString("code")), fields, abilityRows.map(rs),
-                rs.getString("image_large_url"), rs.getString("image_small_url"),
-                ImageStatus.valueOf(rs.getString("image_status")), rs.getBoolean("available"),
-                rs.getObject("created_at", OffsetDateTime.class).toInstant());
-        return new StoredCard(rs.getLong("id"), card);
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Cartas que un jugador puede recibir (CollectibleCardRepository, sección 8.2).
-    // ---------------------------------------------------------------------------------------------
-
-    @Override
-    public int countCollectible(String rarityCode) {
-        return jdbc.queryForObject("""
-                SELECT count(*) FROM card WHERE rarity_code = ? AND available AND active
-                """, Integer.class, rarityCode);
-    }
-
-    /**
-     * Ordena las cartas candidatas por {@code md5(code || semilla)} y toma las primeras: es un orden
-     * pseudoaleatorio que depende solo de la semilla y del código, así la misma semilla da la misma
-     * selección y semillas distintas dan otra. Las cartas son distintas porque {@code code} es único.
-     * La base calcula el md5 de cada candidata y conserva solo las {@code count} menores (Top-N heapsort):
-     * nunca devuelve ni guarda en memoria el catálogo completo. El código desempata, por si acaso.
-     */
-    @Override
-    public List<String> pickRandomCollectible(String rarityCode, long seed, int count) {
-        return jdbc.queryForList(PICK_COLLECTIBLE_SQL, String.class, rarityCode, Long.toString(seed), count);
+        return jdbc.query(query.sql(), (rs, row) -> cardRows.map(rs), query.arguments().toArray());
     }
 }
