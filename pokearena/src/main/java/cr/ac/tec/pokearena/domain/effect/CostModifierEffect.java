@@ -1,15 +1,15 @@
 package cr.ac.tec.pokearena.domain.effect;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Supplier;
 
 /**
  * Propósito: plug-in del efecto "Modificador de costo" (criterio C.2): cambia el costo de las cartas
  * que se juegan en la ubicación.
  * Responsabilidades: exigir una cantidad entera de -5 a +5 ({@code amount}) y, si se indica un tipo
- * afectado ({@code affectedType}, opcional), que exista.
+ * afectado ({@code affectedType}, opcional), que exista; y describir esos parámetros para la interfaz.
  * Referencia: sección 7.2, tabla de plug-ins de efecto.
  */
 public final class CostModifierEffect implements LocationEffectType {
@@ -21,6 +21,11 @@ public final class CostModifierEffect implements LocationEffectType {
     /** Cantidad que modifica el costo: de -5 a +5. */
     public static final int MIN_AMOUNT = -5;
     public static final int MAX_AMOUNT = 5;
+
+    /** Parámetros del efecto: los únicos permitidos, con las mismas constantes que valida. */
+    private static final List<EffectParameterSpec> PARAMETERS = List.of(
+            EffectParameterSpec.integer(AMOUNT, "Monto", true, MIN_AMOUNT, MAX_AMOUNT),
+            EffectParameterSpec.cardType(AFFECTED_TYPE, "Tipo afectado", false));
 
     private final Supplier<? extends Collection<String>> existingTypes;
 
@@ -35,8 +40,18 @@ public final class CostModifierEffect implements LocationEffectType {
     }
 
     @Override
+    public String name() {
+        return "Modificador de costo";
+    }
+
+    @Override
+    public List<EffectParameterSpec> parameters() {
+        return PARAMETERS;
+    }
+
+    @Override
     public void validate(Map<String, Object> parameters) {
-        EffectParameters.allowOnly(CODE, parameters, Set.of(AMOUNT, AFFECTED_TYPE));
+        EffectParameters.allowOnly(CODE, parameters, PARAMETERS);
         EffectParameters.requireInteger(CODE, parameters, AMOUNT, MIN_AMOUNT, MAX_AMOUNT);
         EffectParameters.optionalType(CODE, parameters, AFFECTED_TYPE, existingTypes.get());
     }

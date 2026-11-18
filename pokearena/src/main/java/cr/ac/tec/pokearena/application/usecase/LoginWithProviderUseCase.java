@@ -47,7 +47,9 @@ import cr.ac.tec.pokearena.domain.model.PlayerAccount;
  *   <li>Paso 6 "no bloquea el ingreso": la entrega ({@code DeliverInitialCollectionUseCase}, por el puerto
  *       {@link InitialCollectionDelivery}) corre después de tener la cuenta y en su propia transacción. Si
  *       lanza una excepción, {@link NonBlockingInitialCollection} registra un aviso y la sesión se abre igual
- *       con {@code PENDING_ERROR}; el siguiente ingreso vuelve a intentar.</li>
+ *       con {@code PENDING_ERROR}; el siguiente ingreso vuelve a intentar. Si la cuenta leída en el paso 5
+ *       ya tiene la colección {@code DELIVERED}, no se invoca la entrega y se informa
+ *       {@code ALREADY_DELIVERED}: un ingreso normal no bloquea la fila del jugador.</li>
  *   <li>Este caso de uso nunca ve un token de PokéArena entrante: después del ingreso, la autorización de
  *       la API solo usa las credenciales que se emiten en el paso 7. Por eso agregar un proveedor no la
  *       cambia.</li>
@@ -98,8 +100,9 @@ public class LoginWithProviderUseCase {
 
         // Paso 6 (mensajes 14 y 15): entregar la colección inicial, DESPUÉS de tener la cuenta y en otra
         // transacción (la del caso de uso RecibirColecciónInicial, diagrama A.5). Nunca impide el ingreso:
-        // si falla, PENDING_ERROR con un aviso en el log, y el siguiente ingreso reintenta.
-        InitialCollectionStatus collection = initialCollection.deliver(player.id());
+        // si falla, PENDING_ERROR con un aviso en el log, y el siguiente ingreso reintenta. Si la cuenta leída
+        // en el paso 5 ya la tiene DELIVERED, no se invoca la entrega y se informa ALREADY_DELIVERED.
+        InitialCollectionStatus collection = initialCollection.deliver(account);
 
         // Paso 7 (mensajes 16 y 17): emitir las credenciales propias, con vencimiento corto.
         IssuedToken token = tokenIssuer.issue(new AuthenticatedUser(player.id(), player.role()));

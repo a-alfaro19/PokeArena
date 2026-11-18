@@ -42,14 +42,14 @@ class PlayerInterfaceBehaviorTest {
     Path temporaryDirectory;
 
     @Test
-    @DisplayName("Historias 3.1.2, 1.1.1 y 3.1.1: filtros, paginación, sesión, privacidad y presentación de la colección")
+    @DisplayName("Historias 3.1.2, 1.1.1 y 3.1.1 y opciones de la API: filtros, paginación, sesión, privacidad, colección y opciones sin valores fijos")
     void javascriptBehavior() throws Exception {
         String node = System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node";
         requireNode(node, temporaryDirectory.resolve("node-version.log"));
 
         // Ejecuta los comportamientos reales, incluidos eventos del formulario y acciones de casos rápidos.
         String output = runNode(node, temporaryDirectory.resolve("player-tests.log"),
-                "--test", "src/test/javascript/player.test.mjs");
+                "--test", "src/test/javascript/player.test.mjs", "src/test/javascript/options.test.mjs");
         assertThat(output).as("node --test no ejecutó ninguna prueba").contains("pass");
     }
 

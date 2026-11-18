@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -157,9 +158,50 @@ class LocationEffectsTest {
             LocationEffectRegistry extended = new LocationEffectRegistry(List.of(new TurnRestrictionEffect(),
                     new WeatherEffect()));
 
-            assertThat(extended.validate("WEATHER", Map.of("kind", "lluvia")))
-                    .contains(new LocationEffect("WEATHER", Map.of("kind", "lluvia")));
+            assertThat(extended.validate("WEATHER", Map.of("intensity", 2)))
+                    .contains(new LocationEffect("WEATHER", Map.of("intensity", 2)));
             assertThat(extended.codes()).contains("WEATHER");
+            // La interfaz también lo recibe, con sus parámetros, sin cambiar el registro.
+            assertThat(extended.types()).extracting(LocationEffectType::code)
+                    .containsExactly("TURN_RESTRICTION", "WEATHER");
+        }
+    }
+
+    @Nested
+    @DisplayName("Descripción de los parámetros (opciones de la interfaz)")
+    class ParameterDescriptions {
+
+        @Test
+        @DisplayName("Cada efecto acepta exactamente los parámetros que describe: uno desconocido se rechaza con esos nombres")
+        void descriptionMatchesValidation() {
+            for (LocationEffectType type : registry.types()) {
+                List<String> described = type.parameters().stream().map(EffectParameterSpec::name).sorted().toList();
+
+                assertThatThrownBy(() -> type.validate(Map.of("desconocido", 1)))
+                        .as(type.code())
+                        .isInstanceOfSatisfying(ValidationException.class,
+                                error -> assertThat(error.allowedValues()).isEqualTo(described));
+            }
+        }
+
+        @Test
+        @DisplayName("Los rangos descritos son los mismos que valida cada efecto")
+        void describedRangesAreValidated() {
+            EffectParameterSpec amount = new TypeBonusEffect(() -> TYPES).parameters().get(1);
+            assertThat(registry.validate("TYPE_BONUS", Map.of("type", "FUE", "amount", amount.max()))).isPresent();
+            assertInvalid("TYPE_BONUS", Map.of("type", "FUE", "amount", amount.max() + 1));
+
+            EffectParameterSpec turns = new TurnRestrictionEffect().parameters().getFirst();
+            assertThat(registry.validate("TURN_RESTRICTION", Map.of("turns", List.of(turns.min(), turns.max()))))
+                    .isPresent();
+            assertInvalid("TURN_RESTRICTION", Map.of("turns", List.of(turns.max() + 1)));
+        }
+
+        @Test
+        @DisplayName("El registro lista los efectos ordenados por código")
+        void typesOrderedByCode() {
+            assertThat(registry.types()).extracting(LocationEffectType::code)
+                    .containsExactly(CostModifierEffect.CODE, TurnRestrictionEffect.CODE, TypeBonusEffect.CODE);
         }
     }
 
@@ -171,9 +213,20 @@ class LocationEffectsTest {
         }
 
         @Override
+        public String name() {
+            return "Clima";
+        }
+
+        @Override
+        public List<EffectParameterSpec> parameters() {
+            return List.of(EffectParameterSpec.integer("intensity", "Intensidad", true, 1, 3));
+        }
+
+        @Override
         public void validate(Map<String, Object> parameters) {
-            if (!(parameters.get("kind") instanceof String)) {
-                throw ValidationException.invalidEffect("effect", "El clima necesita 'kind'.", List.of());
+            if (!parameters.keySet().equals(Set.of("intensity"))
+                    || !(parameters.get("intensity") instanceof Integer intensity) || intensity < 1 || intensity > 3) {
+                throw ValidationException.invalidEffect("effect", "El clima necesita 'intensity' de 1 a 3.", List.of());
             }
         }
     }

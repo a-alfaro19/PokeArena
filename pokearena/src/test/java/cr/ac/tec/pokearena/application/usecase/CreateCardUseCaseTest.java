@@ -3,6 +3,8 @@ package cr.ac.tec.pokearena.application.usecase;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,6 +49,7 @@ import cr.ac.tec.pokearena.domain.repository.CardCatalogRepository;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
 import cr.ac.tec.pokearena.infrastructure.storage.ImageIoProcessor;
+import cr.ac.tec.pokearena.support.InMemoryAbilityRepository;
 import cr.ac.tec.pokearena.support.TestImages;
 
 /**
@@ -79,7 +82,7 @@ class CreateCardUseCaseTest {
 
     private final CreateCardUseCase useCase = new CreateCardUseCase(guard,
             new ImageCreationSteps(guard, processor, storage, new SnapshotUnitOfWork()), new FixedCatalog(),
-            code -> Optional.ofNullable(abilityTable.get(code)), cards, processor, storage, () -> NOW, catalogCache);
+            new InMemoryAbilityRepository(abilityTable), cards, processor, storage, () -> NOW, catalogCache);
 
     private final UUID admin = UUID.randomUUID();
 
@@ -260,6 +263,21 @@ class CreateCardUseCaseTest {
             assertThat(cards.counters).doesNotContainKey("FUE");
             assertThat(cards.saved).isEmpty();
             assertThat(storage.deleted).containsExactlyElementsOf(storage.saved);
+        }
+
+        @Test
+        @DisplayName("Sección 9: si borrar los archivos falla al compensar, se conserva el error original (INVALID_EVOLUTION, no un 500) y el fallo del borrado queda adjunto")
+        void failedCompensationKeepsOriginalError() {
+            abilityTable.put("HAB-EVO", new Ability("HAB-EVO", "Evoluciona a sí misma", null, "PKA-FUE-001"));
+            storage.failOnDelete = true;
+
+            assertThatThrownBy(() -> create("k1", command("FUE", "HAB-EVO")))
+                    .isInstanceOfSatisfying(DomainException.class, error -> {
+                        assertThat(error.type()).isEqualTo(ErrorType.INVALID_EVOLUTION);
+                        assertThat(error.getSuppressed()).singleElement().isInstanceOf(UncheckedIOException.class);
+                    });
+            assertThat(cards.saved).isEmpty();
+            assertThat(keys.responses).isEmpty();
         }
 
         @Test
@@ -481,6 +499,8 @@ class CreateCardUseCaseTest {
     private static final class InMemoryImageStorage implements ImageStorage {
         final List<String> saved = new ArrayList<>();
         final List<String> deleted = new ArrayList<>();
+        // Simula un disco que no deja borrar (por ejemplo, permisos o archivo en uso).
+        volatile boolean failOnDelete;
 
         @Override
         public StoredImages save(ImageRules rules, ValidatedImage large, byte[] thumbnail) {
@@ -492,6 +512,9 @@ class CreateCardUseCaseTest {
 
         @Override
         public void delete(String storageKey) {
+            if (failOnDelete) {
+                throw new UncheckedIOException(new IOException("Falla simulada al borrar " + storageKey));
+            }
             deleted.add(storageKey);
         }
 

@@ -187,6 +187,8 @@ Cada clase lleva un comentario inicial con su propósito y responsabilidades. Lo
 | Explorar catálogo y mi colección | `GET /api/v1/catalogo` | Jugador autenticado |
 | Credenciales de prueba (solo perfil `dev`) | `POST /api/v1/dev/sesiones` | Público en `dev` |
 | Configuración pública de la interfaz | `GET /api/v1/configuracion` | Público |
+| Opciones de filtros (tipos, rarezas, costo, paginación) | `GET /api/v1/opciones/catalogo` | Jugador autenticado (`PLAYER` o `ADMIN`) |
+| Opciones de creación (habilidades, rangos, energía, efectos, imagen) | `GET /api/v1/opciones/creacion` | Administrador |
 
 Los identificadores de Java van en inglés; los mensajes al usuario, en español.
 
@@ -435,7 +437,7 @@ Crear una ubicación solo agrega una fila disponible para partidas **nuevas**; n
 | 3 | El verificador valida **firma** (con las llaves públicas del proveedor), **emisor**, **vencimiento** y **audiencia** (debe ser el `client id` configurado en `app.identity.google.client-id`) | `INVALID_IDENTITY_TOKEN` |
 | 4 | Obtiene la identidad verificada: `proveedor`, `sub`, correo, nombre | |
 | 5 | `UnitOfWork`: busca el jugador por `(proveedor, sub)`; si no existe lo crea con rol `PLAYER` (o `ADMIN` si la identidad está en `app.admin.identities`), `elo` 0 y `initial_collection_status` `PENDING`. La unicidad la garantiza la restricción de la base: `INSERT ... ON CONFLICT DO NOTHING` y luego leer | |
-| 6 | Invoca la entrega de la colección inicial (8.2) por el puerto `InitialCollectionDelivery`, cuyo único bean es `DeliverInitialCollectionUseCase`. Ocurre **después** de crear o recuperar la cuenta y en **otra transacción**: si la entrega se revierte, la cuenta sigue existiendo. **Nunca impide el ingreso:** si lanza una excepción, se registra un aviso en el log (con el `correlationId` de la solicitud, que viaja en el MDC) y la sesión se abre igual con `PENDING_ERROR`; como la entrega es todo o nada, no queda nada parcial y el siguiente ingreso la reintenta. Mensajes: `DELIVERED` y `ALREADY_DELIVERED` sin mensaje (`null`); `PENDING_NO_CARDS` "El juego aún no está disponible: todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior."; `PENDING_ERROR` "No pudimos entregar tu colección, se reintentará en tu próximo ingreso." Las credenciales de prueba (`dev/sesiones`, solo perfil `dev`) entregan la colección al jugador de prueba de rol PLAYER por la misma vía, informan su resultado en `initialCollection` igual que el paso 8 (`null` para el administrador de prueba, ver 5.2) y no impiden la sesión si falla | no bloquea el ingreso (`PENDING_ERROR`) |
+| 6 | Si la cuenta leída en el paso 5 ya tiene la colección `DELIVERED`, no se invoca la entrega y se informa `ALREADY_DELIVERED` (el estado `initial_collection_status` viaja en `PlayerAccount`, leído en la misma consulta que trae al jugador, sin bloqueo; así un ingreso normal no abre otra transacción ni bloquea la fila del jugador). Si no, invoca la entrega de la colección inicial (8.2) por el puerto `InitialCollectionDelivery`, cuyo único bean es `DeliverInitialCollectionUseCase`. Ocurre **después** de crear o recuperar la cuenta y en **otra transacción**: si la entrega se revierte, la cuenta sigue existiendo. **Nunca impide el ingreso:** si lanza una excepción, se registra un aviso en el log (con el `correlationId` de la solicitud, que viaja en el MDC) y la sesión se abre igual con `PENDING_ERROR`; como la entrega es todo o nada, no queda nada parcial y el siguiente ingreso la reintenta. Mensajes: `DELIVERED` y `ALREADY_DELIVERED` sin mensaje (`null`); `PENDING_NO_CARDS` "El juego aún no está disponible: todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior."; `PENDING_ERROR` "No pudimos entregar tu colección, se reintentará en tu próximo ingreso." Las credenciales de prueba (`dev/sesiones`, solo perfil `dev`) entregan la colección al jugador de prueba de rol PLAYER por la misma vía, informan su resultado en `initialCollection` igual que el paso 8 (`null` para el administrador de prueba, ver 5.2) y no impiden la sesión si falla | no bloquea el ingreso (`PENDING_ERROR`) |
 | 7 | Emite las credenciales propias (JWT con vencimiento corto) | |
 | 8 | Responde **200** con `{ accessToken, tokenType, expiresIn, player: { id, displayName, email, role }, firstLogin, initialCollection: { status, message } }`, donde `status` es `DELIVERED`, `ALREADY_DELIVERED`, `PENDING_NO_CARDS` o `PENDING_ERROR` y `message` es un texto descriptivo cuando está pendiente (`null` si no lo está). El mensaje va dentro del objeto porque pertenece al estado | |
 
@@ -461,6 +463,7 @@ Se ejecuta durante el inicio de sesión (paso 6) y es idempotente.
 | 6 | Suma **1,000 cubos** (constante configurable `app.collection.initial-cubes`) a `cube_balance` y registra el movimiento `INITIAL_GRANT` como el **primer** movimiento del historial |
 | 7 | Marca `initial_collection_status = DELIVERED` y confirma |
 
+- **Atajo del inicio de sesión:** si la cuenta leída en el paso 5 del inicio de sesión ya tiene la colección `DELIVERED`, no se invoca la entrega y se informa `ALREADY_DELIVERED` (8.1, paso 6). Es seguro porque `DELIVERED` nunca vuelve a `PENDING`. Con `PENDING` se invoca este caso de uso, que **conserva su `SELECT ... FOR UPDATE`** (paso 1): la lectura sin bloqueo del ingreso solo evita trabajo, la decisión de entregar la toma siempre la entrega con la fila bloqueada.
 - **Todo o nada:** cartas, cubos, movimiento y marca van en **una sola transacción**. Si algo falla, no queda entrega parcial y el resultado es `PENDING_ERROR`; el siguiente ingreso reintenta.
 - **Exactamente una vez:** el bloqueo de fila garantiza que dos primeros ingresos simultáneos entreguen una sola vez, y los ingresos posteriores no vuelven a entregar.
 - **Primer movimiento de cubos:** que `INITIAL_GRANT` sea el primer movimiento del historial lo garantizan el bloqueo de la fila del jugador (`SELECT ... FOR UPDATE`) y la marca `DELIVERED`: la entrega ocurre una sola vez y, hasta ella, ninguna otra operación crea movimientos. No se agrega una consulta extra para comprobarlo, porque no cambiaría el resultado; la prueba "primer movimiento" lo verifica.
@@ -524,7 +527,7 @@ Un único contrato `src/main/resources/openapi/pokearena.yaml`, escrito **antes*
 
 ## 11. Interfaz web (presentación)
 
-Una sola aplicación en `src/main/resources/static/` (`index.html`, `app.js`, `styles.css`), sin frameworks, servida por la misma API en `http://localhost:8080`. Habla con la API real, no con datos falsos.
+Una sola aplicación en `src/main/resources/static/` (`index.html`, `app.js`, `player.js`, `options.js` y `styles.css`), sin frameworks, servida por la misma API en `http://localhost:8080`. Habla con la API real, no con datos falsos.
 
 **Estructura**
 - **Pantalla de ingreso:** botón "Entrar con Google" (Google Identity Services, con el `client id` leído al cargar de `GET /api/v1/configuracion`, pública, que responde **solo** `{ "googleClientId": "<id>" | null }` a partir de `app.identity.google.client-id`). Sin `client id` configurado, el botón queda deshabilitado con el aviso "falta APP_GOOGLE_CLIENT_ID". La política de seguridad de contenido (CSP) solo permite `accounts.google.com/gsi/` para el script, el estilo, el marco y las conexiones del botón de Google. Solo con el perfil `dev`, también botones "Entrar como administrador de prueba" y "Entrar como jugador de prueba".
@@ -532,6 +535,7 @@ Una sola aplicación en `src/main/resources/static/` (`index.html`, `app.js`, `s
 - **Vista de administrador:** pestañas **Crear carta**, **Crear ubicación** y **Buscar carta**, con los formularios y la tabla de resultados con miniatura y estado de imagen y "Cargar más".
 - **Vista de jugador:** panel de bienvenida con el resultado de la colección inicial (mensaje claro si está pendiente) y la vista **Catálogo y mi colección** con filtros de tipo y costo, la casilla "solo mis cartas", la imagen grande de cada carta y las copias.
 - **Panel de respuesta** en cada operación: método, ruta, **código HTTP con color**, el JSON, el `correlationId` y las imágenes en vista previa.
+- **Opciones desde la API:** la interfaz no tiene escritos tipos, rarezas, rangos, habilidades, modalidades de energía, efectos ni requisitos de imagen. Después de iniciar sesión pide `GET /api/v1/opciones/catalogo` (cualquier rol) y, como administrador, `GET /api/v1/opciones/creacion`; esas respuestas salen de las mismas clases que validan (`CardFieldRules`, `LocationFieldRules`, `ExtraEnergy`, los plug-ins de efecto, `ImageRules` y `Pagination`). La habilidad se elige en una lista. Si la carga falla, la interfaz muestra un error claro y deshabilita los formularios de creación, sin valores de respaldo. Los casos de prueba rápidos sí envían códigos y tamaños escritos a mano, porque prueban valores exactos.
 - **Imagen de reemplazo:** si la URL de una imagen no carga (por ejemplo, las cartas de `scripts/seed-10000-cartas.sql`, cuyas URLs no tienen archivo detrás), la interfaz muestra una imagen de reemplazo en lugar de una imagen rota. Para las demostraciones se crean unas 10 cartas reales desde la interfaz.
 
 **Casos de prueba rápidos** (botones que rellenan y envían, con imágenes generadas con `canvas` en el tamaño exacto):
@@ -660,7 +664,7 @@ Al terminar cada fase, entrega el resumen y espera la aprobación.
 
 ## Anexo A: Diagramas de secuencia (escenario de éxito)
 
-Todos empiezan en la **interfaz web**. Los pasos de cada caso de uso deben seguir este orden.
+Todos empiezan en la **interfaz web**. Los pasos de cada caso de uso deben seguir este orden. En A.1, A.2, A.3 y A.6 los primeros mensajes son la solicitud de opciones (`GET /api/v1/opciones/...`) que la interfaz hace al iniciar sesión, antes del POST o del filtro; las notas (`Note`) no llevan número.
 
 ### A.1 Crear carta
 
@@ -671,11 +675,22 @@ actor Adm as Administrador
 participant UI as Interfaz web
 participant API as API REST
 participant SEG as Seguridad
+participant OPC as Caso de uso OpcionesDeCreación
 participant UC as Caso de uso CrearCarta
 participant IMG as Procesador de imágenes
 participant ALM as Almacenamiento de imágenes
 participant UOW as Unidad de trabajo
 participant DB as PostgreSQL
+Adm->>UI: Inicia sesión y abre Crear carta
+UI->>API: GET opciones/creacion con token
+API->>SEG: Validar sesión y rol de administrador
+SEG-->>API: Administrador autenticado
+API->>OPC: obtenerOpcionesDeCreación()
+OPC->>DB: Leer habilidades activas
+DB-->>OPC: Habilidades activas
+OPC-->>API: Habilidades, rangos de costo y poder y requisitos de imagen
+API-->>UI: 200 OK con las opciones del formulario
+Note over UI: Los tipos y rarezas vienen de GET opciones/catalogo (A.6)
 Adm->>UI: Completa el formulario y elige la imagen
 UI->>API: POST cartas con datos, imagen, token y clave de idempotencia
 API->>SEG: Validar sesión y rol de administrador
@@ -683,6 +698,8 @@ SEG-->>API: Administrador autenticado
 API->>UC: crearCarta(comando)
 UC->>DB: Buscar solicitud previa con la clave de idempotencia
 DB-->>UC: No existe
+UC->>DB: Leer tipos (card_type) y rarezas (rarity)
+DB-->>UC: Tipos y rarezas
 UC->>UC: Validar nombre, costo, poder, tipo y rareza
 UC->>DB: Verificar habilidad por código y reglas de evolución
 DB-->>UC: Habilidad válida
@@ -710,12 +727,23 @@ actor Adm as Administrador
 participant UI as Interfaz web
 participant API as API REST
 participant SEG as Seguridad
+participant OPC as Caso de uso OpcionesDeCreación
 participant UC as Caso de uso CrearUbicación
 participant EFE as Registro de efectos de ubicación
 participant IMG as Procesador de imágenes
 participant ALM as Almacenamiento de imágenes
 participant UOW as Unidad de trabajo
 participant DB as PostgreSQL
+Adm->>UI: Inicia sesión y abre Crear ubicación
+UI->>API: GET opciones/creacion con token
+API->>SEG: Validar sesión y rol de administrador
+SEG-->>API: Administrador autenticado
+API->>OPC: obtenerOpcionesDeCreación()
+OPC->>EFE: Efectos registrados con sus parámetros
+EFE-->>OPC: Efectos y descripción de parámetros
+OPC-->>API: Límite de cartas, energía extra, efectos y requisitos de imagen
+API-->>UI: 200 OK con las opciones del formulario
+Note over UI: Los tipos de los parámetros de efecto vienen de GET opciones/catalogo (A.6)
 Adm->>UI: Completa el formulario, elige efecto e imagen
 UI->>API: POST ubicaciones con datos, efecto, imagen, token y clave de idempotencia
 API->>SEG: Validar sesión y rol de administrador
@@ -725,6 +753,8 @@ UC->>DB: Buscar solicitud previa con la clave de idempotencia
 DB-->>UC: No existe
 UC->>UC: Validar nombre, descripción, límite de cartas y energía extra
 UC->>EFE: Validar tipo de efecto y sus parámetros
+EFE->>DB: Leer tipos de carta (card_type) si el efecto los usa
+DB-->>EFE: Tipos de carta
 EFE-->>UC: Efecto válido
 UC->>IMG: Validar formato, peso, proporción 4:3 y resolución mínima
 IMG-->>UC: Imagen válida
@@ -750,14 +780,26 @@ actor Adm as Administrador
 participant UI as Interfaz web
 participant API as API REST
 participant SEG as Seguridad
+participant OPC as Caso de uso OpcionesDeCatálogo
 participant UC as Caso de uso BuscarCartas
 participant CAC as Caché Redis
 participant DB as PostgreSQL
+Adm->>UI: Inicia sesión y abre Buscar carta
+UI->>API: GET opciones/catalogo con token
+API->>SEG: Validar sesión
+SEG-->>API: Usuario autenticado
+API->>OPC: obtenerOpcionesDeCatálogo()
+OPC->>DB: Leer tipos (card_type) y rarezas (rarity)
+DB-->>OPC: Tipos y rarezas
+OPC-->>API: Tipos, rarezas, rango de costo y límites de paginación
+API-->>UI: 200 OK con las opciones de los filtros
 Adm->>UI: Indica criterios y pide buscar
 UI->>API: GET cartas con criterios, límite, cursor y token
 API->>SEG: Validar sesión y rol de administrador
 SEG-->>API: Administrador autenticado
 API->>UC: buscarCartas(criterios, cursor, límite)
+UC->>DB: Leer tipos (card_type) y rarezas (rarity)
+DB-->>UC: Tipos y rarezas
 UC->>UC: Validar criterios y paginación
 UC->>CAC: Consultar la página en caché
 alt Página en caché
@@ -801,9 +843,13 @@ VER-->>UC: Identidad verificada con sub y correo
 UC->>UOW: ejecutar transacción
 UOW->>DB: Buscar jugador por proveedor y sub o crearlo si no existe
 DB-->>UOW: Jugador
-UOW-->>UC: Jugador existente o nuevo
+UOW-->>UC: Jugador existente o nuevo, con el estado de su colección
+alt Colección ya entregada (DELIVERED)
+Note over UC: Informa ALREADY_DELIVERED sin invocar la entrega
+else Colección pendiente
 UC->>COL: Entregar colección inicial del jugador
 COL-->>UC: Estado de la colección inicial
+end
 UC->>TOK: Emitir credenciales propias con vencimiento corto
 TOK-->>UC: Token de PokéArena
 UC-->>API: Sesión creada
@@ -812,6 +858,8 @@ UI-->>Jug: Muestra la bienvenida y el estado de la colección
 ```
 
 ### A.5 Recibir colección inicial
+
+Si la cuenta leída en el paso 5 del inicio de sesión ya tiene la colección `DELIVERED`, no se invoca la entrega y se informa `ALREADY_DELIVERED` (A.4): este diagrama solo se recorre con la colección pendiente, y aun así vuelve a comprobar el estado con la fila bloqueada.
 
 ```mermaid
 sequenceDiagram
@@ -851,14 +899,26 @@ actor Jug as Jugador
 participant UI as Interfaz web
 participant API as API REST
 participant SEG as Seguridad
+participant OPC as Caso de uso OpcionesDeCatálogo
 participant UC as Caso de uso ExplorarCatálogo
 participant CAC as Caché Redis
 participant DB as PostgreSQL
+Jug->>UI: Inicia sesión y abre el catálogo
+UI->>API: GET opciones/catalogo con token
+API->>SEG: Validar sesión
+SEG-->>API: Jugador autenticado
+API->>OPC: obtenerOpcionesDeCatálogo()
+OPC->>DB: Leer tipos (card_type) y rarezas (rarity)
+DB-->>OPC: Tipos y rarezas
+OPC-->>API: Tipos, rarezas, rango de costo y límites de paginación
+API-->>UI: 200 OK con las opciones de los filtros
 Jug->>UI: Elige filtros de tipo y costo
 UI->>API: GET catálogo con filtros, límite, cursor y token
 API->>SEG: Validar sesión
 SEG-->>API: Jugador autenticado
 API->>UC: explorarCatálogo(jugador, filtros, cursor, límite)
+UC->>DB: Leer tipos (card_type)
+DB-->>UC: Tipos
 UC->>UC: Validar filtros y paginación
 alt Solo mis cartas
 UC->>DB: Consultar cartas propias con filtros y unión a la colección

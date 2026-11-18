@@ -75,42 +75,42 @@ public class CreateLocationUseCase {
      * @return la ficha de la ubicación, nueva o repetida de una solicitud anterior con la misma clave
      */
     public IdempotentResult<LocationDetails> execute(IdempotentRequest request, CreateLocationCommand command) {
-        // Pasos 1 a 3 (mensajes 1 a 5 del diagrama A.2): la interfaz envió el POST, la seguridad
+        // Pasos 1 a 3 (mensajes 10 a 14 del diagrama A.2): la interfaz envió el POST, la seguridad
         // validó sesión y rol de administrador, y el controlador validó Idempotency-Key.
 
-        // Paso 4 (mensajes 6 y 7): solicitud previa con la clave de idempotencia.
+        // Paso 4 (mensajes 15 y 16): solicitud previa con la clave de idempotencia.
         Optional<IdempotentResult<LocationDetails>> previous = idempotency.findPrevious(request, LocationDetails.class);
         if (previous.isPresent()) {
             return previous.get();
         }
 
-        // Paso 5 (mensaje 8): nombre, descripción, límite de cartas y energía extra según su modalidad.
+        // Paso 5 (mensaje 17): nombre, descripción, límite de cartas y energía extra según su modalidad.
         LocationFields fields = LocationFieldRules.validate(command.name(), command.description(),
                 command.cardLimit(), command.extraEnergyMode(), command.extraEnergyAmount());
 
-        // Paso 6 (mensajes 9 y 10): se lee el texto JSON del efecto y el registro de efectos valida su
+        // Paso 6 (mensajes 18 a 21): se lee el texto JSON del efecto y el registro de efectos valida su
         // tipo y sus parámetros. El efecto es opcional.
         Optional<EffectInput> input = effectReader.read(command.effect());
         Optional<LocationEffect> effect = effects.validate(input.map(EffectInput::code).orElse(null),
                 input.map(EffectInput::parameters).orElse(null));
 
-        // Paso 7 (mensajes 11 y 12): formato real, peso, proporción 4:3 y resolución mínima.
+        // Paso 7 (mensajes 22 y 23): formato real, peso, proporción 4:3 y resolución mínima.
         if (command.image() == null || command.image().length == 0) {
             throw ValidationException.missingField(LocationFieldRules.IMAGE_FIELD,
                     "Debe subir la imagen de la ubicación.");
         }
         ValidatedImage image = imageProcessor.validate(command.image(), ImageRules.LOCATION);
 
-        // Paso 8 (mensajes 13 y 14): miniatura de 320 x 240, síncrona (ADR-002). Si falla, null:
+        // Paso 8 (mensajes 24 y 25): miniatura de 320 x 240, síncrona (ADR-002). Si falla, null:
         // la ubicación se guardará no disponible y con PENDING_RETRY.
         byte[] thumbnail = imageCreation.thumbnailOrPending(image, ImageRules.LOCATION);
 
-        // Paso 9 (mensajes 15 y 16): guardar la versión grande y la pequeña, fuera de la transacción.
+        // Paso 9 (mensajes 26 y 27): guardar la versión grande y la pequeña, fuera de la transacción.
         StoredImages stored = imageStorage.save(ImageRules.LOCATION, image, thumbnail);
 
-        // Paso 10 (mensajes 17 a 20): una sola transacción con la ubicación y la clave de idempotencia.
+        // Paso 10 (mensajes 28 a 31): una sola transacción con la ubicación y la clave de idempotencia.
         // Si falla, se revierte y se borran los archivos; si otra solicitud igual ganó, se repite su respuesta.
-        // Paso 11 (mensajes 21 y 22): con el resultado, la API responde 201 con la ubicación.
+        // Paso 11 (mensajes 32 y 33): con el resultado, la API responde 201 con la ubicación.
         return imageCreation.commitOrCompensate(request, stored, LocationDetails.class, () -> {
             Location location = Location.create(fields, effect.orElse(null), stored.largeUrl(), stored.smallUrl(),
                     clock.now());

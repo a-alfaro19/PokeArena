@@ -21,7 +21,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.application.usecase.PlayerAccountService;
+import cr.ac.tec.pokearena.domain.model.InitialCollectionState;
 import cr.ac.tec.pokearena.domain.model.Player;
+import cr.ac.tec.pokearena.domain.model.PlayerAccount;
 import cr.ac.tec.pokearena.domain.model.ProviderIdentity;
 import cr.ac.tec.pokearena.domain.model.Role;
 import cr.ac.tec.pokearena.domain.repository.PlayerRepository;
@@ -77,6 +79,22 @@ class JdbcPlayerRepositoryIT extends PostgresIntegrationTestBase {
         assertThat(first.role()).isEqualTo(Role.PLAYER);
         assertThat(first.email()).isEqualTo("ana@example.com");
         assertThat(identityRows()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("8.1 paso 6: la cuenta trae el estado guardado de la colección inicial: PENDING al crearla y DELIVERED después de marcarla")
+    void accountCarriesInitialCollectionState() {
+        PlayerAccount created = accounts.findOrCreateAccount(identity, MARKER_NAME, null);
+        unitOfWork.execute(() -> {
+            players.markInitialCollectionDelivered(created.player().id());
+            return null;
+        });
+
+        PlayerAccount later = accounts.findOrCreateAccount(identity, MARKER_NAME, null);
+
+        assertThat(created.initialCollection()).isEqualTo(InitialCollectionState.PENDING);
+        assertThat(later.initialCollection()).isEqualTo(InitialCollectionState.DELIVERED);
+        assertThat(later.created()).isFalse();
     }
 
     @Test

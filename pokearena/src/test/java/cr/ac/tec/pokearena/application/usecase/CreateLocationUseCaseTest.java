@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -31,6 +32,7 @@ import cr.ac.tec.pokearena.application.port.StoredResponse;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.application.port.ValidatedImage;
 import cr.ac.tec.pokearena.domain.effect.CostModifierEffect;
+import cr.ac.tec.pokearena.domain.effect.EffectParameterSpec;
 import cr.ac.tec.pokearena.domain.effect.LocationEffectRegistry;
 import cr.ac.tec.pokearena.domain.effect.LocationEffectType;
 import cr.ac.tec.pokearena.domain.effect.TurnRestrictionEffect;
@@ -122,7 +124,7 @@ class CreateLocationUseCaseTest {
         void newEffectWithoutChangingUseCase() {
             List<LocationEffectType> extended = new ArrayList<>(STANDARD_EFFECTS);
             extended.add(new WeatherEffect());
-            CreateLocationCommand command = command("{\"code\":\"WEATHER\",\"parameters\":{\"kind\":\"lluvia\"}}");
+            CreateLocationCommand command = command("{\"code\":\"WEATHER\",\"parameters\":{\"intensity\":2}}");
 
             LocationDetails location = useCase(extended).execute(request("k1", command), command).body();
 
@@ -272,9 +274,20 @@ class CreateLocationUseCaseTest {
         }
 
         @Override
+        public String name() {
+            return "Clima";
+        }
+
+        @Override
+        public List<EffectParameterSpec> parameters() {
+            return List.of(EffectParameterSpec.integer("intensity", "Intensidad", true, 1, 3));
+        }
+
+        @Override
         public void validate(Map<String, Object> parameters) {
-            if (!(parameters.get("kind") instanceof String)) {
-                throw ValidationException.invalidEffect("effect", "El clima necesita 'kind'.", List.of());
+            if (!parameters.keySet().equals(Set.of("intensity"))
+                    || !(parameters.get("intensity") instanceof Integer intensity) || intensity < 1 || intensity > 3) {
+                throw ValidationException.invalidEffect("effect", "El clima necesita 'intensity' de 1 a 3.", List.of());
             }
         }
     }

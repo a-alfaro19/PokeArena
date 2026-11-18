@@ -28,7 +28,7 @@ import cr.ac.tec.pokearena.domain.rule.LocationFieldRules;
  * Propósito: API de ubicaciones del administrador (historia 2.2.1; sección 5.1).
  * Responsabilidades: traducir {@code POST /api/v1/ubicaciones} (multipart) a un comando del caso de uso
  * y su resultado a la respuesta 201 con la ubicación. No contiene reglas: valida el caso de uso.
- * Referencia: sección 7.2 (pasos 1 a 3 y 11) y Anexo A.2 (mensajes 2 a 5, 21 y 22).
+ * Referencia: sección 7.2 (pasos 1 a 3 y 11) y Anexo A.2 (mensajes 11 a 14, 32 y 33).
  *
  * <p>Igual que en cartas, todos los campos se reciben como opcionales y como texto: así un campo
  * ausente o mal escrito lo informa el dominio con su error tipado, su {@code field} y sus

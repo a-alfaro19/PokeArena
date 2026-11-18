@@ -65,6 +65,40 @@ class QueryParametersTest {
         assertThat(QueryParameters.inverted(5, null)).isFalse();
     }
 
+    @Test
+    @DisplayName("Extremos de un rango: se leen el mínimo y luego el máximo, cada problema con su parámetro; el orden lo decide quien llama")
+    void bounds() {
+        Map<String, List<String>> parameters = Map.of("costMin", List.of("5"), "costMax", List.of("1"));
+
+        QueryParameters.Bounds bounds = QueryParameters.bounds(parameters, "costMin", "costMax", 0, 10,
+                (name, problem) -> ValidationException.invalidField(name, problem.name(), null));
+        assertThat(bounds).isEqualTo(new QueryParameters.Bounds(5, 1));
+        assertThat(bounds.inverted()).isTrue();
+        assertThat(QueryParameters.bounds(Map.of(), "costMin", "costMax", 0, 10, (name, problem) -> null))
+                .isEqualTo(new QueryParameters.Bounds(null, null));
+        assertThatThrownBy(() -> QueryParameters.bounds(Map.of("costMin", List.of("x"), "costMax", List.of("99")),
+                "costMin", "costMax", 0, 10, (name, problem) -> ValidationException.invalidField(name, problem.name(), null)))
+                .isInstanceOfSatisfying(ValidationException.class,
+                        error -> assertThat(error.field()).contains("costMin"));
+    }
+
+    @Test
+    @DisplayName("Código de catálogo: ausente es null, existente se devuelve y uno inexistente lo informa a quien llama")
+    void existingCode() {
+        Map<String, List<String>> parameters = Map.of("type", List.of(" FUE "), "rarity", List.of("XXX"));
+
+        assertThat(QueryParameters.existingCode(parameters, "missing", List.of("FUE"), QueryParametersTest::unknown))
+                .isNull();
+        assertThat(QueryParameters.existingCode(parameters, "type", List.of("FUE"), QueryParametersTest::unknown))
+                .isEqualTo("FUE");
+        assertThatThrownBy(() -> QueryParameters.existingCode(parameters, "rarity", List.of("COMMON"),
+                QueryParametersTest::unknown)).hasMessage("XXX");
+    }
+
+    private static ValidationException unknown(String value) {
+        return ValidationException.invalidField("campo", value, null);
+    }
+
     private static ValidationException error(IntegerProblem problem) {
         return ValidationException.invalidField("campo", problem.name(), null);
     }

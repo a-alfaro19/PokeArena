@@ -36,6 +36,10 @@ import cr.ac.tec.pokearena.domain.repository.PlayerRepository;
  * </ol>
  * Solo la transacción cuya asociación insertó la fila informa {@code created = true}: así, de dos
  * primeros ingresos simultáneos, uno solo es el "primer ingreso".
+ *
+ * <p>{@code findOrCreate} lee también {@code initial_collection_status} en la misma consulta que trae al
+ * jugador (sin {@code FOR UPDATE}): el ingreso lo usa para no invocar la entrega de la colección si ya
+ * está entregada (sección 8.1, paso 6). {@code findByIdentity} no lo necesita y sigue igual.
  */
 @Repository
 public class JdbcPlayerRepository implements PlayerRepository {
@@ -53,6 +57,26 @@ public class JdbcPlayerRepository implements PlayerRepository {
             rs.getString("email"),
             Role.valueOf(rs.getString("role")));
 
+    /** La misma búsqueda que {@link #SELECT_BY_IDENTITY}, con el estado de la colección inicial. */
+    private static final String SELECT_ACCOUNT_BY_IDENTITY = """
+            SELECT p.id, p.display_name, p.email, p.role, p.initial_collection_status
+            FROM player_identity i
+            JOIN player p ON p.id = i.player_id
+            WHERE i.provider = ? AND i.provider_subject = ?
+            """;
+
+    /** Cuenta leída: el jugador y el estado guardado de su colección; {@code created} lo decide quien llama. */
+    private record StoredAccount(Player player, InitialCollectionState initialCollection) {
+
+        PlayerAccount withCreated(boolean created) {
+            return new PlayerAccount(player, created, initialCollection);
+        }
+    }
+
+    private static final RowMapper<StoredAccount> ACCOUNT = (rs, row) -> new StoredAccount(
+            PLAYER.mapRow(rs, row),
+            InitialCollectionState.valueOf(rs.getString("initial_collection_status")));
+
     private final JdbcTemplate jdbc;
 
     public JdbcPlayerRepository(JdbcTemplate jdbc) {
@@ -66,10 +90,11 @@ public class JdbcPlayerRepository implements PlayerRepository {
 
     @Override
     public PlayerAccount findOrCreate(ProviderIdentity identity, NewPlayer candidate) {
-        // 1. La identidad ya tiene cuenta: se reutiliza, sin tocar sus datos.
-        Optional<Player> existing = findByIdentity(identity);
+        // 1. La identidad ya tiene cuenta: se reutiliza, sin tocar sus datos. La misma consulta trae el
+        //    estado de la colección inicial (sección 8.1, paso 6).
+        Optional<StoredAccount> existing = findAccount(identity);
         if (existing.isPresent()) {
-            return new PlayerAccount(existing.get(), false);
+            return existing.get().withCreated(false);
         }
 
         // 2. Cuenta nueva y asociación de la identidad; la unicidad la decide la base.
@@ -88,9 +113,14 @@ public class JdbcPlayerRepository implements PlayerRepository {
         }
 
         // Lectura posterior: devuelve la cuenta que quedó, sea la nuestra o la de la otra transacción.
-        Player player = findByIdentity(identity).orElseThrow(() -> new IllegalStateException(
+        StoredAccount account = findAccount(identity).orElseThrow(() -> new IllegalStateException(
                 "La identidad " + identity + " no quedó asociada a ningún jugador"));
-        return new PlayerAccount(player, linked == 1);
+        return account.withCreated(linked == 1);
+    }
+
+    private Optional<StoredAccount> findAccount(ProviderIdentity identity) {
+        return jdbc.query(SELECT_ACCOUNT_BY_IDENTITY, ACCOUNT, identity.provider(), identity.subject()).stream()
+                .findFirst();
     }
 
     @Override

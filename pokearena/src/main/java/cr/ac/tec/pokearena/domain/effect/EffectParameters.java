@@ -29,8 +29,14 @@ final class EffectParameters {
     private EffectParameters() {
     }
 
-    /** Rechaza los parámetros que el efecto no conoce, para detectar errores de escritura. */
-    static void allowOnly(String code, Map<String, Object> parameters, Set<String> known) {
+    /**
+     * Rechaza los parámetros que el efecto no conoce, para detectar errores de escritura. Los nombres
+     * permitidos salen de la descripción del efecto ({@link LocationEffectType#parameters()}): así lo que se
+     * muestra en el formulario y lo que se acepta no pueden diferir.
+     */
+    static void allowOnly(String code, Map<String, Object> parameters, List<EffectParameterSpec> specs) {
+        Set<String> known = new HashSet<>();
+        specs.forEach(spec -> known.add(spec.name()));
         for (String name : parameters.keySet()) {
             if (!known.contains(name)) {
                 throw invalid("El efecto " + code + " no tiene el parámetro '" + name + "'.", new TreeSet<>(known));

@@ -22,7 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import cr.ac.tec.pokearena.application.port.InitialCollectionStatus;
 import cr.ac.tec.pokearena.domain.rule.InitialCollectionRules;
-import cr.ac.tec.pokearena.infrastructure.persistence.JdbcCardRepository;
+import cr.ac.tec.pokearena.infrastructure.persistence.JdbcCollectibleCardRepository;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
 import cr.ac.tec.pokearena.support.TestPlayers;
 
@@ -101,7 +101,7 @@ class InitialCollectionPerformanceIT extends PostgresIntegrationTestBase {
     @Test
     @DisplayName("8.2: el plan de la selección conserva solo las 15 cartas elegidas (top-N heapsort), sin ordenar en disco ni devolver el catálogo")
     void selectionPlanIsTopN() {
-        List<String> lines = jdbc.queryForList("EXPLAIN (ANALYZE, COSTS OFF) " + JdbcCardRepository.PICK_COLLECTIBLE_SQL,
+        List<String> lines = jdbc.queryForList("EXPLAIN (ANALYZE, COSTS OFF) " + JdbcCollectibleCardRepository.PICK_COLLECTIBLE_SQL,
                 String.class, InitialCollectionRules.CARD_RARITY, Long.toString(SEED), rules.cardCount());
         String plan = String.join("\n", lines);
         System.out.println("Plan de la selección de la colección inicial:\n" + plan);

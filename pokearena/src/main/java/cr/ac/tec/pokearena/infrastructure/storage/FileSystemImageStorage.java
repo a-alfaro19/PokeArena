@@ -159,7 +159,8 @@ public class FileSystemImageStorage implements ImageStorage {
                 deleteRecursively(folder);
             }
         } catch (IOException ignored) {
-            // Ya se está informando la falla original; un resto lo limpiará la tarea de huérfanos (ADR-002).
+            // Ya se está informando la falla original. Un resto queda huérfano: su limpieza periódica es una
+            // mejora futura (sección 9, "Limitación conocida"), no hay una tarea que lo borre hoy.
         }
     }
 

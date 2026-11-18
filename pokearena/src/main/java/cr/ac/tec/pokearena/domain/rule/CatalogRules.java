@@ -17,7 +17,7 @@ import cr.ac.tec.pokearena.domain.model.CatalogCriteria;
  * inexistente, un costo fuera de 0 a 10, un mínimo mayor que el máximo o un {@code owned} que no sea
  * {@code true} ni {@code false}. La paginación ({@code limit}, {@code cursor}) la valida aparte la
  * aplicación ({@code Pagination}).
- * Referencia: sección 8.3, Anexo A.6 (mensaje 6) y criterio C.6 ("un filtro con un valor inválido es
+ * Referencia: sección 8.3, Anexo A.6 (mensajes 15 a 17) y criterio C.6 ("un filtro con un valor inválido es
  * rechazado indicando los valores permitidos").
  *
  * <p>Decisiones:
@@ -51,7 +51,7 @@ public final class CatalogRules {
     }
 
     /**
-     * Valida los filtros antes de consultar páginas o colecciones (mensaje 6 de A.6). {@code parameters}
+     * Valida los filtros antes de consultar páginas o colecciones (mensajes 15 a 17 de A.6). {@code parameters}
      * no debe incluir los de la paginación.
      *
      * @param types tipos existentes: los mismos del catálogo que usa Crear carta
@@ -69,16 +69,18 @@ public final class CatalogRules {
             }
         }
 
-        // Tipo: debe existir en el catálogo de tipos.
-        String type = QueryParameters.text(parameters, TYPE);
-        if (type != null && !allowed(TYPE, types).contains(type)) {
-            throw ValidationException.invalidField(TYPE, "El tipo '" + type + "' no existe.", allowed(TYPE, types));
-        }
+        // Tipo: debe existir en el catálogo de tipos (la misma comprobación que Buscar carta).
+        List<String> typeCodes = allowed(TYPE, types);
+        String type = QueryParameters.existingCode(parameters, TYPE, typeCodes,
+                unknown -> ValidationException.invalidField(TYPE, "El tipo '" + unknown + "' no existe.", typeCodes));
 
-        // Costo: extremos de 0 a 10 y mínimo no mayor que el máximo.
-        Integer min = cost(parameters, COST_MIN);
-        Integer max = cost(parameters, COST_MAX);
-        if (QueryParameters.inverted(min, max)) {
+        // Costo: extremos de 0 a 10 (la misma lectura que Buscar carta) y mínimo no mayor que el máximo.
+        // Texto, decimales y desbordamientos tienen el mismo error tipado que un valor fuera de rango.
+        QueryParameters.Bounds cost = QueryParameters.bounds(parameters, COST_MIN, COST_MAX, CardFieldRules.MIN_COST,
+                CardFieldRules.MAX_COST, (name, problem) -> ValidationException.invalidField(name,
+                        "El costo debe ser un entero entre " + CardFieldRules.MIN_COST + " y "
+                                + CardFieldRules.MAX_COST + ".", COST_RANGE));
+        if (cost.inverted()) {
             throw ValidationException.invalidField(COST_MIN,
                     "El costo mínimo no puede ser mayor que el costo máximo.", COST_RANGE);
         }
@@ -88,7 +90,7 @@ public final class CatalogRules {
         if (owned != null && !BOOLEANS.contains(owned)) {
             throw ValidationException.invalidField(OWNED, "El filtro owned debe ser true o false.", BOOLEANS);
         }
-        return new CatalogCriteria(type, min, max, TRUE.equals(owned));
+        return new CatalogCriteria(type, cost.min(), cost.max(), TRUE.equals(owned));
     }
 
     /** Valores permitidos del filtro, para que el cliente pueda corregirlo. */
@@ -98,13 +100,5 @@ public final class CatalogRules {
             case OWNED -> BOOLEANS;
             default -> COST_RANGE;
         };
-    }
-
-    /** Extremo del rango de costo, o {@code null} si no se indicó (rango abierto por ese lado). */
-    private static Integer cost(Map<String, List<String>> parameters, String name) {
-        // Texto, decimales y desbordamientos tienen el mismo error tipado que un valor fuera de rango.
-        return QueryParameters.boundedInteger(parameters, name, CardFieldRules.MIN_COST, CardFieldRules.MAX_COST,
-                problem -> ValidationException.invalidField(name, "El costo debe ser un entero entre "
-                        + CardFieldRules.MIN_COST + " y " + CardFieldRules.MAX_COST + ".", COST_RANGE));
     }
 }

@@ -121,6 +121,20 @@ public final class OpenApiContract {
         return map(operationNode(operation).get("responses")).keySet();
     }
 
+    /** Nombres declarados en la lista {@code tags} de la raíz del contrato. */
+    public Set<String> declaredTags() {
+        Set<String> names = new LinkedHashSet<>();
+        list(root.get("tags")).forEach(tag -> names.add(String.valueOf(map(tag).get("name"))));
+        return names;
+    }
+
+    /** Etiquetas que usan las operaciones ({@code tags} de cada operación). */
+    public Set<String> usedTags() {
+        Set<String> names = new LinkedHashSet<>();
+        operations().forEach(operation -> names.addAll(strings(operationNode(operation).get("tags"))));
+        return names;
+    }
+
     /** Valores del enum de {@code type} en el esquema {@code ApiError}. */
     public Set<String> errorTypes() {
         Map<String, Object> type = map(map(schema("ApiError").get("properties")).get("type"));

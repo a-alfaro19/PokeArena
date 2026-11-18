@@ -19,7 +19,7 @@ import cr.ac.tec.pokearena.domain.model.Role;
  * Responsabilidades: traducir {@code GET /api/v1/catalogo} a un comando de Explorar el catálogo, con el
  * jugador tomado EXCLUSIVAMENTE de la sesión verificada por el interceptor, y su resultado a la respuesta
  * 200 con la página. No contiene reglas: filtros y paginación los valida el caso de uso.
- * Referencia: sección 8.3 y Anexo A.6 (mensajes 2 a 5, 17 y 18).
+ * Referencia: sección 8.3 y Anexo A.6 (mensajes 11 a 14, 28 y 29).
  *
  * <p>Decisiones:
  * <ul>
@@ -44,12 +44,12 @@ public class CatalogController {
     /**
      * Explora el catálogo.
      *
-     * <p>Orden: el interceptor ya autorizó (mensajes 3 y 4); el caso de uso valida y consulta (mensaje 5).
+     * <p>Orden: el interceptor ya autorizó (mensajes 12 y 13); el caso de uso valida y consulta (mensaje 14).
      */
     @GetMapping
     public PageResponse<CatalogCardResponse> explore(AuthenticatedUser user,
             @RequestParam MultiValueMap<String, String> parameters) {
-        // Mensaje 5: explorarCatálogo(jugador, filtros, cursor, límite). Mensajes 17 y 18: 200 con las cartas.
+        // Mensaje 14: explorarCatálogo(jugador, filtros, cursor, límite). Mensajes 28 y 29: 200 con las cartas.
         return PageResponse.from(explore.execute(new ExploreCatalogCommand(user.playerId(), parameters)),
                 CatalogCardResponse::from);
     }

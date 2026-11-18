@@ -99,7 +99,7 @@ class ExploreCatalogUseCaseTest {
     class Errors {
 
         @Test
-        @DisplayName("C.6 errores: filtros o paginación inválidos se rechazan sin consultar páginas, propiedad ni caché (A.6, mensaje 6)")
+        @DisplayName("C.6 errores: filtros o paginación inválidos se rechazan sin consultar páginas, propiedad ni caché (A.6, mensajes 15 a 17)")
         void validatesBeforeReadingPages() {
             for (Map<String, List<String>> parameters : List.of(Map.of("type", List.of("INVALID")),
                     Map.of("limit", List.of("0")), Map.of("owned", List.of("yes")))) {

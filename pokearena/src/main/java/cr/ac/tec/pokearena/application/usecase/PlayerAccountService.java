@@ -66,8 +66,7 @@ public class PlayerAccountService {
                 return account;
             }
             players.updateRole(player.id(), configuredRole);
-            return new PlayerAccount(new Player(player.id(), player.displayName(), player.email(), configuredRole),
-                    account.created());
+            return account.withRole(configuredRole);
         });
     }
 }

@@ -8,7 +8,7 @@ import cr.ac.tec.pokearena.application.dto.Page;
  * Propósito: puerto de la caché de páginas del catálogo y de la búsqueda (sección 9, cache-aside).
  * Responsabilidades: obtener y guardar una página por su clave, e invalidar todas las páginas cuando
  * cambia una carta. Las páginas no llevan datos del jugador: nunca se cachea la propiedad de las cartas.
- * Referencia: sección 9 ("Política de caché") y Anexo A.3 (mensajes 8 a 12).
+ * Referencia: sección 9 ("Política de caché") y Anexo A.3 (mensajes 19 a 23).
  *
  * <p>Contrato que debe cumplir toda implementación:
  * <ul>

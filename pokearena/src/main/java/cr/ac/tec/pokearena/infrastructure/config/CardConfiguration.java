@@ -19,10 +19,17 @@ import cr.ac.tec.pokearena.domain.repository.CardCatalogRepository;
 import cr.ac.tec.pokearena.domain.repository.CardRepository;
 
 /**
- * Propósito: ensamblar los casos de uso de cartas del administrador (historias 2.1.1 y 2.1.2).
- * Responsabilidades: construir {@link CreateCardUseCase} y {@link SearchCardsUseCase}, que no llevan
- * anotaciones de Spring (sección 4.3), con las implementaciones de sus puertos.
- * Referencia: secciones 7.1 y 7.3.
+ * Propósito: ensamblar los casos de uso de cartas (historias 2.1.1, 2.1.2 y 3.1.2).
+ * Responsabilidades: construir {@link CreateCardUseCase}, {@link SearchCardsUseCase} y
+ * {@link ExploreCatalogUseCase}, que no llevan anotaciones de Spring (sección 4.3), con las
+ * implementaciones de sus puertos.
+ * Referencia: secciones 7.1, 7.3 y 8.3.
+ *
+ * <p>Cada puerto de cartas tiene su propio adaptador JDBC ({@code @Repository} de
+ * {@code infrastructure.persistence}): {@code CardRepository} lo implementa {@code JdbcCardRepository},
+ * {@code PlayerCatalogRepository} lo implementa {@code JdbcPlayerCatalogRepository} y
+ * {@code CollectibleCardRepository} (colección inicial, en {@code CollectionConfiguration}) lo implementa
+ * {@code JdbcCollectibleCardRepository}. Spring entrega cada uno por su interfaz.
  */
 @Configuration
 public class CardConfiguration {

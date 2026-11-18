@@ -219,6 +219,23 @@ class PlayerAccountServiceTest {
         }
 
         @Test
+        @DisplayName("8.1 paso 6: si el jugador de prueba ya tiene la colección DELIVERED, no se invoca la entrega y se informa ALREADY_DELIVERED")
+        void deliveredDevPlayerSkipsDelivery() {
+            InitialCollectionDelivery marking = playerId -> {
+                players.markInitialCollectionDelivered(playerId);
+                return recordingDelivery.deliver(playerId);
+            };
+            IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(service(Set.of()), marking, issuer);
+
+            DevSessionResult first = useCase.execute(Role.PLAYER);
+            DevSessionResult second = useCase.execute(Role.PLAYER);
+
+            assertThat(first.initialCollection()).isEqualTo(InitialCollectionStatus.DELIVERED);
+            assertThat(second.initialCollection()).isEqualTo(InitialCollectionStatus.ALREADY_DELIVERED);
+            assertThat(deliveries).containsExactly(first.session().player().id());
+        }
+
+        @Test
         @DisplayName("Si la entrega del jugador de prueba falla, la sesión de prueba se abre igual")
         void failedDeliveryDoesNotBlockDevSession() {
             IssueDevSessionUseCase useCase = new IssueDevSessionUseCase(service(Set.of()), playerId -> {

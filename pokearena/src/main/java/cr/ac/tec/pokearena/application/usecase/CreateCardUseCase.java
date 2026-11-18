@@ -53,7 +53,7 @@ import cr.ac.tec.pokearena.domain.rule.ImageRules;
  *
  * <h2>Decisiones</h2>
  * <ul>
- *   <li>Evolución: el diagrama verifica la habilidad en el mensaje 9, pero la regla de evolución
+ *   <li>Evolución: el diagrama verifica la habilidad en el mensaje 20, pero la regla de evolución
  *       necesita el código que va a recibir la carta, que solo existe dentro de la transacción. Por
  *       decisión del equipo, en el paso 6 se valida que la habilidad exista y {@link EvolutionRules}
  *       se aplica en el paso 10, después de obtener el consecutivo y antes de guardar. Si falla, la
@@ -96,37 +96,37 @@ public class CreateCardUseCase {
      * @return la ficha de la carta, nueva o repetida de una solicitud anterior con la misma clave
      */
     public IdempotentResult<CardDetails> execute(IdempotentRequest request, CreateCardCommand command) {
-        // Pasos 1 a 3 (mensajes 1 a 5 del diagrama A.1): la interfaz envió el POST, la seguridad
+        // Pasos 1 a 3 (mensajes 10 a 14 del diagrama A.1): la interfaz envió el POST, la seguridad
         // validó sesión y rol de administrador, y el controlador validó Idempotency-Key.
 
-        // Paso 4 (mensajes 6 y 7): solicitud previa con la clave de idempotencia.
+        // Paso 4 (mensajes 15 y 16): solicitud previa con la clave de idempotencia.
         Optional<IdempotentResult<CardDetails>> previous = idempotency.findPrevious(request, CardDetails.class);
         if (previous.isPresent()) {
             return previous.get();
         }
 
-        // Paso 5 (mensaje 8): nombre, costo, poder, tipo y rareza.
+        // Paso 5 (mensajes 17 a 19): nombre, costo, poder, tipo y rareza.
         CardFields fields = CardFieldRules.validate(command.name(), command.cost(), command.power(),
                 command.typeCode(), command.rarityCode(), catalog.findAllTypes(), catalog.findAllRarities());
 
-        // Paso 6 (mensajes 9 y 10): la habilidad es obligatoria y debe existir. La regla de evolución
+        // Paso 6 (mensajes 20 y 21): la habilidad es obligatoria y debe existir. La regla de evolución
         // se aplica en el paso 10, cuando ya se conoce el código de la carta (decisión del equipo).
         Ability ability = validateAbility(command.abilityCode());
 
-        // Paso 7 (mensajes 11 y 12): formato real, peso, proporción 5:7 y resolución mínima.
+        // Paso 7 (mensajes 22 y 23): formato real, peso, proporción 5:7 y resolución mínima.
         if (command.image() == null || command.image().length == 0) {
             throw ValidationException.missingField(CardFieldRules.IMAGE_FIELD, "Debe subir la imagen de la carta.");
         }
         ValidatedImage image = imageProcessor.validate(command.image(), ImageRules.CARD);
 
-        // Paso 8 (mensajes 13 y 14): miniatura de 200 x 280, síncrona (ADR-002). Si falla, null:
+        // Paso 8 (mensajes 24 y 25): miniatura de 200 x 280, síncrona (ADR-002). Si falla, null:
         // la carta se guardará no disponible y con PENDING_RETRY.
         byte[] thumbnail = imageCreation.thumbnailOrPending(image, ImageRules.CARD);
 
-        // Paso 9 (mensajes 15 y 16): guardar la versión grande y la pequeña, fuera de la transacción.
+        // Paso 9 (mensajes 26 y 27): guardar la versión grande y la pequeña, fuera de la transacción.
         StoredImages stored = imageStorage.save(ImageRules.CARD, image, thumbnail);
 
-        // Paso 10 (mensajes 17 a 20): una sola transacción con la carta y la clave de idempotencia.
+        // Paso 10 (mensajes 28 a 31): una sola transacción con la carta y la clave de idempotencia.
         // Si falla, se revierte y se borran los archivos; si otra solicitud igual ganó, se repite su respuesta.
         IdempotentResult<CardDetails> result = imageCreation.commitOrCompensate(request, stored, CardDetails.class, () -> {
             // Consecutivo del tipo: si la transacción se revierte, no se consume.
@@ -144,7 +144,7 @@ public class CreateCardUseCase {
         // nunca revierte ni rechaza una carta ya guardada.
         catalogCache.invalidate();
 
-        // Paso 11 (mensajes 21 y 22): con el resultado, la API responde 201 con la ficha.
+        // Paso 11 (mensajes 32 y 33): con el resultado, la API responde 201 con la ficha.
         return result;
     }
 
