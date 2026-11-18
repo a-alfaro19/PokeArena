@@ -13,12 +13,17 @@
  *    textContent o en nodos creados a mano (función el), así una respuesta no puede inyectar HTML.
  *    Las imágenes solo se cargan si su URL empieza con /images/ (las que genera el servidor).
  *  - El token vive solo en memoria (variable state): se pierde al recargar la página, a propósito.
- *  - Tipos y rarezas son listas fijas (las semillas del contrato), porque la API del Sprint 1 no
- *    tiene un endpoint para listarlas; la habilidad es un texto con HAB-000 como valor inicial.
+ *  - Ningún valor permitido está escrito aquí: después de iniciar sesión pide GET /api/v1/opciones/catalogo
+ *    (tipos, rarezas, rango de costo y paginación) y, como administrador, GET /api/v1/opciones/creacion
+ *    (habilidades, rangos, energía extra, efectos con sus parámetros y requisitos de imagen). Si la carga
+ *    falla, muestra el error y deshabilita los formularios de creación, sin valores de respaldo.
+ *  - Los casos rápidos sí envían códigos y tamaños escritos a mano (FUE, HAB-000, 600 × 840...): prueban
+ *    valores exactos, incluidos inválidos, y no deben depender de lo que ofrezca el formulario.
  */
 'use strict';
 
 import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, googleClientIdFrom, CatalogFilterForm, catalogQuickTests } from './player.js';
+import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMessage, rangeText, imageRequirementText, acceptedTypes, energyAmountState, integersBetween, effectJson } from './options.js';
 
 (() => {
   // ---------------------------------------------------------------------------------------------
@@ -35,19 +40,14 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
 
   const ROLE_LABELS = { NONE: 'Sin sesión', PLAYER: 'Jugador', ADMIN: 'Administrador' };
 
-  /** Semillas de la migración V1, iguales al contrato (no hay endpoint para listarlas). */
-  const TYPES = [['FUE', 'Fuego'], ['AGU', 'Agua'], ['PLA', 'Planta'], ['ELE', 'Eléctrico'],
-    ['PSI', 'Psíquico'], ['LUC', 'Lucha']];
-  const RARITIES = [['COMMON', 'Común'], ['UNCOMMON', 'Poco común'], ['RARE', 'Rara'],
-    ['LEGENDARY', 'Legendaria']];
-  const TURNS = [1, 2, 3, 4, 5, 6];
-
-  /** Tamaños de las imágenes de prueba (criterios C.1 y C.2). */
+  /**
+   * Tamaños de las imágenes de los casos rápidos (criterios C.1 y C.2). Fijos a propósito: cada caso prueba
+   * un valor exacto. El formulario usa los requisitos que informa GET /api/v1/opciones/creacion.
+   */
   const CARD_IMAGE = { width: 600, height: 840 };
   const LOCATION_IMAGE = { width: 800, height: 600 };
   const SQUARE_IMAGE = { width: 600, height: 600 };
   const LOW_RESOLUTION_IMAGE = { width: 300, height: 420 };
-  const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
   const BYTES_PER_KB = 1024;
   const MS_PER_SECOND = 1000;
@@ -92,6 +92,8 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     lastCreate: null,
     /** Búsqueda en curso, para "Cargar más". */
     search: { params: null, token: null, nextCursor: null, shown: 0 },
+    /** Opciones de la API para la sesión actual; null mientras no se cargan o si la carga falló. */
+    options: { catalog: null, creation: null },
   };
 
   // ---------------------------------------------------------------------------------------------
@@ -380,6 +382,8 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     state.roleTokens = {};
     state.lastCreate = null;
     state.search = { params: null, token: null, nextCursor: null, shown: 0 };
+    state.options = { catalog: null, creation: null };
+    renderOptions();
     $('#repeat-request').disabled = true;
     $('#results-body').replaceChildren();
     $('#results-count').textContent = 'Sin búsqueda todavía.';
@@ -409,6 +413,7 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
     renderSession();
     $('#tab-catalog').click();
     playerCatalog.load();
+    loadOptions(attempt);
   }
 
   function expireSession() {
@@ -524,10 +529,13 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
       (blob) => (blob ? resolve(blob) : reject(new Error('No se pudo generar la imagen'))), 'image/png'));
   }
 
-  /** PNG válido de 600 × 840 con relleno hasta superar los 5 MB: solo falla por peso. */
-  async function oversizedPng() {
-    const png = await generatePng(CARD_IMAGE, 'Más de 5 MB');
-    return new Blob([png, new Uint8Array(MAX_IMAGE_BYTES)], { type: 'image/png' });
+  /**
+   * PNG válido de 600 × 840 con relleno hasta superar el peso máximo que informa el servidor
+   * (images.maxFileBytes de GET /api/v1/opciones/creacion): solo falla por peso.
+   */
+  async function oversizedPng(maxFileBytes) {
+    const png = await generatePng(CARD_IMAGE, 'Demasiado pesada');
+    return new Blob([png, new Uint8Array(maxFileBytes)], { type: 'image/png' });
   }
 
   /** Un archivo de texto con nombre y tipo de PNG: el servidor detecta el formato por el contenido. */
@@ -539,15 +547,138 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
   // Formularios: utilidades comunes
   // ---------------------------------------------------------------------------------------------
 
-  function fillOptions() {
-    $$('select[data-options]').forEach((select) => {
-      const values = select.dataset.options === 'types' ? TYPES : RARITIES;
-      const options = values.map(([code, name]) => el('option', { text: `${code} · ${name}`, attrs: { value: code } }));
-      if (select.dataset.empty) {
-        options.unshift(el('option', { text: select.dataset.empty, attrs: { value: '' } }));
-      }
-      select.replaceChildren(...options);
+  // ---------------------------------------------------------------------------------------------
+  // Opciones de filtros y formularios desde la API (Anexos A.1, A.2, A.3 y A.6)
+  // ---------------------------------------------------------------------------------------------
+
+  /** GET silencioso (no se muestra en el panel de respuesta): las opciones no son una operación del usuario. */
+  async function fetchOptions(path, token) {
+    try {
+      const response = await fetch(path, {
+        headers: { Accept: 'application/json', Authorization: 'Bearer ' + token }, credentials: 'omit',
+      });
+      return { status: response.status, body: await response.json().catch(() => null) };
+    } catch (failure) {
+      return null;
+    }
+  }
+
+  /**
+   * Pide las opciones de la sesión recién aceptada: las del catálogo para cualquier rol y las de creación
+   * solo para el administrador. Una respuesta de una sesión anterior se descarta.
+   */
+  async function loadOptions(attempt) {
+    const { token, role } = state.session;
+    const [catalog, creation] = await Promise.all([
+      fetchOptions(OPTIONS_PATHS.catalog, token),
+      role === 'ADMIN' ? fetchOptions(OPTIONS_PATHS.creation, token) : Promise.resolve(undefined),
+    ]);
+    if (attempt !== state.loginVersion) return;
+    state.options.catalog = catalogOptionsFrom(catalog);
+    state.options.creation = role === 'ADMIN' ? creationOptionsFrom(creation) : null;
+    renderOptions({
+      catalog: state.options.catalog ? null : optionsErrorMessage(OPTIONS_PATHS.catalog, catalog),
+      creation: role !== 'ADMIN' || state.options.creation ? null : optionsErrorMessage(OPTIONS_PATHS.creation, creation),
     });
+  }
+
+  /** Avisos de opciones: un error claro si falló la carga; sin sesión, qué hay que hacer para cargarlas. */
+  function renderOptionsNotices(errors) {
+    const pending = {
+      catalog: 'Inicia sesión para cargar los tipos, las rarezas y los límites de los filtros.',
+      creation: 'Inicia sesión como administrador para cargar las opciones de este formulario.',
+    };
+    $$('[data-options-error]').forEach((notice) => {
+      const kind = notice.dataset.optionsError;
+      const error = errors[kind];
+      const missing = !state.options[kind] && !state.session.token;
+      notice.hidden = !error && !missing;
+      notice.textContent = error || (missing ? pending[kind] : '');
+      notice.className = error ? 'options-error' : 'options-error options-pending';
+    });
+  }
+
+  /** Opciones de un select o datalist según su data-options; vacío si todavía no hay opciones. */
+  function optionsFor(kind) {
+    const { catalog, creation } = state.options;
+    const option = (value, text) => el('option', { text, attrs: { value } });
+    switch (kind) {
+      case 'types': return (catalog?.types || []).map((type) => option(type.code, type.code + ' · ' + type.name));
+      case 'rarities': return (catalog?.rarities || []).map((rarity) => option(rarity.code, rarity.code + ' · ' + rarity.name));
+      case 'abilities': return (creation?.abilities || []).map((ability) => option(ability.code, ability.code + ' · '
+        + ability.name + (ability.limitedToType ? ' · solo ' + ability.limitedToType : '')));
+      case 'energyModes': return (creation?.location.extraEnergy.modes || [])
+        .map((mode) => option(mode.code, mode.code + ' · ' + mode.name));
+      case 'effects': return (creation?.location.effects || []).map((effect) => option(effect.code, effect.code + ' · ' + effect.name));
+      default: return [];
+    }
+  }
+
+  /** Rango que muestra cada data-range y aplica cada data-range-input; null si aún no hay opciones. */
+  function rangeFor(kind) {
+    const { catalog, creation } = state.options;
+    switch (kind) {
+      case 'cost': return catalog?.cost || null;
+      case 'limit': return catalog ? { min: catalog.pagination.minLimit, max: catalog.pagination.maxLimit } : null;
+      case 'cardCost': return creation?.card.cost || null;
+      case 'cardPower': return creation?.card.power || null;
+      case 'cardLimit': return creation?.location.cardLimit || null;
+      default: return null;
+    }
+  }
+
+  /**
+   * Vuelve a armar selects, rangos, requisitos de imagen y editores de efecto con las opciones actuales.
+   * Sin opciones de creación, los formularios de creación quedan deshabilitados: no hay valores de respaldo.
+   */
+  function renderOptions(errors = {}) {
+    $$('[data-options]').forEach((list) => {
+      const previous = list.value;
+      const options = optionsFor(list.dataset.options);
+      if (list.dataset.empty) options.unshift(el('option', { text: list.dataset.empty, attrs: { value: '' } }));
+      list.replaceChildren(...options);
+      if (list.tagName === 'SELECT' && options.some((option) => option.value === previous)) list.value = previous;
+    });
+    const energy = $('#location-form').elements.extraEnergyMode;
+    if (state.options.creation) energy.value = state.options.creation.location.extraEnergy.defaultMode;
+
+    $$('[data-range]').forEach((hint) => {
+      const range = rangeFor(hint.dataset.range);
+      const defaultLimit = hint.dataset.range === 'limit' && state.options.catalog
+        ? '; vacío = ' + state.options.catalog.pagination.defaultLimit : '';
+      hint.textContent = range ? rangeText(range) + defaultLimit : '';
+    });
+    $$('[data-range-input]').forEach((input) => {
+      const range = rangeFor(input.dataset.rangeInput);
+      input.min = range ? String(range.min) : '';
+      input.max = range ? String(range.max) : '';
+      if (input.dataset.rangeInput === 'limit') {
+        input.placeholder = state.options.catalog ? String(state.options.catalog.pagination.defaultLimit) : '';
+      }
+    });
+
+    const images = state.options.creation?.images;
+    $$('[data-image-hint]').forEach((hint) => {
+      hint.textContent = images ? imageRequirementText(images, hint.dataset.imageHint) : '';
+    });
+    $$('[data-image-input]').forEach((input) => { input.accept = images ? acceptedTypes(images.formats) : ''; });
+    $$('[data-generate]').forEach((button) => {
+      const requirement = images?.[button.dataset.generate];
+      button.disabled = !requirement;
+      button.textContent = requirement ? 'Generar imagen ' + requirement.minWidth + ' × ' + requirement.minHeight
+        : 'Generar imagen';
+    });
+
+    const locationForm = $('#location-form');
+    $('[data-effect-editors]', locationForm).replaceChildren(
+      ...(state.options.creation?.location.effects || []).map(effectEditor));
+    $$('form[data-needs-options]').forEach((form) => {
+      $('button[type="submit"]', form).disabled = !state.options[form.dataset.needsOptions];
+    });
+    renderEffectEditor(locationForm);
+    renderEnergy(locationForm);
+    catalogFilterForm?.update();
+    renderOptionsNotices(errors);
   }
 
   /** Imagen elegida en el formulario: un archivo del usuario o la generada. */
@@ -562,7 +693,10 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
       const kind = button.dataset.generate;
       const form = button.closest('form');
       button.addEventListener('click', async () => {
-        const size = kind === 'card' ? CARD_IMAGE : LOCATION_IMAGE;
+        // La imagen mínima válida que informa el servidor para este tipo de entidad.
+        const requirement = state.options.creation?.images[kind];
+        if (!requirement) return;
+        const size = { width: requirement.minWidth, height: requirement.minHeight };
         const blob = await generatePng(size, kind === 'card' ? 'Carta' : 'Ubicación');
         state.generated[kind] = { blob, name: kind === 'card' ? 'carta.png' : 'ubicacion.png' };
         form.elements.image.value = '';
@@ -678,8 +812,17 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
       run: (e) => quickCard('Resolución baja', e, { image: async () => ({ blob: await generatePng(LOW_RESOLUTION_IMAGE, 'Baja'), name: 'baja.png' }) }),
     },
     {
-      label: 'Imagen mayor a 5 MB', expected: { status: 400, type: 'IMAGE_TOO_LARGE' },
-      run: (e) => quickCard('Imagen mayor a 5 MB', e, { image: async () => ({ blob: await oversizedPng(), name: 'grande.png' }) }),
+      label: 'Imagen mayor al peso máximo', expected: { status: 400, type: 'IMAGE_TOO_LARGE' },
+      run: (e) => {
+        const maxFileBytes = state.options.creation?.images.maxFileBytes;
+        if (!maxFileBytes) {
+          showMessage('Este caso usa el peso máximo que informa GET ' + OPTIONS_PATHS.creation
+            + ': inicia sesión como administrador para cargar las opciones.');
+          return null;
+        }
+        return quickCard('Imagen mayor al peso máximo', e,
+          { image: async () => ({ blob: await oversizedPng(maxFileBytes), name: 'grande.png' }) });
+      },
     },
     {
       label: 'Archivo de texto como .png', expected: { status: 400, type: 'INVALID_IMAGE_FORMAT' },
@@ -694,26 +837,48 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
   // Crear ubicación (2.2.1)
   // ---------------------------------------------------------------------------------------------
 
-  /** JSON del campo effect según el tipo elegido, o null sin efecto (sección 7.2). */
+  /** Nombre del control de un parámetro de efecto en el formulario. */
+  const parameterControl = (effect, parameter) => 'effect:' + effect.code + ':' + parameter.name;
+
+  /**
+   * JSON del campo effect según el efecto elegido y la descripción de sus parámetros que entregó el
+   * servidor, o null sin efecto (sección 7.2).
+   */
   function effectFromForm(form) {
     const code = form.elements.effectCode.value;
-    const integer = (name) => Number.parseInt(form.elements[name].value, 10);
-    switch (code) {
-      case 'TYPE_BONUS':
-        return { code, parameters: { type: form.elements.tbType.value, amount: integer('tbAmount') } };
-      case 'COST_MODIFIER': {
-        const parameters = { amount: integer('cmAmount') };
-        if (form.elements.cmType.value) parameters.affectedType = form.elements.cmType.value;
-        return { code, parameters };
+    const effect = state.options.creation?.location.effects.find((candidate) => candidate.code === code);
+    return effectJson(effect, (parameter) => {
+      const name = parameterControl(effect, parameter);
+      return parameter.kind === 'INTEGER_SET'
+        ? $$('input:checked', form).filter((box) => box.name === name).map((box) => box.value)
+        : form.elements[name].value.trim();
+    });
+  }
+
+  /** Un grupo de campos por efecto, armado con la descripción de parámetros del servidor. */
+  function effectEditor(effect) {
+    const types = state.options.catalog?.types || [];
+    const controls = effect.parameters.map((parameter) => {
+      const name = parameterControl(effect, parameter);
+      const hint = parameter.kind === 'CARD_TYPE'
+        ? (parameter.required ? 'obligatorio' : 'opcional')
+        : rangeText(parameter) + (parameter.kind === 'INTEGER_SET' ? ', sin repetir' : '');
+      const label = el('span', { className: 'field-label' }, parameter.label + ' ', el('small', { text: hint }));
+      if (parameter.kind === 'INTEGER_SET') {
+        return el('div', { className: 'field' }, label, el('div', { className: 'turns' },
+          integersBetween(parameter.min, parameter.max).map((value) => el('label', { className: 'turn' },
+            el('input', { attrs: { type: 'checkbox', name, value: String(value) } }), ' ' + value))));
       }
-      case 'TURN_RESTRICTION':
-        return {
-          code,
-          parameters: { turns: $$('input[name="turn"]:checked', form).map((box) => Number.parseInt(box.value, 10)) },
-        };
-      default:
-        return null;
-    }
+      if (parameter.kind === 'CARD_TYPE') {
+        const empty = el('option', { text: parameter.required ? 'Elige un tipo' : 'Todos los tipos', attrs: { value: '' } });
+        return el('label', { className: 'field' }, label, el('select', { attrs: { name } }, empty,
+          types.map((type) => el('option', { text: type.code + ' · ' + type.name, attrs: { value: type.code } }))));
+      }
+      return el('label', { className: 'field' }, label,
+        el('input', { attrs: { name, type: 'number', step: '1', min: String(parameter.min), max: String(parameter.max) } }));
+    });
+    return el('fieldset', { className: 'effect-params', attrs: { 'data-effect': effect.code, hidden: '' } },
+      el('legend', { text: 'Parámetros de ' + effect.code + ' · ' + effect.name }), controls);
   }
 
   function renderEffectEditor(form) {
@@ -727,18 +892,24 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
       : JSON.stringify(effect);
   }
 
+  /** Modalidad elegida, con el rango de monto que informó el servidor; null sin opciones. */
+  function selectedEnergyMode(form) {
+    return state.options.creation?.location.extraEnergy.modes
+      .find((mode) => mode.code === form.elements.extraEnergyMode.value) || null;
+  }
+
   function renderEnergy(form) {
-    const mode = form.elements.extraEnergyMode.value;
+    const mode = selectedEnergyMode(form);
     const amount = form.elements.extraEnergyAmount;
     const hint = $('[data-energy-hint]', form);
-    amount.disabled = mode === 'NONE';
-    if (mode === 'NONE') {
-      amount.value = '';
-      hint.textContent = 'no aplica con NONE';
-    } else {
-      hint.textContent = mode === 'FIXED' ? 'obligatorio, 0 a 3' : 'obligatorio, 0 a 2';
-      if (amount.value === '') amount.value = '1';
+    const energy = mode ? energyAmountState(mode) : { enabled: false, hint: '' };
+    amount.disabled = !energy.enabled;
+    hint.textContent = energy.hint;
+    if (mode) {
+      amount.min = String(mode.minAmount);
+      amount.max = String(mode.maxAmount);
     }
+    if (!energy.enabled) amount.value = '';
   }
 
   /** Multipart de la ubicación. Un campo con valor null no se envía. */
@@ -748,9 +919,6 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
 
   function wireLocationForm() {
     const form = $('#location-form');
-    $('[data-turns]', form).replaceChildren(...TURNS.map((turn) => el('label', { className: 'turn' },
-      el('input', { attrs: { type: 'checkbox', name: 'turn', value: String(turn) } }), ' Turno ' + turn)));
-    $$('[name="turn"]', form).slice(0, 1).forEach((box) => { box.checked = true; });
     form.addEventListener('input', () => renderEffectEditor(form));
     form.addEventListener('change', () => renderEffectEditor(form));
     form.elements.extraEnergyMode.addEventListener('change', () => renderEnergy(form));
@@ -767,8 +935,8 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
         description: form.elements.description.value.trim(),
         cardLimit: form.elements.cardLimit.value.trim(),
         extraEnergyMode: mode,
-        // Con NONE el monto se omite (vale 0); con FIXED o PER_CARD, vacío también se omite: MISSING_FIELD.
-        extraEnergyAmount: mode === 'NONE' || amount === '' ? null : amount,
+        // Sin monto que elegir (NONE) se omite y vale 0; en otra modalidad, vacío también se omite: MISSING_FIELD.
+        extraEnergyAmount: form.elements.extraEnergyAmount.disabled || amount === '' ? null : amount,
         effect: effect === null ? null : JSON.stringify(effect),
       };
       sendCreate({
@@ -1092,7 +1260,7 @@ import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDispl
   }
 
   function start() {
-    fillOptions();
+    renderOptions();
     wireTabs();
     $('#tab-catalog').click();
     wireImageInputs();

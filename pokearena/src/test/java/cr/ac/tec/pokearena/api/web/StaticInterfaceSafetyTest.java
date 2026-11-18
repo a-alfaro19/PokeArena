@@ -41,7 +41,7 @@ class StaticInterfaceSafetyTest {
             "\\beval\\s*\\(", "new Function\\s*\\(" })
     @DisplayName("app.js no inserta HTML ni ejecuta texto: solo textContent y nodos creados a mano")
     void noHtmlInjection(String forbidden) {
-        for (String file : new String[] {"app.js", "player.js"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js"}) {
             assertThat(Pattern.compile(forbidden).matcher(read(file)).find()).as(file + ": " + forbidden).isFalse();
         }
     }
@@ -49,7 +49,7 @@ class StaticInterfaceSafetyTest {
     @Test
     @DisplayName("El token vive solo en memoria: app.js no usa localStorage, sessionStorage ni cookies")
     void tokenOnlyInMemory() {
-        for (String file : new String[] {"app.js", "player.js"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js"}) {
             assertThat(read(file)).doesNotContain("localStorage", "sessionStorage", "document.cookie");
         }
     }
@@ -66,15 +66,29 @@ class StaticInterfaceSafetyTest {
     @Test
     @DisplayName("11: la interfaz no repite cifras de la configuración del servidor (cartas y cubos de la colección inicial)")
     void noConfiguredFiguresInInterface() {
-        for (String file : new String[] {"app.js", "player.js", "index.html"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js", "index.html"}) {
             assertThat(read(file)).as(file).doesNotContain("15 cartas", "1.000 cubos", "1000 cubos");
         }
     }
 
     @Test
+    @DisplayName("Opciones desde la API: la interfaz no tiene listas fijas de tipos, rarezas, turnos, modalidades, efectos, rangos ni requisitos de imagen")
+    void allowedValuesComeFromTheApi() {
+        // Los casos rápidos sí envían códigos a mano (FUE, HAB-000, TYPE_BONUS): prueban valores exactos.
+        // Lo que no debe volver son las listas y rangos que alimentaban los formularios.
+        assertThat(read("index.html")).doesNotContain("<option value=\"NONE\"", "<option value=\"TYPE_BONUS\"",
+                "0 a 10", "-20 a 20", "0 a 5", "-5 a 5", "600 × 840", "800 × 600", "5 MB", "accept=\"image/",
+                "value=\"HAB-000\"", "min=\"", "max=\"");
+        assertThat(read("app.js")).doesNotContain("const TYPES", "const RARITIES", "const TURNS", "MAX_IMAGE_BYTES",
+                "'Fuego'", "'Común'", "obligatorio, 0 a 3", "|| '10'");
+        assertThat(read("player.js")).doesNotContain("|| '10'", "|| '0'");
+        assertThat(read("options.js")).contains("'/api/v1/opciones/catalogo'", "'/api/v1/opciones/creacion'");
+    }
+
+    @Test
     @DisplayName("Las historias se citan por su número (3.1.2, 1.1.1, 3.1.1), no por identificadores internos US")
     void storiesByNumber() {
-        for (String file : new String[] {"app.js", "player.js", "index.html"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js", "index.html"}) {
             assertThat(Pattern.compile("\\bUS ?\\d").matcher(read(file)).find()).as(file).isFalse();
         }
     }

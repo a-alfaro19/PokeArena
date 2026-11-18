@@ -261,6 +261,9 @@ tbody tr:hover { background: var(--surface-2); }
 .owned-filter { display: flex; align-items: center; gap: 0.5rem; }
 .catalog-message { padding: 0.75rem 0; }
 .catalog-error { color: var(--bad); }
+/* Opciones de la API: error claro si la carga falló; aviso suave si falta iniciar sesión. */
+.options-error { margin: 0 0 0.75rem; padding: 0.5rem 0.75rem; border-radius: var(--radius); background: var(--warn-bg); color: var(--bad); font-size: 0.875rem; }
+.options-error.options-pending { color: var(--warn); }
 .catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: 1rem; }
 .catalog-card { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
 .catalog-image { display: block; width: 100%; aspect-ratio: 5 / 7; object-fit: contain; background: var(--surface-2); }

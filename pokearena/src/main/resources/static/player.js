@@ -202,7 +202,9 @@ export class CatalogFilterForm {
       .some((name) => (edited[name] || '') !== (applied[name] || ''));
     const summary = [
       'Tipo: ' + (applied.type || 'todos'),
-      'costo: ' + (applied.costMin || '0') + ' a ' + (applied.costMax || '10'),
+      // Sin extremo elegido se muestra el del servidor (atributos min y max que puso GET /opciones/catalogo).
+      'costo: ' + (applied.costMin || this.form.elements.costMin.min || 'sin mínimo') + ' a '
+        + (applied.costMax || this.form.elements.costMax.max || 'sin máximo'),
       applied.owned === 'true' ? 'solo mis cartas' : 'todo el catálogo',
       'por página: ' + (applied.limit || 'predeterminado'),
     ].join(' · ');
