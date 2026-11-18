@@ -7,6 +7,7 @@ import cr.ac.tec.pokearena.application.port.InitialCollectionDelivery;
 import cr.ac.tec.pokearena.application.port.InitialCollectionStatus;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.domain.model.Player;
+import cr.ac.tec.pokearena.domain.model.PlayerAccount;
 import cr.ac.tec.pokearena.domain.model.ProviderIdentity;
 import cr.ac.tec.pokearena.domain.model.Role;
 
@@ -53,8 +54,9 @@ public class IssueDevSessionUseCase {
         boolean admin = requestedRole == Role.ADMIN;
         ProviderIdentity identity = new ProviderIdentity(ProviderIdentity.DEV_PROVIDER,
                 admin ? DEV_ADMIN_SUBJECT : DEV_PLAYER_SUBJECT);
-        Player player = accounts.findOrCreate(identity,
+        PlayerAccount account = accounts.findOrCreateAccount(identity,
                 admin ? "Administrador de prueba" : "Jugador de prueba", null);
+        Player player = account.player();
 
         // Si la configuración no le da a la identidad el rol pedido, es un error de configuración:
         // se detiene aquí en lugar de entregar credenciales con un rol distinto al solicitado.
@@ -66,8 +68,9 @@ public class IssueDevSessionUseCase {
         // El jugador de prueba recibe la colección inicial por la misma vía que el inicio de sesión, para
         // que las demostraciones del catálogo tengan cartas propias. Su resultado viaja en la respuesta,
         // igual que en el inicio de sesión (así la interfaz puede confirmar ALREADY_DELIVERED), y una falla
-        // no impide abrir la sesión de prueba (PENDING_ERROR). El administrador de prueba no la recibe.
-        InitialCollectionStatus collection = admin ? null : initialCollection.deliver(player.id());
+        // no impide abrir la sesión de prueba (PENDING_ERROR). El administrador de prueba no la recibe. Si la
+        // cuenta ya la tiene DELIVERED, no se invoca la entrega (ALREADY_DELIVERED), igual que en el ingreso.
+        InitialCollectionStatus collection = admin ? null : initialCollection.deliver(account);
 
         Session session = new Session(player, tokenIssuer.issue(new AuthenticatedUser(player.id(), player.role())));
         return new DevSessionResult(session, collection);

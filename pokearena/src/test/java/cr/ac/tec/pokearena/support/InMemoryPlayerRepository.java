@@ -28,6 +28,8 @@ public final class InMemoryPlayerRepository implements PlayerRepository {
     // Escrituras de rol, para comprobar que no se escribe cuando el rol no cambió.
     private int roleUpdates;
     private final Set<UUID> delivered = new HashSet<>();
+    // Bloqueos de la fila del jugador (SELECT ... FOR UPDATE en la base real).
+    private int locks;
 
     /** Datos con los que se creó cada cuenta, por identidad. */
     public Map<ProviderIdentity, NewPlayer> created() {
@@ -48,12 +50,12 @@ public final class InMemoryPlayerRepository implements PlayerRepository {
     public synchronized PlayerAccount findOrCreate(ProviderIdentity identity, NewPlayer candidate) {
         Player existing = accounts.get(identity);
         if (existing != null) {
-            return new PlayerAccount(existing, false);
+            return new PlayerAccount(existing, false, stateOf(existing.id()));
         }
         Player player = new Player(UUID.randomUUID(), candidate.displayName(), candidate.email(), candidate.role());
         accounts.put(identity, player);
         created.put(identity, candidate);
-        return new PlayerAccount(player, true);
+        return new PlayerAccount(player, true, InitialCollectionState.PENDING);
     }
 
     @Override
@@ -61,8 +63,17 @@ public final class InMemoryPlayerRepository implements PlayerRepository {
         if (accounts.values().stream().noneMatch(player -> player.id().equals(playerId))) {
             return Optional.empty();
         }
-        return Optional.of(delivered.contains(playerId) ? InitialCollectionState.DELIVERED
-                : InitialCollectionState.PENDING);
+        locks++;
+        return Optional.of(stateOf(playerId));
+    }
+
+    private InitialCollectionState stateOf(UUID playerId) {
+        return delivered.contains(playerId) ? InitialCollectionState.DELIVERED : InitialCollectionState.PENDING;
+    }
+
+    /** Cuántas veces se bloqueó la fila de un jugador para entregar su colección. */
+    public int locks() {
+        return locks;
     }
 
     @Override

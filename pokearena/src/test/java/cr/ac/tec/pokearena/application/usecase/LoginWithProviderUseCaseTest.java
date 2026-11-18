@@ -301,6 +301,81 @@ class LoginWithProviderUseCaseTest {
     }
 
     @Nested
+    @DisplayName("Colección ya entregada y reintentos (8.1 paso 6)")
+    class DeliveredAccount {
+
+        // Entregas invocadas; la entrega simulada bloquea la fila y marca DELIVERED, como la real.
+        private final List<UUID> invocations = new ArrayList<>();
+
+        private InitialCollectionDelivery delivering() {
+            return playerId -> {
+                invocations.add(playerId);
+                players.lockInitialCollectionState(playerId);
+                players.markInitialCollectionDelivered(playerId);
+                return InitialCollectionStatus.DELIVERED;
+            };
+        }
+
+        @Test
+        @DisplayName("8.1 paso 6: si la cuenta leída en el paso 5 ya tiene la colección DELIVERED, no se invoca la entrega (ni se bloquea la fila) y se informa ALREADY_DELIVERED")
+        void deliveredAccountSkipsDelivery() {
+            delivery = delivering();
+            LoginResult first = login("google", "valido:sub-1");
+
+            LoginResult second = login("google", "valido:sub-1");
+
+            assertThat(first.initialCollection()).isEqualTo(InitialCollectionStatus.DELIVERED);
+            assertThat(second.initialCollection()).isEqualTo(InitialCollectionStatus.ALREADY_DELIVERED);
+            assertThat(second.initialCollection().message()).isNull();
+            assertThat(invocations).containsExactly(first.session().player().id());
+            assertThat(players.locks()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("C.5 error: después de PENDING_NO_CARDS la cuenta sigue PENDING y el siguiente ingreso vuelve a invocar la entrega")
+        void pendingNoCardsRetriesOnNextLogin() {
+            delivery = playerId -> InitialCollectionStatus.PENDING_NO_CARDS;
+            LoginResult first = login("google", "valido:sub-1");
+            delivery = delivering();
+
+            LoginResult second = login("google", "valido:sub-1");
+
+            assertThat(first.initialCollection()).isEqualTo(InitialCollectionStatus.PENDING_NO_CARDS);
+            assertThat(second.initialCollection()).isEqualTo(InitialCollectionStatus.DELIVERED);
+            assertThat(invocations).containsExactly(second.session().player().id());
+        }
+
+        @Test
+        @DisplayName("C.5 error: después de PENDING_ERROR la cuenta sigue PENDING y el siguiente ingreso vuelve a invocar la entrega")
+        void pendingErrorRetriesOnNextLogin() {
+            delivery = playerId -> {
+                throw new IllegalStateException("falla simulada");
+            };
+            LoginResult first = login("google", "valido:sub-1");
+            delivery = delivering();
+
+            LoginResult second = login("google", "valido:sub-1");
+
+            assertThat(first.initialCollection()).isEqualTo(InitialCollectionStatus.PENDING_ERROR);
+            assertThat(second.initialCollection()).isEqualTo(InitialCollectionStatus.DELIVERED);
+            assertThat(invocations).containsExactly(second.session().player().id());
+        }
+
+        @Test
+        @DisplayName("5.2 y C.5: un administrador de Google también es jugador: se invoca la entrega de su colección")
+        void googleAdminReceivesCollection() {
+            delivery = delivering();
+
+            LoginResult result = useCase(Set.of(new ProviderIdentity("google", "sub-admin")), google)
+                    .execute(new LoginCommand("google", "valido:sub-admin"));
+
+            assertThat(result.session().player().role()).isEqualTo(Role.ADMIN);
+            assertThat(result.initialCollection()).isEqualTo(InitialCollectionStatus.DELIVERED);
+            assertThat(invocations).containsExactly(result.session().player().id());
+        }
+    }
+
+    @Nested
     @DisplayName("Proveedores (Strategy y Registry)")
     class Providers {
 

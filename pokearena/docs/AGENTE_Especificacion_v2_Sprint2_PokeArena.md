@@ -435,7 +435,7 @@ Crear una ubicación solo agrega una fila disponible para partidas **nuevas**; n
 | 3 | El verificador valida **firma** (con las llaves públicas del proveedor), **emisor**, **vencimiento** y **audiencia** (debe ser el `client id` configurado en `app.identity.google.client-id`) | `INVALID_IDENTITY_TOKEN` |
 | 4 | Obtiene la identidad verificada: `proveedor`, `sub`, correo, nombre | |
 | 5 | `UnitOfWork`: busca el jugador por `(proveedor, sub)`; si no existe lo crea con rol `PLAYER` (o `ADMIN` si la identidad está en `app.admin.identities`), `elo` 0 y `initial_collection_status` `PENDING`. La unicidad la garantiza la restricción de la base: `INSERT ... ON CONFLICT DO NOTHING` y luego leer | |
-| 6 | Invoca la entrega de la colección inicial (8.2) por el puerto `InitialCollectionDelivery`, cuyo único bean es `DeliverInitialCollectionUseCase`. Ocurre **después** de crear o recuperar la cuenta y en **otra transacción**: si la entrega se revierte, la cuenta sigue existiendo. **Nunca impide el ingreso:** si lanza una excepción, se registra un aviso en el log (con el `correlationId` de la solicitud, que viaja en el MDC) y la sesión se abre igual con `PENDING_ERROR`; como la entrega es todo o nada, no queda nada parcial y el siguiente ingreso la reintenta. Mensajes: `DELIVERED` y `ALREADY_DELIVERED` sin mensaje (`null`); `PENDING_NO_CARDS` "El juego aún no está disponible: todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior."; `PENDING_ERROR` "No pudimos entregar tu colección, se reintentará en tu próximo ingreso." Las credenciales de prueba (`dev/sesiones`, solo perfil `dev`) entregan la colección al jugador de prueba de rol PLAYER por la misma vía, informan su resultado en `initialCollection` igual que el paso 8 (`null` para el administrador de prueba, ver 5.2) y no impiden la sesión si falla | no bloquea el ingreso (`PENDING_ERROR`) |
+| 6 | Si la cuenta leída en el paso 5 ya tiene la colección `DELIVERED`, no se invoca la entrega y se informa `ALREADY_DELIVERED` (el estado `initial_collection_status` viaja en `PlayerAccount`, leído en la misma consulta que trae al jugador, sin bloqueo; así un ingreso normal no abre otra transacción ni bloquea la fila del jugador). Si no, invoca la entrega de la colección inicial (8.2) por el puerto `InitialCollectionDelivery`, cuyo único bean es `DeliverInitialCollectionUseCase`. Ocurre **después** de crear o recuperar la cuenta y en **otra transacción**: si la entrega se revierte, la cuenta sigue existiendo. **Nunca impide el ingreso:** si lanza una excepción, se registra un aviso en el log (con el `correlationId` de la solicitud, que viaja en el MDC) y la sesión se abre igual con `PENDING_ERROR`; como la entrega es todo o nada, no queda nada parcial y el siguiente ingreso la reintenta. Mensajes: `DELIVERED` y `ALREADY_DELIVERED` sin mensaje (`null`); `PENDING_NO_CARDS` "El juego aún no está disponible: todavía no hay cartas disponibles, tu colección se entregará en un ingreso posterior."; `PENDING_ERROR` "No pudimos entregar tu colección, se reintentará en tu próximo ingreso." Las credenciales de prueba (`dev/sesiones`, solo perfil `dev`) entregan la colección al jugador de prueba de rol PLAYER por la misma vía, informan su resultado en `initialCollection` igual que el paso 8 (`null` para el administrador de prueba, ver 5.2) y no impiden la sesión si falla | no bloquea el ingreso (`PENDING_ERROR`) |
 | 7 | Emite las credenciales propias (JWT con vencimiento corto) | |
 | 8 | Responde **200** con `{ accessToken, tokenType, expiresIn, player: { id, displayName, email, role }, firstLogin, initialCollection: { status, message } }`, donde `status` es `DELIVERED`, `ALREADY_DELIVERED`, `PENDING_NO_CARDS` o `PENDING_ERROR` y `message` es un texto descriptivo cuando está pendiente (`null` si no lo está). El mensaje va dentro del objeto porque pertenece al estado | |
 
@@ -461,6 +461,7 @@ Se ejecuta durante el inicio de sesión (paso 6) y es idempotente.
 | 6 | Suma **1,000 cubos** (constante configurable `app.collection.initial-cubes`) a `cube_balance` y registra el movimiento `INITIAL_GRANT` como el **primer** movimiento del historial |
 | 7 | Marca `initial_collection_status = DELIVERED` y confirma |
 
+- **Atajo del inicio de sesión:** si la cuenta leída en el paso 5 del inicio de sesión ya tiene la colección `DELIVERED`, no se invoca la entrega y se informa `ALREADY_DELIVERED` (8.1, paso 6). Es seguro porque `DELIVERED` nunca vuelve a `PENDING`. Con `PENDING` se invoca este caso de uso, que **conserva su `SELECT ... FOR UPDATE`** (paso 1): la lectura sin bloqueo del ingreso solo evita trabajo, la decisión de entregar la toma siempre la entrega con la fila bloqueada.
 - **Todo o nada:** cartas, cubos, movimiento y marca van en **una sola transacción**. Si algo falla, no queda entrega parcial y el resultado es `PENDING_ERROR`; el siguiente ingreso reintenta.
 - **Exactamente una vez:** el bloqueo de fila garantiza que dos primeros ingresos simultáneos entreguen una sola vez, y los ingresos posteriores no vuelven a entregar.
 - **Primer movimiento de cubos:** que `INITIAL_GRANT` sea el primer movimiento del historial lo garantizan el bloqueo de la fila del jugador (`SELECT ... FOR UPDATE`) y la marca `DELIVERED`: la entrega ocurre una sola vez y, hasta ella, ninguna otra operación crea movimientos. No se agrega una consulta extra para comprobarlo, porque no cambiaría el resultado; la prueba "primer movimiento" lo verifica.
@@ -801,9 +802,13 @@ VER-->>UC: Identidad verificada con sub y correo
 UC->>UOW: ejecutar transacción
 UOW->>DB: Buscar jugador por proveedor y sub o crearlo si no existe
 DB-->>UOW: Jugador
-UOW-->>UC: Jugador existente o nuevo
+UOW-->>UC: Jugador existente o nuevo, con el estado de su colección
+alt Colección ya entregada (DELIVERED)
+UC->>UC: Informar ALREADY_DELIVERED sin invocar la entrega
+else Colección pendiente
 UC->>COL: Entregar colección inicial del jugador
 COL-->>UC: Estado de la colección inicial
+end
 UC->>TOK: Emitir credenciales propias con vencimiento corto
 TOK-->>UC: Token de PokéArena
 UC-->>API: Sesión creada
@@ -812,6 +817,8 @@ UI-->>Jug: Muestra la bienvenida y el estado de la colección
 ```
 
 ### A.5 Recibir colección inicial
+
+Si la cuenta leída en el paso 5 del inicio de sesión ya tiene la colección `DELIVERED`, no se invoca la entrega y se informa `ALREADY_DELIVERED` (A.4): este diagrama solo se recorre con la colección pendiente, y aun así vuelve a comprobar el estado con la fila bloqueada.
 
 ```mermaid
 sequenceDiagram

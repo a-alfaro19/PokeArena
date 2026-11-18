@@ -6,6 +6,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +20,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.sql.DataSource;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -158,6 +163,9 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
 
     @Autowired
     private ApplicationContext context;
+
+    @Autowired
+    private DataSource dataSource;
 
     private TestCards catalog;
 
@@ -510,6 +518,8 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
         private static final int AVAILABLE_COMMONS = 20;
         private static final int INITIAL_CARDS = 15;
         private static final long INITIAL_CUBES = 1000;
+        // Holgado para un ingreso sin esperas; si el ingreso esperara el bloqueo, no terminaría nunca.
+        private static final Duration LOCK_FREE_LOGIN_TIMEOUT = Duration.ofSeconds(10);
 
         @Test
         @DisplayName("El único bean del puerto InitialCollectionDelivery es el caso de uso real de la colección inicial")
@@ -625,6 +635,49 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
         }
 
         @Test
+        @DisplayName("8.1 paso 6: si la cuenta leída en el paso 5 ya tiene la colección DELIVERED, el ingreso no invoca la entrega ni espera el bloqueo de la fila del jugador e informa ALREADY_DELIVERED")
+        void deliveredAccountDoesNotLockPlayerRow() throws Exception {
+            catalog.commons(AVAILABLE_COMMONS);
+            String subject = newSubject();
+            UUID player = UUID.fromString(login("google", googleToken(subject).sign()).body()
+                    .get("player").get("id").asString());
+
+            // Otra transacción tiene bloqueada la fila del jugador (como lo haría una entrega en curso). Si el
+            // ingreso invocara la entrega, su SELECT ... FOR UPDATE esperaría y la solicitud vencería.
+            try (Connection holder = dataSource.getConnection()) {
+                holder.setAutoCommit(false);
+                try (PreparedStatement lock = holder.prepareStatement("SELECT id FROM player WHERE id = ? FOR UPDATE")) {
+                    lock.setObject(1, player);
+                    lock.executeQuery().close();
+                }
+                try {
+                    Result second = loginWithin("google", googleToken(subject).sign(), LOCK_FREE_LOGIN_TIMEOUT);
+
+                    assertThat(second.status()).isEqualTo(200);
+                    assertThat(second.body().get("initialCollection").get("status").asString())
+                            .isEqualTo("ALREADY_DELIVERED");
+                } finally {
+                    holder.rollback();
+                }
+            }
+            assertThat(cardCount(player)).isEqualTo(INITIAL_CARDS);
+            assertThat(movementCount(player)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("5.2 y C.5: un administrador de Google (app.admin.identities) también es jugador y recibe la colección inicial")
+        void googleAdminReceivesCollection() throws Exception {
+            catalog.commons(AVAILABLE_COMMONS);
+            track("google", GOOGLE_ADMIN_SUBJECT);
+
+            JsonNode body = login("google", googleToken(GOOGLE_ADMIN_SUBJECT).sign()).body();
+
+            assertThat(body.get("player").get("role").asString()).isEqualTo("ADMIN");
+            assertThat(body.get("initialCollection").get("status").asString()).isEqualTo("DELIVERED");
+            assertThat(cardCount(UUID.fromString(body.get("player").get("id").asString()))).isEqualTo(INITIAL_CARDS);
+        }
+
+        @Test
         @DisplayName("C.4 y C.5 alternos: 10 primeros ingresos simultáneos de una identidad nueva crean una cuenta y entregan la colección una sola vez")
         void simultaneousFirstLoginsDeliverOnce() throws Exception {
             catalog.commons(AVAILABLE_COMMONS);
@@ -688,6 +741,17 @@ class SessionControllerIT extends PostgresIntegrationTestBase {
 
     private Result login(String provider, String idToken) throws Exception {
         return post(json.writeValueAsString(Map.of("provider", provider, "idToken", idToken)));
+    }
+
+    /** Ingreso que falla con {@code HttpTimeoutException} si no responde dentro de {@code timeout}. */
+    private Result loginWithin(String provider, String idToken, Duration timeout) throws Exception {
+        HttpResponse<String> response = http.send(HttpRequest.newBuilder(uri(PATH))
+                .header("Content-Type", "application/json")
+                .timeout(timeout)
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        json.writeValueAsString(Map.of("provider", provider, "idToken", idToken))))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        return new Result(response.statusCode(), json.readTree(response.body()));
     }
 
     private Result post(String body) throws Exception {

@@ -28,7 +28,12 @@ public interface PlayerRepository {
      * Devuelve el jugador de la identidad; si no existe, lo crea con los datos de {@code candidate}.
      * Si otra solicitud lo crea al mismo tiempo, devuelve ese mismo jugador: nunca hay dos cuentas.
      *
-     * @return el jugador y si esta llamada fue la que lo creó (solo una de dos llamadas simultáneas)
+     * <p>Devuelve también el estado guardado de la colección inicial, leído en la misma consulta que trae
+     * al jugador y sin bloquear la fila: el ingreso lo usa para no invocar la entrega si ya es
+     * {@code DELIVERED} (sección 8.1, paso 6). Una cuenta recién creada está en {@code PENDING}.
+     *
+     * @return el jugador, si esta llamada fue la que lo creó (solo una de dos llamadas simultáneas) y el
+     *         estado de su colección inicial
      */
     PlayerAccount findOrCreate(ProviderIdentity identity, NewPlayer candidate);
 
