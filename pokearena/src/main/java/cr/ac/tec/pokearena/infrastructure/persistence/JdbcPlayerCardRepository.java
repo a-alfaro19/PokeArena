@@ -65,9 +65,10 @@ public class JdbcPlayerCardRepository implements PlayerCardRepository {
 
     /**
      * Sentencia de {@link #findOwnedCards}. Solo se genera la cantidad de placeholders: jugador y códigos van
-     * siempre como parámetros. Visible en el paquete para que la prueba pida su plan ({@code EXPLAIN}).
+     * siempre como parámetros. Pública solo para que las pruebas pidan el plan ({@code EXPLAIN}) de la misma
+     * consulta que usa la aplicación, como {@link CardSearchSql}.
      */
-    static String ownedCardsSql(int codeCount) {
+    public static String ownedCardsSql(int codeCount) {
         String placeholders = String.join(",", Collections.nCopies(codeCount, "?"));
         return "SELECT pc.copies, " + CardSearchSql.COLUMNS + CardSearchSql.FROM
                 + "JOIN player_card pc ON pc.card_code = c.code\n"
@@ -75,7 +76,8 @@ public class JdbcPlayerCardRepository implements PlayerCardRepository {
                 + "ORDER BY c.code";
     }
 
-    static Object[] ownedCardsArguments(UUID playerId, Collection<String> cardCodes) {
+    /** Parámetros de {@link #ownedCardsSql}, en orden: el jugador y los códigos. */
+    public static Object[] ownedCardsArguments(UUID playerId, Collection<String> cardCodes) {
         List<Object> arguments = new ArrayList<>();
         arguments.add(playerId);
         arguments.addAll(cardCodes);
