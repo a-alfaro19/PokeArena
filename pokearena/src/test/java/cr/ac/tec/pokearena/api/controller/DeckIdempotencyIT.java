@@ -91,7 +91,14 @@ class DeckIdempotencyIT extends PostgresIntegrationTestBase {
 
     @AfterEach
     void cleanUp() {
-        TestPlayers.delete(jdbc, players);
+        try {
+            // Primero lo que apunta a las cartas: decks, colecciones y jugadores (TestPlayers.delete).
+            TestPlayers.delete(jdbc, players);
+        } finally {
+            // Después el catálogo sembrado, aunque falle lo anterior: las pruebas comparten la base, y una que
+            // no siembra cartas (por ejemplo FlywayMigrationIT) la espera sin las de otras pruebas.
+            new TestCards(jdbc).reset();
+        }
     }
 
     private List<String> deck() {
