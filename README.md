@@ -18,6 +18,7 @@ fuente de verdad del proyecto, está en
 | 3.1.1 Recibir colección inicial | Durante `POST /api/v1/sesiones` (campo `initialCollection`) y, en el perfil `dev`, para el jugador de prueba | Bienvenida con el estado de la colección; caso rápido "Segundo ingreso del jugador" | Sprint 2, terminada |
 | 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` (jugador o administrador) | Pestaña "Catálogo y mi colección" | Sprint 2, terminada |
 | Opciones de la interfaz (Refactory SP2) | `GET /api/v1/opciones/catalogo` (jugador o administrador) y `GET /api/v1/opciones/creacion` (administrador) | Tipos, rarezas, rangos, habilidades, energía extra, efectos y requisitos de imagen de filtros y formularios | Terminada |
+| 3.1.3 Crear Deck | `POST /api/v1/decks`, `GET /api/v1/decks`, `GET /api/v1/decks/{id}` y `GET /api/v1/opciones/juego` (jugador o administrador) | Pestañas "Armar deck" y "Mis decks" | Sprint 3, terminada (ver [Crear Deck](#crear-deck-sprint-3-historia-313)) |
 
 Para desarrollo y demostraciones, el perfil `dev` ofrece además credenciales de prueba
 (`POST /api/v1/dev/sesiones`), que no existen con ningún otro perfil.
@@ -366,3 +367,68 @@ Las reglas de dependencia se verifican con ArchUnit en cada `.\mvnw.cmd clean ve
 
 El código original del Sprint 1, anterior a la reconstrucción, se conserva en la etiqueta de Git
 `sprint1-original` (sección 15 de la especificación).
+
+## Crear Deck (Sprint 3, historia 3.1.3)
+
+Especificación: `pokearena/docs/AGENTE_Especificacion_Sprint3_PokeArena.md` (sección 7.1, Anexos A.7 y A.8,
+criterios C.7). Un deck son exactamente `deckSize` cartas **distintas** de mi colección y un nombre único entre
+mis decks (sin distinguir mayúsculas ni tildes). Ambas reglas viven solo en `DeckRules` (`DECK_SIZE` = 12,
+`NAME_MAX_LENGTH` = 40) y la interfaz las lee de `GET /api/v1/opciones/juego`.
+
+### Armar un deck desde la interfaz
+
+1. Levanta la aplicación con el perfil `dev` (arriba) y abre `http://localhost:8080`.
+2. El jugador de prueba recibe su colección inicial solo si el catálogo tiene al menos 15 cartas Comunes
+   disponibles. En una base nueva, carga antes `pokearena/scripts/seed-10000-cartas.sql` (sus cartas no
+   tienen archivos de imagen: se ve la imagen de reemplazo) o crea las cartas como administrador. Si el
+   jugador entró antes de que hubiera cartas, vuelve a pulsar **Jugador**.
+3. Pulsa **Jugador** y abre **Armar deck**: se ve tu colección (con "Cargar más"), el contador
+   "Cartas elegidas: 0 de 12" y el límite del nombre ("máximo 40 caracteres").
+4. Pulsa **Elegir** en 12 cartas (pulsar **Quitar** la saca; nunca queda dos veces y no se pueden elegir
+   más de 12), escribe un nombre y pulsa **Guardar deck**: el panel de respuesta muestra `201` con el deck.
+5. Abre **Mis decks**: la lista paginada y, con **Ver detalle**, las 12 cartas del deck.
+
+### Casos rápidos (pestaña "Armar deck")
+
+Usan tu sesión y tu colección real, calculan las cantidades a partir de `deckSize` y muestran el status y el
+`type` que devolvió el servidor. Si tu colección no alcanza, avisan cuántas cartas hacen falta sin enviar nada.
+
+| Caso | Resultado esperado |
+|---|---|
+| Deck con una carta de menos | `400 INVALID_DECK_SIZE` con la cantidad actual (11) |
+| Deck con una carta de más | `400 INVALID_DECK_SIZE` con la cantidad actual (13) |
+| Cartas repetidas | `400 DUPLICATE_DECK_CARDS` con el código repetido |
+| Carta ajena | `400 CARD_NOT_OWNED` con el código que no posees |
+| Nombre repetido | Primero `201`, después `409 DECK_NAME_TAKEN` (nombre único por ejecución y dos `Idempotency-Key` distintas) |
+
+Después de guardar o de un caso rápido, "Mis decks" se recarga **en silencio**: el panel de respuesta
+conserva la respuesta de la acción que pidió el usuario.
+
+### Rendimiento con 10.000 cartas
+
+`DeckPerformanceIT` carga `scripts/seed-10000-cartas.sql`, entrega al jugador su colección inicial real y agrega
+las colecciones de 400 jugadores más a `player_card` (con `ANALYZE`). Hace 3 creaciones de calentamiento y mide
+20 `POST /api/v1/decks` completos por HTTP con 12 cartas de esa colección. Exige p95 < 300 ms y que la consulta
+de posesión use la clave `pk_player_card` sin leer `card` ni `player_card` completas. Cada ejecución guarda las
+medidas y el plan en `pokearena/target/deck-performance.txt`.
+
+Ejecución del 19 de noviembre de 2026 (Windows 11, Docker Desktop), medido en una ejecución local; varía
+según la máquina:
+
+| Medida | Valor |
+|---|---|
+| Mediana | 10,8 ms |
+| p95 (exigido < 300 ms) | 12,4 ms |
+| Máximo | 12,5 ms |
+| Ejecución de la consulta de posesión (`EXPLAIN ANALYZE`) | 0,462 ms |
+
+Plan de la consulta de posesión (`findOwnedCards`, 12 códigos):
+
+```text
+Nested Loop
+  ->  Index Scan using pk_player_card on player_card pc  (rows=12)
+        Index Cond: ((player_id = ...) AND (card_code = ANY ('{...12 códigos...}')))
+  ->  Index Scan using uq_card_code on card c  (loops=12)
+  ->  Index Scan using pk_card_type / pk_rarity / pk_ability  (loops=12)
+Execution Time: 0.462 ms
+```
