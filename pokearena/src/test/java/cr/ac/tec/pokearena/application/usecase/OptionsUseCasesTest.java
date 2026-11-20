@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import cr.ac.tec.pokearena.application.dto.CatalogOptions;
 import cr.ac.tec.pokearena.application.dto.CreationOptions;
+import cr.ac.tec.pokearena.application.dto.GameOptions;
 import cr.ac.tec.pokearena.application.dto.ValueRange;
 import cr.ac.tec.pokearena.domain.effect.CostModifierEffect;
 import cr.ac.tec.pokearena.domain.effect.EffectParameterSpec;
@@ -26,6 +27,7 @@ import cr.ac.tec.pokearena.domain.model.ImageFormat;
 import cr.ac.tec.pokearena.domain.model.Rarity;
 import cr.ac.tec.pokearena.domain.repository.CardCatalogRepository;
 import cr.ac.tec.pokearena.domain.rule.CardFieldRules;
+import cr.ac.tec.pokearena.domain.rule.DeckRules;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
 import cr.ac.tec.pokearena.domain.rule.LocationFieldRules;
 import cr.ac.tec.pokearena.support.InMemoryAbilityRepository;
@@ -160,6 +162,19 @@ class OptionsUseCasesTest {
             assertThat(images.maxFileBytes()).isEqualTo(ImageRules.MAX_FILE_BYTES);
             assertThat(images.card()).isEqualTo(ImageRules.CARD);
             assertThat(images.location()).isEqualTo(ImageRules.LOCATION);
+        }
+    }
+
+    @Nested
+    @DisplayName("Opciones del juego (Sprint 3, sección 7.4)")
+    class Game {
+
+        @Test
+        @DisplayName("Tamaño del deck y largo máximo de su nombre salen de DeckRules")
+        void fromDeckRules() {
+            GameOptions options = new GetGameOptionsUseCase().execute();
+
+            assertThat(options).isEqualTo(new GameOptions(DeckRules.DECK_SIZE, DeckRules.NAME_MAX_LENGTH));
         }
     }
 }

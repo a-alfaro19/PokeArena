@@ -6,15 +6,18 @@ import org.springframework.web.bind.annotation.RestController;
 
 import cr.ac.tec.pokearena.api.dto.CatalogOptionsResponse;
 import cr.ac.tec.pokearena.api.dto.CreationOptionsResponse;
+import cr.ac.tec.pokearena.api.dto.GameOptionsResponse;
 import cr.ac.tec.pokearena.api.security.RequiresRole;
 import cr.ac.tec.pokearena.application.usecase.GetCatalogOptionsUseCase;
 import cr.ac.tec.pokearena.application.usecase.GetCreationOptionsUseCase;
+import cr.ac.tec.pokearena.application.usecase.GetGameOptionsUseCase;
 import cr.ac.tec.pokearena.domain.model.Role;
 
 /**
  * Propósito: API de las opciones que la interfaz web pide antes de mostrar filtros y formularios.
- * Responsabilidades: traducir {@code GET /api/v1/opciones/catalogo} y {@code GET /api/v1/opciones/creacion}
- * a sus casos de uso y su resultado a la respuesta 200. No contiene reglas ni valores propios.
+ * Responsabilidades: traducir {@code GET /api/v1/opciones/catalogo}, {@code GET /api/v1/opciones/creacion}
+ * y {@code GET /api/v1/opciones/juego} (Sprint 3, sección 7.4) a sus casos de uso y su resultado a la
+ * respuesta 200. No contiene reglas ni valores propios.
  * Referencia: Anexos A.1, A.2, A.3 y A.6, mensajes 2 a 5 y 9 (la interfaz pide las opciones antes del POST
  * o del filtro; la seguridad valida la sesión y el rol; la API responde 200).
  *
@@ -32,10 +35,13 @@ public class OptionsController {
 
     private final GetCatalogOptionsUseCase catalogOptions;
     private final GetCreationOptionsUseCase creationOptions;
+    private final GetGameOptionsUseCase gameOptions;
 
-    public OptionsController(GetCatalogOptionsUseCase catalogOptions, GetCreationOptionsUseCase creationOptions) {
+    public OptionsController(GetCatalogOptionsUseCase catalogOptions, GetCreationOptionsUseCase creationOptions,
+            GetGameOptionsUseCase gameOptions) {
         this.catalogOptions = catalogOptions;
         this.creationOptions = creationOptions;
+        this.gameOptions = gameOptions;
     }
 
     /** Tipos, rarezas, rango de costo y límites de paginación. */
@@ -50,5 +56,12 @@ public class OptionsController {
     @RequiresRole(Role.ADMIN)
     public CreationOptionsResponse creation() {
         return CreationOptionsResponse.from(creationOptions.execute());
+    }
+
+    /** Reglas del juego que la interfaz no escribe a mano: tamaño del deck y largo de su nombre (7.4, Sprint 3). */
+    @GetMapping("/juego")
+    @RequiresRole({Role.PLAYER, Role.ADMIN})
+    public GameOptionsResponse game() {
+        return GameOptionsResponse.from(gameOptions.execute());
     }
 }

@@ -34,14 +34,30 @@ class DomainExceptionTest {
     }
 
     @Test
-    @DisplayName("El catálogo tiene exactamente los 18 tipos de la tabla de la sección 5.3")
+    @DisplayName("El catálogo tiene los 18 tipos de la sección 5.3 del Sprint 2 y los 5 de Crear Deck del Sprint 3")
     void catalogMatchesSpecification() {
         assertThat(ErrorType.values()).extracting(Enum::name).containsExactlyInAnyOrder(
                 "NOT_AUTHENTICATED", "FORBIDDEN", "INVALID_IDENTITY_TOKEN", "IDENTITY_PROVIDER_UNAVAILABLE",
                 "UNSUPPORTED_PROVIDER", "INVALID_FIELD", "MISSING_FIELD", "UNKNOWN_ABILITY", "INVALID_EVOLUTION",
                 "INVALID_EFFECT", "INVALID_SEARCH_CRITERIA", "INVALID_PAGINATION", "INVALID_IMAGE_FORMAT",
                 "IMAGE_TOO_LARGE", "INVALID_IMAGE_RATIO", "IMAGE_RESOLUTION_TOO_LOW", "IDEMPOTENCY_KEY_REQUIRED",
-                "IDEMPOTENCY_KEY_REUSED");
+                "IDEMPOTENCY_KEY_REUSED",
+                // Sprint 3, historia 3.1.3 Crear Deck.
+                "INVALID_DECK_SIZE", "DUPLICATE_DECK_CARDS", "CARD_NOT_OWNED", "DECK_NAME_TAKEN", "DECK_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("Los errores de deck indican el campo de la solicitud, salvo DECK_NOT_FOUND, que no revela nada")
+    void deckErrorsPointToTheirField() {
+        assertThat(DeckException.invalidSize("El deck debe tener 12 cartas y tiene 11.").field())
+                .contains(DeckException.CARDS_FIELD);
+        assertThat(DeckException.duplicateCards("Cartas repetidas: PKA-FUE-001.").field())
+                .contains(DeckException.CARDS_FIELD);
+        assertThat(DeckException.cardNotOwned("No posees estas cartas: PKA-AGU-007.").field())
+                .contains(DeckException.CARDS_FIELD);
+        assertThat(DeckException.nameTaken("Ya tienes un deck llamado Fuego.").field())
+                .contains(DeckException.NAME_FIELD);
+        assertThat(DeckException.notFound("El deck no existe.").field()).isEmpty();
     }
 
     @Test

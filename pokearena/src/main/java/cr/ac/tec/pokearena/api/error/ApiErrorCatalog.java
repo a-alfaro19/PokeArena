@@ -69,6 +69,11 @@ final class ApiErrorCatalog {
             case IDEMPOTENCY_KEY_REQUIRED -> new Entry(HttpStatus.BAD_REQUEST, "Falta la clave de idempotencia");
             case IDEMPOTENCY_KEY_REUSED ->
                     new Entry(HttpStatus.UNPROCESSABLE_CONTENT, "Clave de idempotencia reutilizada");
+            case INVALID_DECK_SIZE -> new Entry(HttpStatus.BAD_REQUEST, "Cantidad de cartas inválida");
+            case DUPLICATE_DECK_CARDS -> new Entry(HttpStatus.BAD_REQUEST, "Cartas repetidas en el deck");
+            case CARD_NOT_OWNED -> new Entry(HttpStatus.BAD_REQUEST, "Carta no poseída");
+            case DECK_NAME_TAKEN -> new Entry(HttpStatus.CONFLICT, "Nombre de deck en uso");
+            case DECK_NOT_FOUND -> new Entry(HttpStatus.NOT_FOUND, "Deck no encontrado");
         };
     }
 

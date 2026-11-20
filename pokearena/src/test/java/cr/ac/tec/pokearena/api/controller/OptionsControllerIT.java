@@ -30,6 +30,7 @@ import cr.ac.tec.pokearena.domain.model.Ability;
 import cr.ac.tec.pokearena.domain.model.ExtraEnergy;
 import cr.ac.tec.pokearena.domain.model.Role;
 import cr.ac.tec.pokearena.domain.rule.CardFieldRules;
+import cr.ac.tec.pokearena.domain.rule.DeckRules;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
 import cr.ac.tec.pokearena.domain.rule.LocationFieldRules;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
@@ -53,6 +54,7 @@ class OptionsControllerIT extends PostgresIntegrationTestBase {
 
     private static final String CATALOG = "/api/v1/opciones/catalogo";
     private static final String CREATION = "/api/v1/opciones/creacion";
+    private static final String GAME = "/api/v1/opciones/juego";
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final JsonMapper json = JsonMapper.builder().build();
@@ -244,6 +246,31 @@ class OptionsControllerIT extends PostgresIntegrationTestBase {
         @DisplayName("El orden es estable: dos solicitudes devuelven exactamente lo mismo")
         void stableOrder() throws Exception {
             assertThat(get(CREATION, adminToken).body()).isEqualTo(get(CREATION, adminToken).body());
+        }
+    }
+
+    @Nested
+    @DisplayName("Opciones del juego (Sprint 3, sección 7.4)")
+    class GameOptions {
+
+        @Test
+        @DisplayName("5.2: sin credenciales responde 401 NOT_AUTHENTICATED; un jugador y un administrador la leen")
+        void authorization() throws Exception {
+            Result anonymous = get(GAME, null);
+            assertThat(anonymous.status()).isEqualTo(401);
+            assertThat(anonymous.body().get("type").asString()).isEqualTo("NOT_AUTHENTICATED");
+
+            assertThat(get(GAME, playerToken).status()).isEqualTo(200);
+            assertThat(get(GAME, adminToken).status()).isEqualTo(200);
+        }
+
+        @Test
+        @DisplayName("7.4: deckSize y deckNameMaxLength son los de DeckRules, no valores copiados")
+        void deckRules() throws Exception {
+            JsonNode body = get(GAME, playerToken).body();
+
+            assertThat(body.get("deckSize").asInt()).isEqualTo(DeckRules.DECK_SIZE);
+            assertThat(body.get("deckNameMaxLength").asInt()).isEqualTo(DeckRules.NAME_MAX_LENGTH);
         }
     }
 
