@@ -38,8 +38,8 @@ public final class TestCards {
         }
     }
 
-    /** Siembra una carta con la rareza, disponibilidad y estado dados. */
-    public void card(String rarity, boolean available, boolean active) {
+    /** Siembra una carta con la rareza, disponibilidad y estado dados, y devuelve su código. */
+    public String card(String rarity, boolean available, boolean active) {
         nextNumber++;
         String type = TYPES[nextNumber % TYPES.length];
         String code = "PKA-%s-%03d".formatted(type, nextNumber);
@@ -51,5 +51,6 @@ public final class TestCards {
                 """, code, name, NameNormalizer.normalize(name), type, rarity, "/images/cards/" + code + "/large.png",
                 available ? "/images/cards/" + code + "/small.png" : null, available ? "READY" : "PENDING_RETRY",
                 available, active);
+        return code;
     }
 }

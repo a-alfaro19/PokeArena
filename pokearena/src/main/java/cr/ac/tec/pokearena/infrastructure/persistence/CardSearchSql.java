@@ -35,13 +35,15 @@ public final class CardSearchSql {
     /** Carácter de escape del LIKE. */
     private static final String ESCAPE = "\\";
 
-    private static final String COLUMNS = """
+    // Proyección y uniones de la ficha de una carta, las que lee CardRows. Visibles en el paquete para que
+    // otros adaptadores (por ejemplo JdbcDeckRepository) muestren la carta igual, sin copiar el SQL.
+    static final String COLUMNS = """
             c.id, c.code, c.name, c.name_normalized, c.cost, c.power,
                    c.type_code, t.name AS type_name, c.rarity_code, r.name AS rarity_name,
                    c.image_large_url, c.image_small_url, c.image_status, c.available, c.created_at,
                    """ + AbilityRows.COLUMNS;
 
-    private static final String FROM = """
+    static final String FROM = """
 
             FROM card c
             JOIN card_type t ON t.code = c.type_code

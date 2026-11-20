@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
@@ -22,9 +24,11 @@ import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.domain.model.CubeMovement;
 import cr.ac.tec.pokearena.domain.model.CubeMovementReason;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
+import cr.ac.tec.pokearena.domain.model.OwnedCard;
 import cr.ac.tec.pokearena.domain.model.ProviderIdentity;
 import cr.ac.tec.pokearena.domain.model.Role;
 import cr.ac.tec.pokearena.domain.repository.CollectibleCardRepository;
+import cr.ac.tec.pokearena.domain.repository.PlayerCardRepository;
 import cr.ac.tec.pokearena.domain.rule.InitialCollectionRules;
 import cr.ac.tec.pokearena.support.InMemoryPlayerRepository;
 
@@ -56,11 +60,30 @@ class DeliverInitialCollectionUseCaseTest {
 
     private DeliverInitialCollectionUseCase useCase(InitialCollectionRules rules) {
         return new DeliverInitialCollectionUseCase(unitOfWork, players, catalog,
-                (playerId, codes) -> playerCards.computeIfAbsent(playerId, key -> new ArrayList<>()).addAll(codes),
+                adding((playerId, codes) -> playerCards.computeIfAbsent(playerId, key -> new ArrayList<>()).addAll(codes)),
                 movements::add, () -> {
                     seedsRequested++;
                     return SEED;
                 }, () -> NOW, rules);
+    }
+
+    /**
+     * Colección en memoria que solo agrega cartas. {@code PlayerCardRepository} ya no es una interfaz de un
+     * método (Crear Deck le agregó {@code findOwnedCards}), así que no admite una lambda; esta entrega no
+     * comprueba posesión, por eso esa consulta no se usa aquí.
+     */
+    private static PlayerCardRepository adding(BiConsumer<UUID, Collection<String>> add) {
+        return new PlayerCardRepository() {
+            @Override
+            public void addOneCopyOfEach(UUID playerId, Collection<String> cardCodes) {
+                add.accept(playerId, cardCodes);
+            }
+
+            @Override
+            public List<OwnedCard> findOwnedCards(UUID playerId, Collection<String> cardCodes) {
+                throw new UnsupportedOperationException("La entrega de la colección inicial no consulta posesión");
+            }
+        };
     }
 
     private InitialCollectionStatus deliver() {
@@ -166,7 +189,7 @@ class DeliverInitialCollectionUseCaseTest {
         void failurePropagates() {
             catalog.commons(20);
             DeliverInitialCollectionUseCase failing = new DeliverInitialCollectionUseCase(unitOfWork, players, catalog,
-                    (playerId, codes) -> playerCards.put(playerId, List.copyOf(codes)),
+                    adding((playerId, codes) -> playerCards.put(playerId, List.copyOf(codes))),
                     movement -> {
                         throw new IllegalStateException("falla simulada al mover los cubos");
                     }, () -> SEED, () -> NOW, RULES);

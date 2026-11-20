@@ -32,6 +32,9 @@ public final class TestPlayers {
     /** Borra los jugadores y todo lo que depende de ellos en las tablas que usan estas pruebas. */
     public static void delete(JdbcTemplate jdbc, Collection<UUID> playerIds) {
         for (UUID id : playerIds) {
+            // Decks (historia 3.1.3): sus cartas apuntan al deck y a card, y el deck al jugador.
+            jdbc.update("DELETE FROM deck_card WHERE deck_id IN (SELECT id FROM deck WHERE player_id = ?)", id);
+            jdbc.update("DELETE FROM deck WHERE player_id = ?", id);
             // Colección y cubos (historia 3.1.1): van primero porque apuntan al jugador y a las cartas.
             jdbc.update("DELETE FROM player_card WHERE player_id = ?", id);
             jdbc.update("DELETE FROM cube_movement WHERE player_id = ?", id);
