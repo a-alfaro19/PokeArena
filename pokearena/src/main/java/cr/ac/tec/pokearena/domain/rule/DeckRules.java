@@ -21,7 +21,7 @@ import cr.ac.tec.pokearena.domain.model.NewDeck;
  * guardado sigue siendo jugable ({@link #validateForPlay}). Java puro: sin Spring, sin base de datos y sin
  * reloj (la hora llega por parámetro).
  * Referencia: secciones 5.7, 7.1 (paso 3 y paso 5) y 7.2.1 (paso 5) de la especificación del Sprint 3;
- * Anexo A.7, mensajes 14 y 17; criterios C.7-R1, R2 y R3; decisión Q5 del Anexo B.2.
+ * Anexo A.7, mensajes 18 y 21; criterios C.7-R1, R2 y R3; decisión Q5 del Anexo B.2.
  *
  * <h2>Decisiones</h2>
  * <ul>
@@ -66,7 +66,7 @@ public final class DeckRules {
     }
 
     /**
-     * Valida la forma de un deck nuevo y lo devuelve listo para guardar. Mensaje 14 del diagrama A.7.
+     * Valida la forma de un deck nuevo y lo devuelve listo para guardar. Mensaje 18 del diagrama A.7.
      *
      * <p>Orden de las comprobaciones (sección 7.1, paso 3); cada error aparece solo si los anteriores pasan:
      * <ol>
@@ -98,7 +98,7 @@ public final class DeckRules {
     }
 
     /**
-     * Comprueba que el jugador posee todas las cartas del deck. Mensaje 17 del diagrama A.7.
+     * Comprueba que el jugador posee todas las cartas del deck. Mensaje 21 del diagrama A.7.
      *
      * @param cardCodes  códigos del deck (ya validados por {@link #validateShape})
      * @param ownedCodes códigos que el jugador posee entre ellos (una sola consulta,

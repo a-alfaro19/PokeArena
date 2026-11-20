@@ -29,7 +29,7 @@ public interface PlayerCardRepository {
     /**
      * Las cartas de {@code cardCodes} que el jugador posee, con sus datos y sus copias, en UNA consulta por
      * la clave {@code (player_id, card_code)}: nunca una por carta ni un recorrido del catálogo (sección 7.1,
-     * paso 4; Anexo A.7, mensaje 15). Los códigos que no posee, o que no existen, simplemente no aparecen.
+     * paso 4; Anexo A.7, mensaje 19). Los códigos que no posee, o que no existen, simplemente no aparecen.
      *
      * <p>No filtra por disponibilidad: poseer una carta no depende de que siga visible en el catálogo. Es una
      * lectura y no exige transacción (historia 3.1.3, Sprint 3).

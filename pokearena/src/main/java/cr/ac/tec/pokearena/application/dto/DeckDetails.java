@@ -13,7 +13,7 @@ import cr.ac.tec.pokearena.domain.model.StoredDeck;
  * Responsabilidades: llevar el deck con la ficha resumida de cada carta (código, nombre, tipo, rareza,
  * costo, poder y miniatura). Es también lo que se guarda como respuesta idempotente: por eso es un record
  * de valores simples, que se serializa y se vuelve a leer igual.
- * Referencia: sección 7.1 ({@code DeckResponse}); Anexo A.7, mensaje 27, y A.8, mensaje 21.
+ * Referencia: sección 7.1 ({@code DeckResponse}); Anexo A.7, mensaje 34, y A.8, mensaje 22.
  *
  * @param id        identificador del deck
  * @param name      nombre tal como lo escribió el jugador

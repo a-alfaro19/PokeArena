@@ -177,7 +177,7 @@ class CreateDeckUseCaseTest {
     }
 
     @Nested
-    @DisplayName("Nombre repetido e idempotencia (mensajes 23 a 25 de A.7)")
+    @DisplayName("Nombre repetido e idempotencia (mensajes 28 a 33 de A.7)")
     class NameTaken {
 
         @Test

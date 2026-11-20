@@ -8,7 +8,7 @@ import java.util.Objects;
  * Responsabilidades: unir el deck guardado con sus cartas, leídas en una sola consulta, y ofrecer sus
  * códigos para quien solo los necesita (por ejemplo, la historia de búsquedas para validar el deck).
  * Referencia: sección 7.1 ({@code GET /api/v1/decks/{id}}: "las cartas obtenidas en una consulta");
- * Anexo A.8, mensajes 19 y 20 ({@code findByIdAndPlayer}: "deck con sus 12 cartas").
+ * Anexo A.8, mensajes 20 y 21 ({@code findByIdAndPlayer}: "deck con sus 12 cartas").
  *
  * @param stored datos del deck guardado
  * @param cards  sus cartas, ordenadas por código

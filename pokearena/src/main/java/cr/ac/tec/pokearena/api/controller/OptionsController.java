@@ -58,7 +58,10 @@ public class OptionsController {
         return CreationOptionsResponse.from(creationOptions.execute());
     }
 
-    /** Reglas del juego que la interfaz no escribe a mano: tamaño del deck y largo de su nombre (7.4, Sprint 3). */
+    /**
+     * Reglas del juego que la interfaz no escribe a mano: tamaño del deck y largo de su nombre (7.4, Sprint 3).
+     * Mensajes 2 y 3 del diagrama A.7: la interfaz la pide al iniciar sesión, antes de armar un deck.
+     */
     @GetMapping("/juego")
     @RequiresRole({Role.PLAYER, Role.ADMIN})
     public GameOptionsResponse game() {

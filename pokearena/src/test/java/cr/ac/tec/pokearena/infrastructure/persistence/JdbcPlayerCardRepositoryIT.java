@@ -29,7 +29,7 @@ import cr.ac.tec.pokearena.support.TestPlayers;
  * códigos no poseídos o inexistentes y cartas de otros jugadores, y que su plan usa la clave de
  * {@code player_card} en lugar de leer la tabla completa.
  * Referencia: sección 7.1, paso 4 ("una sola consulta por la clave (player_id, card_code)"); Anexo A.7,
- * mensajes 15 y 16; sección 13 (rendimiento).
+ * mensajes 19 y 20; sección 13 (rendimiento).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @DisplayName("Repositorio de la colección: cartas poseídas (JDBC)")

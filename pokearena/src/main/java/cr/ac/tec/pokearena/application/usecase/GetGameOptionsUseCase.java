@@ -8,7 +8,8 @@ import cr.ac.tec.pokearena.domain.rule.DeckRules;
  * ejemplo, Armar deck).
  * Responsabilidades: tomar el tamaño del deck y el largo máximo de su nombre de {@link DeckRules}, la misma
  * clase que valida los decks. Si cambia una regla, la interfaz la ve sin tocar su código.
- * Referencia: sección 7.4 y sección 11 de la especificación del Sprint 3; decisión D-S3-11.
+ * Referencia: sección 7.4 y sección 11 de la especificación del Sprint 3; decisión D-S3-11; Anexo A.7,
+ * mensajes 2 y 3.
  *
  * <h2>Misma plantilla que los demás casos de uso</h2>
  * <ol>

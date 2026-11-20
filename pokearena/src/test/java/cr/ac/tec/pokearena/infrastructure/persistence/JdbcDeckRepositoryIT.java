@@ -44,7 +44,7 @@ import cr.ac.tec.pokearena.support.TestPlayers;
  * Responsabilidades: guardar y leer un deck con sus cartas; nombre único por jugador (también con dos
  * transacciones simultáneas); que un jugador no lee decks ajenos; la paginación por cursor; y que el deck y
  * sus cartas se guardan o se revierten juntos dentro del {@code UnitOfWork} de quien llama.
- * Referencia: sección 7.1 y sección 6.1 del Sprint 3; Anexo A.7 (mensaje 19) y A.8; criterios C.7-E1, E2,
+ * Referencia: sección 7.1 y sección 6.1 del Sprint 3; Anexo A.7 (mensaje 23) y A.8; criterios C.7-E1, E2,
  * R4 y A2.
  *
  * <p>Cada prueba siembra un catálogo conocido ({@link TestCards}, que vacía {@code card}) y borra sus

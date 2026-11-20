@@ -42,8 +42,8 @@ import cr.ac.tec.pokearena.domain.model.Role;
  * Responsabilidades: traducir {@code POST /api/v1/decks}, {@code GET /api/v1/decks} y
  * {@code GET /api/v1/decks/{id}} a sus casos de uso, con el jugador tomado EXCLUSIVAMENTE de la sesión, y su
  * resultado a la respuesta HTTP. No contiene reglas: valida el dominio.
- * Referencia: sección 7.1; Anexo A.7 (mensajes 6, 9, 27 y 28) y A.8 (mensajes 2, 5, 12, 13, 16, 18, 21, 22, 25
- * y 26).
+ * Referencia: sección 7.1; Anexo A.7 (mensajes 8, 11, 34 y 35) y A.8 (mensajes 2, 5, 12, 13, 16, 19, 22, 23, 26
+ * y 27).
  *
  * <p>Decisiones:
  * <ul>
@@ -74,7 +74,7 @@ public class DeckController {
     /**
      * Crea un deck.
      *
-     * <p>Orden: el interceptor ya autorizó (mensajes 7 y 8 del diagrama A.7); {@code IdempotencyKeyHeader}
+     * <p>Orden: el interceptor ya autorizó (mensajes 9 y 10 del diagrama A.7); {@code IdempotencyKeyHeader}
      * valida la clave al resolver el parámetro, antes de leer el cuerpo; el resto lo valida el caso de uso.
      */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -84,12 +84,12 @@ public class DeckController {
         String name = body == null ? null : body.name();
         List<String> cards = body == null ? null : body.cards();
 
-        // Mensaje 9 del diagrama A.7: execute(IdempotentRequest, CreateDeckCommand).
+        // Mensaje 11 del diagrama A.7: execute(IdempotentRequest, CreateDeckCommand).
         IdempotentResult<DeckDetails> result = createDeck.execute(
                 idempotencyKey.toRequest(user.playerId(), requestHash(name, cards), HttpStatus.CREATED.value()),
                 new CreateDeckCommand(user.playerId(), name, cards));
 
-        // Mensaje 28 del diagrama A.7: 201 con el deck (o la misma respuesta guardada, si es un reintento).
+        // Mensaje 35 del diagrama A.7: 201 con el deck (o la misma respuesta guardada, si es un reintento).
         return ResponseEntity.status(result.status()).body(DeckResponse.from(result.body()));
     }
 
@@ -115,7 +115,7 @@ public class DeckController {
     @GetMapping("/{id}")
     @RequiresRole({Role.PLAYER, Role.ADMIN})
     public DeckResponse get(AuthenticatedUser user, @PathVariable(name = "id") String id) {
-        // Mensaje 18 del diagrama A.8: execute(GetDeckCommand). Mensaje 22: 200 con el deck; mensaje 26: 404.
+        // Mensaje 19 del diagrama A.8: execute(GetDeckCommand). Mensaje 23: 200 con el deck; mensaje 27: 404.
         return DeckResponse.from(getDeck.execute(new GetDeckCommand(user.playerId(), id)));
     }
 

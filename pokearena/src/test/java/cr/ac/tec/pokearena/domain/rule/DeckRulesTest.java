@@ -26,7 +26,7 @@ import cr.ac.tec.pokearena.domain.model.NewDeck;
  * Responsabilidades: comprobar cada regla con su error tipado y sus datos (cantidad actual o códigos), el
  * orden de las comprobaciones de la sección 7.1 (paso 3) y que {@code validateForPlay} informa el motivo de
  * cada regla sin lanzar. Java puro, sin Spring.
- * Referencia: sección 7.1; Anexo A.7, mensajes 14 y 17; criterios C.7-E1, R1, R2 y R3.
+ * Referencia: sección 7.1; Anexo A.7, mensajes 18 y 21; criterios C.7-E1, R1, R2 y R3.
  *
  * <p>Los tamaños se calculan a partir de {@link DeckRules#DECK_SIZE} y {@link DeckRules#NAME_MAX_LENGTH}:
  * la prueba comprueba la regla, no repite los números.

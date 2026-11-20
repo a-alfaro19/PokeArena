@@ -38,7 +38,7 @@ import cr.ac.tec.pokearena.support.TestPlayers;
  * también cuando dos envíos idénticos llegan a la vez; que la misma clave con otro contenido se rechaza; que
  * el orden de las cartas no cambia la huella; que un 409 por nombre no se guarda como respuesta (el reintento
  * se vuelve a ejecutar); y que la clave es obligatoria.
- * Referencia: sección 5.4 y 7.1 del Sprint 3; Anexo A.7, mensajes 10 a 13 y 21 a 25; criterio C.7-A1.
+ * Referencia: sección 5.4 y 7.1 del Sprint 3; Anexo A.7, mensajes 12 a 15 y 25 a 33; criterio C.7-A1.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("Crear Deck (3.1.3): idempotencia")

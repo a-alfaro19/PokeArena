@@ -25,7 +25,7 @@ import cr.ac.tec.pokearena.domain.repository.DeckRepository;
  * Propósito: implementación JDBC de {@link DeckRepository} (tablas {@code deck} y {@code deck_card}, V3).
  * Responsabilidades: guardar un deck con sus cartas y leer los decks de un jugador, siempre filtrando por
  * el jugador de la sesión.
- * Referencia: sección 7.1 y sección 6.1 del Sprint 3; Anexo A.7 (mensaje 19) y A.8 (mensajes 8 y 19).
+ * Referencia: sección 7.1 y sección 6.1 del Sprint 3; Anexo A.7 (mensaje 23) y A.8 (mensajes 8 y 20).
  *
  * <h2>Decisiones</h2>
  * <ul>

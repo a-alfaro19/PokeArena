@@ -9,11 +9,11 @@ import java.util.UUID;
  * Propósito: deck validado que todavía no se ha guardado (historia 3.1.3).
  * Responsabilidades: llevar lo que {@code DeckRepository.save} necesita: dueño, nombre limpio y normalizado,
  * los códigos de sus cartas y la hora de creación.
- * Referencia: sección 7.1 (pasos 3 y 6); Anexo A.7, mensajes 14 y 19.
+ * Referencia: sección 7.1 (pasos 3 y 6); Anexo A.7, mensajes 18 y 23.
  *
  * <p>Solo lo crea {@code DeckRules.validateShape}, después de comprobar la forma: así un {@code NewDeck}
  * siempre tiene un nombre válido y la cantidad exacta de cartas distintas. La posesión de las cartas se
- * comprueba aparte ({@code DeckRules.checkOwnership}, mensaje 17), porque necesita consultar la colección.
+ * comprueba aparte ({@code DeckRules.checkOwnership}, mensaje 21), porque necesita consultar la colección.
  *
  * @param playerId       jugador dueño del deck
  * @param name           nombre sin espacios al inicio ni al final, tal como se mostrará

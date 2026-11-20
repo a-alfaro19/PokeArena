@@ -13,7 +13,7 @@ import cr.ac.tec.pokearena.domain.model.StoredDeck;
  * {@code deck_card}).
  * Responsabilidades: guardar un deck validado con sus cartas, y leer los decks de un jugador: uno con sus
  * cartas, la lista paginada por cursor y los códigos de un deck.
- * Referencia: sección 7.1 y Anexo D.1 del Sprint 3; Anexo A.7 (mensaje 19) y A.8 (mensajes 8 y 19).
+ * Referencia: sección 7.1 y Anexo D.1 del Sprint 3; Anexo A.7 (mensaje 23) y A.8 (mensajes 8 y 20).
  *
  * <p>Un jugador solo ve sus propios decks: las lecturas reciben siempre el jugador de la sesión, y un deck
  * ajeno se trata igual que uno inexistente (vacío), sin revelar si existe (sección 5.2).
@@ -22,7 +22,7 @@ public interface DeckRepository {
 
     /**
      * Guarda el deck y sus cartas. Debe llamarse dentro de un {@code UnitOfWork}: el deck, sus cartas y la
-     * clave de idempotencia se confirman o se revierten juntos (Anexo A.7, mensajes 18 a 22).
+     * clave de idempotencia se confirman o se revierten juntos (Anexo A.7, mensajes 22 a 27).
      *
      * @param deck deck ya validado por {@code DeckRules}
      * @return el deck guardado, con su {@code id}
