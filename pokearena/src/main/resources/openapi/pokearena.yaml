@@ -17,8 +17,8 @@
 #   - Entrega de imágenes ...................... GET  /images/...
 # Sprint 3:
 #   - Opciones del juego (sección 7.4) .......... GET  /api/v1/opciones/juego
-#   - 3.1.3 Crear Deck: esquemas de deck (CreateDeckRequest, DeckResponse, DeckSummaryResponse,
-#     DeckPage) y errores de deck; sus rutas /api/v1/decks se agregan junto con DeckController.
+#   - 3.1.3 Crear Deck ............................ POST /api/v1/decks
+#     Listar y consultar mis decks ................ GET  /api/v1/decks y GET /api/v1/decks/{id}
 # Cada etiqueta que usa una operación está declarada en "tags" (OpenApiContractTest lo comprueba).
 # Se escribe a mano y lo verifica OpenApiContractIT en los dos sentidos: todo lo
 # documentado existe en la aplicación, y toda operación de la aplicación está aquí.
@@ -719,6 +719,166 @@ paths:
           $ref: '#/components/responses/NotAuthenticated'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/decks:
+    post:
+      tags: [Decks]
+      operationId: createDeck
+      summary: Crear deck (3.1.3)
+      description: |
+        Arma un deck con cartas de mi colección (sección 7.1, Anexo A.7). El jugador es siempre el de
+        la sesión. Se valida en este orden: nombre, lista de cartas, cantidad exacta (deckSize de
+        GET /api/v1/opciones/juego), códigos no vacíos, repetidas y, por último, que el jugador posea
+        todas (una sola consulta a su colección). Todas las validaciones ocurren antes de guardar nada.
+
+        Idempotente (sección 5.4): la huella es el nombre y los códigos ORDENADOS, así el orden en que
+        se envían las cartas no la cambia. La misma clave con el mismo contenido devuelve la respuesta
+        guardada sin crear otro deck. Un nombre ya usado por el jugador (sin distinguir mayúsculas ni
+        tildes) es 409 DECK_NAME_TAKEN; ese error no se guarda como respuesta idempotente.
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeckRequest'
+      responses:
+        '201':
+          description: Deck creado, o la misma respuesta guardada si es un reintento con la misma clave.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckResponse'
+        '400':
+          description: Solicitud inválida.
+          x-error-types: [IDEMPOTENCY_KEY_REQUIRED, INVALID_FIELD, MISSING_FIELD, INVALID_DECK_SIZE,
+            DUPLICATE_DECK_CARDS, CARD_NOT_OWNED, BAD_REQUEST]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                type: INVALID_DECK_SIZE
+                title: Cantidad de cartas inválida
+                status: 400
+                detail: El deck debe tener exactamente 12 cartas y tiene 11.
+                field: cards
+                correlationId: b3f1c9e0-4f2a-4c1e-9d55-0d8a1f3e7c21
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          description: El jugador ya tiene un deck con ese nombre.
+          x-error-types: [DECK_NAME_TAKEN]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Decks]
+      operationId: listMyDecks
+      summary: Listar mis decks (3.1.3)
+      description: |
+        Los decks del jugador de la sesión, ordenados por id y paginados según 5.5 (Anexo A.8).
+        Sin decks devuelve 200 con items vacío. Paginación inválida es INVALID_PAGINATION.
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Página de mis decks.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckPage'
+        '400':
+          description: Paginación inválida.
+          x-error-types: [INVALID_PAGINATION]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/decks/{id}:
+    get:
+      tags: [Decks]
+      operationId: getDeck
+      summary: Consultar un deck (3.1.3)
+      description: |
+        Un deck del jugador de la sesión con sus cartas, leídas en una sola consulta (Anexo A.8). Un
+        deck de otro jugador, uno inexistente o un id que no es un número responden igual, 404
+        DECK_NOT_FOUND, sin revelar si existe (sección 5.2; criterio C.7-R4).
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: El deck con sus cartas.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckResponse'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: El deck no existe o no es del jugador (mismo error para ambos casos).
+          x-error-types: [DECK_NOT_FOUND]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '405':
           $ref: '#/components/responses/MethodNotAllowed'
         '500':

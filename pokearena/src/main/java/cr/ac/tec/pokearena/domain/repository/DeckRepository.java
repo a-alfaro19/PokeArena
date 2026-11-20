@@ -13,7 +13,7 @@ import cr.ac.tec.pokearena.domain.model.StoredDeck;
  * {@code deck_card}).
  * Responsabilidades: guardar un deck validado con sus cartas, y leer los decks de un jugador: uno con sus
  * cartas, la lista paginada por cursor y los códigos de un deck.
- * Referencia: sección 7.1 y Anexo D.1 del Sprint 3; Anexo A.7 (mensaje 19) y A.8 (mensajes 9 y 19).
+ * Referencia: sección 7.1 y Anexo D.1 del Sprint 3; Anexo A.7 (mensaje 19) y A.8 (mensajes 8 y 19).
  *
  * <p>Un jugador solo ve sus propios decks: las lecturas reciben siempre el jugador de la sesión, y un deck
  * ajeno se trata igual que uno inexistente (vacío), sin revelar si existe (sección 5.2).
