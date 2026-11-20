@@ -138,6 +138,19 @@ class JdbcDeckRepositoryIT extends PostgresIntegrationTestBase {
         }
 
         @Test
+        @DisplayName("save devuelve la hora tal como quedó guardada (microsegundos), igual a la que leen después las consultas")
+        void savedTimeMatchesStoredPrecision() {
+            UUID player = newPlayer();
+            Instant withNanos = Instant.parse("2026-11-19T12:00:00.123456789Z");
+
+            StoredDeck stored = save(DeckRules.validateShape(player, "Fuego", deckCodes(), withNanos));
+
+            assertThat(stored.createdAt()).isEqualTo(Instant.parse("2026-11-19T12:00:00.123457Z"));
+            assertThat(decks.findByIdAndPlayer(stored.id(), player).orElseThrow().stored().createdAt())
+                    .isEqualTo(stored.createdAt());
+        }
+
+        @Test
         @DisplayName("findCardCodes devuelve los 12 códigos del deck, ordenados")
         void cardCodes() {
             StoredDeck stored = save(newDeck(newPlayer(), "Fuego"));

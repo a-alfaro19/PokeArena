@@ -66,16 +66,19 @@ public class JdbcDeckRepository implements DeckRepository {
                     "El deck se guarda dentro del UnitOfWork del caso de uso, junto con sus cartas y la clave de"
                             + " idempotencia (sección 7.1, paso 6)");
         }
-        List<Long> ids = jdbc.queryForList("INSERT INTO deck (player_id, name, name_normalized, created_at)\n"
+        // RETURNING created_at: la hora tal como quedó guardada. timestamptz guarda microsegundos y el reloj puede
+        // dar nanosegundos; así la respuesta del POST coincide con lo que después devuelven las lecturas.
+        List<Inserted> inserted = jdbc.query("INSERT INTO deck (player_id, name, name_normalized, created_at)\n"
                 + "VALUES (?, ?, ?, ?)\n"
                 + "ON CONFLICT ON CONSTRAINT " + NAME_CONSTRAINT + " DO NOTHING\n"
-                + "RETURNING id", Long.class,
+                + "RETURNING id, created_at",
+                (rs, row) -> new Inserted(rs.getLong("id"), rs.getObject("created_at", OffsetDateTime.class).toInstant()),
                 deck.playerId(), deck.name(), deck.nameNormalized(),
                 OffsetDateTime.ofInstant(deck.createdAt(), ZoneOffset.UTC));
-        if (ids.isEmpty()) {
+        if (inserted.isEmpty()) {
             throw DeckException.nameTaken("Ya tienes un deck llamado \"" + deck.name() + "\". Elige otro nombre.");
         }
-        long id = ids.getFirst();
+        long id = inserted.getFirst().id();
 
         List<Object[]> rows = new ArrayList<>();
         for (String code : deck.cardCodes()) {
@@ -83,7 +86,8 @@ public class JdbcDeckRepository implements DeckRepository {
         }
         jdbc.batchUpdate("INSERT INTO deck_card (deck_id, card_code) VALUES (?, ?)", rows);
 
-        return new StoredDeck(id, deck.playerId(), deck.name(), deck.cardCodes().size(), deck.createdAt());
+        return new StoredDeck(id, deck.playerId(), deck.name(), deck.cardCodes().size(),
+                inserted.getFirst().createdAt());
     }
 
     @Override
@@ -140,6 +144,10 @@ public class JdbcDeckRepository implements DeckRepository {
 
     /** Datos del deck repetidos en cada fila de la unión. */
     private record Header(long id, UUID playerId, String name, Instant createdAt) {
+    }
+
+    /** Lo que devuelve el INSERT del deck: su id y la hora tal como quedó guardada. */
+    private record Inserted(long id, Instant createdAt) {
     }
 
     /** Una fila de la unión: el deck y una de sus cartas. */
