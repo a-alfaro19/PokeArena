@@ -4,6 +4,7 @@ import java.util.List;
 
 import cr.ac.tec.pokearena.domain.error.AuthenticationException;
 import cr.ac.tec.pokearena.domain.error.AuthorizationException;
+import cr.ac.tec.pokearena.domain.error.DeckException;
 import cr.ac.tec.pokearena.domain.error.DomainException;
 import cr.ac.tec.pokearena.domain.error.ErrorType;
 import cr.ac.tec.pokearena.domain.error.IdempotencyException;
@@ -53,6 +54,11 @@ public final class SampleDomainErrors {
             case IDEMPOTENCY_KEY_REQUIRED -> IdempotencyException.required("Falta el encabezado Idempotency-Key.");
             case IDEMPOTENCY_KEY_REUSED ->
                     IdempotencyException.reused("La clave ya se usó con un contenido distinto.");
+            case INVALID_DECK_SIZE -> DeckException.invalidSize("El deck debe tener 12 cartas y tiene 11.");
+            case DUPLICATE_DECK_CARDS -> DeckException.duplicateCards("Cartas repetidas: PKA-FUE-001.");
+            case CARD_NOT_OWNED -> DeckException.cardNotOwned("No posees estas cartas: PKA-AGU-007.");
+            case DECK_NAME_TAKEN -> DeckException.nameTaken("Ya tienes un deck llamado Fuego.");
+            case DECK_NOT_FOUND -> DeckException.notFound("El deck no existe.");
         };
     }
 }

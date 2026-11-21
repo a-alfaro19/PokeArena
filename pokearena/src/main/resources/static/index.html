@@ -4,8 +4,9 @@
   Responsabilidades: estructura de la página para las seis historias: barra de sesión (Entrar con Google y,
   en el perfil dev, sesiones de prueba), bienvenida con el estado de la colección inicial (1.1.1 y 3.1.1),
   pestaña "Catálogo y mi colección" del jugador (3.1.2), pestañas de administrador (Crear carta, Crear
-  ubicación y Buscar carta), casos de prueba rápidos y panel de respuesta. El comportamiento está en
-  app.js, player.js y options.js, y el diseño en styles.css. Sin frameworks ni bibliotecas externas
+  ubicación y Buscar carta), pestañas "Armar deck" y "Mis decks" (Sprint 3, historia 3.1.3), casos de
+  prueba rápidos y panel de respuesta. El comportamiento está en app.js, player.js, options.js y deck.js,
+  y el diseño en styles.css. Sin frameworks ni bibliotecas externas
   (salvo el script oficial de Google Identity Services): todo se sirve desde la misma aplicación y habla
   con la API real en el mismo origen. Los valores permitidos de filtros y formularios (tipos, rarezas,
   rangos, habilidades, energía, efectos y requisitos de imagen) no están escritos aquí: app.js los pide a
@@ -68,6 +69,8 @@
         <button type="button" role="tab" class="tab" id="tab-card" aria-controls="panel-card" aria-selected="false">Crear carta</button>
         <button type="button" role="tab" class="tab" id="tab-location" aria-controls="panel-location" aria-selected="false">Crear ubicación</button>
         <button type="button" role="tab" class="tab" id="tab-search" aria-controls="panel-search" aria-selected="false">Buscar carta</button>
+        <button type="button" role="tab" class="tab" id="tab-deck" aria-controls="panel-deck" aria-selected="false">Armar deck</button>
+        <button type="button" role="tab" class="tab" id="tab-my-decks" aria-controls="panel-my-decks" aria-selected="false">Mis decks</button>
       </nav>
 
       <!-- Catálogo del jugador: la API decide propiedad, copias y reglas de disponibilidad. -->
@@ -257,6 +260,50 @@
           <h3>Casos de prueba rápidos</h3>
           <div class="quick-grid" data-quick="search"></div>
         </div>
+      </section>
+
+      <!-- ===================================================== Armar deck (3.1.3) -->
+      <!-- La cantidad de cartas y el largo del nombre llegan de GET /api/v1/opciones/juego (deck.js y app.js). -->
+      <section id="panel-deck" class="panel" role="tabpanel" aria-labelledby="tab-deck" hidden>
+        <div class="panel-head">
+          <h2>Armar deck</h2>
+          <p class="muted"><code>POST /api/v1/decks</code> · Historia 3.1.3 · Elige cartas distintas de tu colección</p>
+        </div>
+        <p class="options-error" data-options-error="game" role="alert" hidden></p>
+        <form id="deck-form" class="form-grid" novalidate>
+          <label class="field span-2"><span class="field-label">Nombre del deck <small id="deck-name-hint"></small></span>
+            <input name="name" type="text" autocomplete="off" placeholder="Fuego rápido">
+          </label>
+          <p id="deck-counter" class="deck-counter span-2" role="status" aria-live="polite"></p>
+          <div class="actions span-2">
+            <button type="submit" class="btn btn-primary">Guardar deck</button>
+            <button type="button" id="deck-clear" class="btn btn-ghost">Quitar todas</button>
+          </div>
+        </form>
+        <p id="deck-message" class="catalog-message" role="status" aria-live="polite">Inicia sesión para armar un deck con tu colección.</p>
+        <div id="deck-collection" class="catalog-grid" aria-busy="false"></div>
+        <button type="button" id="deck-more" class="btn btn-ghost load-more" hidden>Cargar más</button>
+        <div class="quick">
+          <h3>Casos de prueba rápidos</h3>
+          <p class="muted">Usan tu sesión y tu colección real; cada uno muestra el status y el type que devuelve el servidor.</p>
+          <div class="quick-grid" data-quick="deck"></div>
+          <p id="deck-quick-status" class="muted" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- ===================================================== Mis decks (3.1.3) -->
+      <section id="panel-my-decks" class="panel" role="tabpanel" aria-labelledby="tab-my-decks" hidden>
+        <div class="panel-head">
+          <h2>Mis decks</h2>
+          <p class="muted"><code>GET /api/v1/decks</code> y <code>GET /api/v1/decks/{id}</code> · Historia 3.1.3</p>
+        </div>
+        <div class="actions">
+          <button type="button" id="my-decks-reload" class="btn btn-ghost">Actualizar lista</button>
+        </div>
+        <p id="my-decks-message" class="catalog-message" role="status" aria-live="polite">Inicia sesión para ver tus decks.</p>
+        <ul id="my-decks-list" class="deck-list"></ul>
+        <button type="button" id="my-decks-more" class="btn btn-ghost load-more" hidden>Cargar más</button>
+        <div id="deck-detail" class="deck-detail" aria-live="polite"></div>
       </section>
     </section>
 

@@ -34,5 +34,12 @@ public enum ErrorType {
 
     // Idempotencia (sección 5.4).
     IDEMPOTENCY_KEY_REQUIRED,
-    IDEMPOTENCY_KEY_REUSED
+    IDEMPOTENCY_KEY_REUSED,
+
+    // Crear Deck (Sprint 3, historia 3.1.3, sección 5.3).
+    INVALID_DECK_SIZE,
+    DUPLICATE_DECK_CARDS,
+    CARD_NOT_OWNED,
+    DECK_NAME_TAKEN,
+    DECK_NOT_FOUND
 }

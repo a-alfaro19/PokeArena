@@ -387,6 +387,9 @@ class ApiErrorHandlerIT extends PostgresIntegrationTestBase {
             case FORBIDDEN -> 403;
             case IDENTITY_PROVIDER_UNAVAILABLE -> 503;
             case IDEMPOTENCY_KEY_REUSED -> 422;
+            // Crear Deck (Sprint 3, sección 5.3).
+            case DECK_NAME_TAKEN -> 409;
+            case DECK_NOT_FOUND -> 404;
             default -> 400;
         };
     }

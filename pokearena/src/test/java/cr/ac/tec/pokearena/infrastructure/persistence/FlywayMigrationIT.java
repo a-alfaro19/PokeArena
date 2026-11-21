@@ -19,10 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
 
 /**
- * Propósito: verificar la migración inicial V1 sobre un PostgreSQL real.
+ * Propósito: verificar las migraciones (V1 inicial, V2 y V3 de decks) sobre un PostgreSQL real.
  * Responsabilidades: comprobar que Flyway crea todo el esquema de la sección 6, siembra los
  * catálogos de la sección 14 y que la base rechaza los datos que violan sus restricciones.
- * Referencia: secciones 6 y 14 de la especificación.
+ * Referencia: secciones 6 y 14 de la especificación; sección 6.1 del Sprint 3 (V3).
  *
  * <p>Cada prueba corre en una transacción que se revierte al terminar ({@code @Transactional}),
  * así las filas insertadas no afectan a otras pruebas que compartan el contenedor.
@@ -32,23 +32,24 @@ import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
 @DisplayName("Migración inicial de la base de datos (Flyway V1)")
 class FlywayMigrationIT extends PostgresIntegrationTestBase {
 
-    // Las once tablas de la sección 6, más la tabla de control de Flyway.
+    // Las once tablas de la sección 6, las de V3 (decks, Sprint 3) y la tabla de control de Flyway.
     private static final List<String> EXPECTED_TABLES = List.of(
             "card_type", "rarity", "ability", "card_type_counter", "card", "location",
             "player", "player_identity", "player_card", "cube_movement", "idempotency_key",
+            "deck", "deck_card",
             "flyway_schema_history");
 
     @Autowired
     private JdbcTemplate jdbc;
 
     @Test
-    @DisplayName("Las migraciones V1 y V2 se aplican en orden sobre una base vacía y quedan registradas como exitosas")
+    @DisplayName("Las migraciones V1, V2 y V3 se aplican en orden sobre una base vacía y quedan registradas como exitosas")
     void migrationIsAppliedOnEmptyDatabase() {
-        // El contenedor arranca vacío: solo deben estar V1 (esquema) y V2 (evolución sin clave foránea).
+        // El contenedor arranca vacío: V1 (esquema), V2 (evolución sin clave foránea) y V3 (decks, Sprint 3).
         List<Map<String, Object>> history = jdbc.queryForList(
                 "SELECT installed_rank, version, success FROM flyway_schema_history ORDER BY installed_rank");
 
-        assertThat(history).extracting(row -> row.get("version")).containsExactly("1", "2");
+        assertThat(history).extracting(row -> row.get("version")).containsExactly("1", "2", "3");
         assertThat(history).allSatisfy(row -> assertThat(row).containsEntry("success", true));
         assertThat(history.getFirst()).containsEntry("installed_rank", 1);
     }
@@ -234,6 +235,91 @@ class FlywayMigrationIT extends PostgresIntegrationTestBase {
     }
 
     // ---------------------------------------------------------------------------------------
+    // V3: decks (Sprint 3, historia 3.1.3, sección 6.1).
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("V3: un deck guarda sus cartas y empieza en la versión 1, activo")
+    void deckIsStoredWithItsCards() {
+        UUID player = insertPlayer(0);
+        String cardCode = insertReadyCard();
+        long deck = insertDeck(player, "Fuego", "fuego");
+        jdbc.update("INSERT INTO deck_card (deck_id, card_code) VALUES (?, ?)", deck, cardCode);
+
+        assertThat(jdbc.queryForMap("SELECT version, active FROM deck WHERE id = ?", deck))
+                .containsEntry("version", 1).containsEntry("active", true);
+        assertThat(jdbc.queryForList("SELECT card_code FROM deck_card WHERE deck_id = ?", String.class, deck))
+                .containsExactly(cardCode);
+    }
+
+    @Test
+    @DisplayName("V3: un jugador no puede tener dos decks con el mismo nombre normalizado (uq_deck_player_name)")
+    void deckNameIsUniquePerPlayer() {
+        UUID player = insertPlayer(0);
+        insertDeck(player, "Fuego", "fuego");
+
+        assertThatThrownBy(() -> insertDeck(player, "FUEGO", "fuego"))
+                .isInstanceOf(DuplicateKeyException.class)
+                .hasMessageContaining("uq_deck_player_name");
+    }
+
+    @Test
+    @DisplayName("V3: dos jugadores distintos sí pueden usar el mismo nombre de deck")
+    void sameDeckNameForDifferentPlayers() {
+        insertDeck(insertPlayer(0), "Fuego", "fuego");
+        insertDeck(insertPlayer(0), "Fuego", "fuego");
+
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM deck WHERE name_normalized = 'fuego'", Integer.class))
+                .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("V3: un deck no puede repetir una carta (pk_deck_card)")
+    void deckCannotRepeatCard() {
+        UUID player = insertPlayer(0);
+        String cardCode = insertReadyCard();
+        long deck = insertDeck(player, "Fuego", "fuego");
+        jdbc.update("INSERT INTO deck_card (deck_id, card_code) VALUES (?, ?)", deck, cardCode);
+
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO deck_card (deck_id, card_code) VALUES (?, ?)", deck,
+                cardCode))
+                .isInstanceOf(DuplicateKeyException.class)
+                .hasMessageContaining("pk_deck_card");
+    }
+
+    @Test
+    @DisplayName("V3: un deck no puede incluir una carta inexistente (fk_deck_card_card)")
+    void deckCardMustExist() {
+        long deck = insertDeck(insertPlayer(0), "Fuego", "fuego");
+
+        // Prueba aparte: tras un error, PostgreSQL aborta la transacción de la prueba y no evalúa más sentencias.
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO deck_card (deck_id, card_code) VALUES (?, ?)", deck,
+                "PKA-AGU-999"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("fk_deck_card_card");
+    }
+
+    @Test
+    @DisplayName("V3: un deck exige un jugador existente (fk_deck_player)")
+    void deckRequiresExistingPlayer() {
+        UUID unknownPlayer = UUID.randomUUID();
+
+        assertThatThrownBy(() -> insertDeck(unknownPlayer, "Fuego", "fuego"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("fk_deck_player");
+    }
+
+    @Test
+    @DisplayName("V3: existe el índice idx_deck_player sobre (player_id, id) para listar mis decks por cursor")
+    void deckPlayerIndexExists() {
+        String definition = jdbc.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE tablename = 'deck' AND indexname = 'idx_deck_player'",
+                String.class);
+
+        assertThat(definition).contains("(player_id, id)");
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Datos mínimos para las pruebas de restricciones.
     // ---------------------------------------------------------------------------------------
 
@@ -271,5 +357,11 @@ class FlywayMigrationIT extends PostgresIntegrationTestBase {
                 VALUES ('Volcán', 'Un volcán activo', 4, 'NONE', 0,
                         '/images/locations/1/large.png', ?, ?, ?, now())
                 """, smallImageUrl, imageStatus, available);
+    }
+
+    private long insertDeck(UUID player, String name, String nameNormalized) {
+        return jdbc.queryForObject(
+                "INSERT INTO deck (player_id, name, name_normalized, created_at) VALUES (?, ?, ?, now()) RETURNING id",
+                Long.class, player, name, nameNormalized);
     }
 }

@@ -1,7 +1,8 @@
 /*
  * Propósito: comportamiento de la interfaz web de PokéArena (corrección 1; sección 11).
  * Responsabilidades: sesiones, bienvenida y catálogo del jugador, formularios de Crear carta,
- * Crear ubicación y Buscar carta contra la API real, casos rápidos y panel de respuesta.
+ * Crear ubicación y Buscar carta contra la API real, las pantallas Armar deck y Mis decks (Sprint 3,
+ * historia 3.1.3; su estado vive en deck.js), casos rápidos y panel de respuesta.
  * Al cargar pide GET /api/v1/configuracion: con el client id de Google inicializa Google Identity
  * Services y habilita "Entrar con Google"; sin él, deja el botón deshabilitado con un aviso.
  * Referencia: sección 11 (administrador y jugador), 5.2 (sesiones), 5.3 (errores), 5.4 (idempotencia),
@@ -23,7 +24,8 @@
 'use strict';
 
 import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, googleClientIdFrom, CatalogFilterForm, catalogQuickTests } from './player.js';
-import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMessage, rangeText, imageRequirementText, acceptedTypes, energyAmountState, integersBetween, effectJson } from './options.js';
+import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMessage, rangeText, imageRequirementText, acceptedTypes, energyAmountState, integersBetween, effectJson, gameOptionsFrom } from './options.js';
+import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNode, deckSummaryNode, deckDetailNodes } from './deck.js';
 
 (() => {
   // ---------------------------------------------------------------------------------------------
@@ -62,6 +64,8 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
   const HTTP_CLIENT_ERROR_MIN = 400;
   const HTTP_SERVER_ERROR_MIN = 500;
   const HTTP_NOT_FOUND = 404;
+  const HTTP_OK = 200;
+  const HTTP_CREATED = 201;
 
   /** Imagen de reemplazo cuando una URL no carga (sección 11). SVG fijo, sin datos del servidor. */
   const PLACEHOLDER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
@@ -93,7 +97,7 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
     /** Búsqueda en curso, para "Cargar más". */
     search: { params: null, token: null, nextCursor: null, shown: 0 },
     /** Opciones de la API para la sesión actual; null mientras no se cargan o si la carga falló. */
-    options: { catalog: null, creation: null },
+    options: { catalog: null, creation: null, game: null },
   };
 
   // ---------------------------------------------------------------------------------------------
@@ -102,6 +106,8 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
 
   let playerCatalog;
   let catalogFilterForm;
+  let deckBuilder;
+  let myDecks;
   let googleSdk = null;
   let googleAttempt = null;
   let googleConfigured = false;
@@ -178,7 +184,10 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
 
     const version = state.sessionVersion;
     const current = () => version === state.sessionVersion && (!request.isCurrent || request.isCurrent());
-    if (current()) showPending(request);
+    // Una solicitud silenciosa (recarga interna, por ejemplo de Mis decks) no reemplaza en el panel la última
+    // respuesta que pidió el usuario.
+    const shown = () => !request.silent && current();
+    if (shown()) showPending(request);
     const started = performance.now();
     let response;
     let text;
@@ -186,7 +195,7 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
       response = await fetch(request.path, { method: request.method, headers, body, credentials: 'omit' });
       text = await response.text();
     } catch (failure) {
-      if (current()) showNetworkError(request, failure);
+      if (shown()) showNetworkError(request, failure);
       return null;
     }
     const elapsed = Math.round(performance.now() - started);
@@ -204,7 +213,7 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
       correlationId: (json && json.correlationId) || response.headers.get('X-Correlation-Id') || '—',
     };
     if (current()) {
-      showResponse(request, result, elapsed);
+      if (shown()) showResponse(request, result, elapsed);
       // Un 401 de la sesión activa limpia también los datos privados, no solo el indicador de la barra.
       if (result.status === 401 && request.token && request.token === state.session.token && !request.expected) {
         expireSession();
@@ -382,7 +391,7 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
     state.roleTokens = {};
     state.lastCreate = null;
     state.search = { params: null, token: null, nextCursor: null, shown: 0 };
-    state.options = { catalog: null, creation: null };
+    state.options = { catalog: null, creation: null, game: null };
     renderOptions();
     $('#repeat-request').disabled = true;
     $('#results-body').replaceChildren();
@@ -401,6 +410,11 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
     ['type', 'costMin', 'costMax', 'limit'].forEach((name) => { form.elements[name].value = ''; });
     form.elements.owned.checked = false;
     playerCatalog.clear(message);
+    // Decks (3.1.3): la colección, la selección y la lista son de la sesión anterior.
+    deckBuilder.clear();
+    myDecks.clear();
+    $('#deck-form').elements.name.value = '';
+    $('#deck-quick-status').textContent = '';
     renderSession();
     return attempt;
   }
@@ -414,6 +428,8 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
     $('#tab-catalog').click();
     playerCatalog.load();
     loadOptions(attempt);
+    deckBuilder.loadCollection();
+    myDecks.refresh();
   }
 
   function expireSession() {
@@ -569,16 +585,20 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
    */
   async function loadOptions(attempt) {
     const { token, role } = state.session;
-    const [catalog, creation] = await Promise.all([
+    const [catalog, creation, game] = await Promise.all([
       fetchOptions(OPTIONS_PATHS.catalog, token),
       role === 'ADMIN' ? fetchOptions(OPTIONS_PATHS.creation, token) : Promise.resolve(undefined),
+      // Opciones del juego (3.1.3): cualquier rol, como las del catálogo.
+      fetchOptions(OPTIONS_PATHS.game, token),
     ]);
     if (attempt !== state.loginVersion) return;
     state.options.catalog = catalogOptionsFrom(catalog);
     state.options.creation = role === 'ADMIN' ? creationOptionsFrom(creation) : null;
+    state.options.game = gameOptionsFrom(game);
     renderOptions({
       catalog: state.options.catalog ? null : optionsErrorMessage(OPTIONS_PATHS.catalog, catalog),
       creation: role !== 'ADMIN' || state.options.creation ? null : optionsErrorMessage(OPTIONS_PATHS.creation, creation),
+      game: state.options.game ? null : optionsErrorMessage(OPTIONS_PATHS.game, game),
     });
   }
 
@@ -587,6 +607,7 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
     const pending = {
       catalog: 'Inicia sesión para cargar los tipos, las rarezas y los límites de los filtros.',
       creation: 'Inicia sesión como administrador para cargar las opciones de este formulario.',
+      game: 'Inicia sesión para cargar la cantidad de cartas de un deck y el largo de su nombre.',
     };
     $$('[data-options-error]').forEach((notice) => {
       const kind = notice.dataset.optionsError;
@@ -678,6 +699,7 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
     renderEffectEditor(locationForm);
     renderEnergy(locationForm);
     catalogFilterForm?.update();
+    if (deckBuilder) renderDeckBuilder(deckBuilder.view);
     renderOptionsNotices(errors);
   }
 
@@ -1135,6 +1157,89 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
   }
 
   // ---------------------------------------------------------------------------------------------
+  // Armar deck y Mis decks (Sprint 3, historia 3.1.3). El estado vive en deck.js; aquí solo se dibuja.
+  // ---------------------------------------------------------------------------------------------
+
+  const deckImage = (url, alt) => safeImage(url, alt, 'catalog-image');
+
+  /** Colección para elegir, contador contra deckSize y nombre con el largo de deckNameMaxLength. */
+  function renderDeckBuilder(view) {
+    const game = state.options.game;
+    const form = $('#deck-form');
+    const name = form.elements.name;
+    if (game) name.maxLength = game.deckNameMaxLength;
+    else name.removeAttribute('maxlength');
+    $('#deck-name-hint').textContent = game ? 'máximo ' + game.deckNameMaxLength + ' caracteres' : '';
+    $('#deck-counter').textContent = game
+      ? 'Cartas elegidas: ' + view.selected.length + ' de ' + game.deckSize
+        + (view.selected.length === game.deckSize ? ' · listo para guardar.' : '.')
+      : 'Las reglas del deck se cargan de GET /api/v1/opciones/juego al iniciar sesión.';
+    $('#deck-collection').replaceChildren(...view.cards.map((card) => collectionCardNode(document, card, {
+      selected: view.selected.includes(card.code), canAdd: deckBuilder.canAdd(),
+      onToggle: (code) => deckBuilder.toggle(code), image: deckImage })));
+    $('#deck-collection').setAttribute('aria-busy', String(view.loading));
+    $('#deck-message').textContent = view.message;
+    $('#deck-message').className = 'catalog-message' + (view.error ? ' catalog-error' : '');
+    const more = $('#deck-more');
+    more.hidden = !view.nextCursor;
+    more.disabled = view.loading;
+    $('button[type="submit"]', form).disabled = !state.session.token || !game || view.saving;
+    $('#deck-clear').disabled = view.selected.length === 0;
+  }
+
+  /** Lista de mis decks y el detalle abierto. */
+  function renderMyDecks(view) {
+    $('#my-decks-list').replaceChildren(...view.items.map((deck) => deckSummaryNode(document, deck,
+      (id) => myDecks.open(id))));
+    $('#my-decks-message').textContent = view.message;
+    $('#my-decks-message').className = 'catalog-message' + (view.error ? ' catalog-error' : '');
+    const more = $('#my-decks-more');
+    more.hidden = !view.nextCursor;
+    more.disabled = view.loading;
+    const detail = $('#deck-detail');
+    if (view.detail) detail.replaceChildren(...deckDetailNodes(document, view.detail, deckImage));
+    else detail.replaceChildren(...(view.detailMessage ? [el('p', { className: 'catalog-error', text: view.detailMessage })] : []));
+  }
+
+  /** Una carta del catálogo que el jugador no posee (caso rápido "Carta ajena"), o null si no hay. */
+  async function findForeignCard() {
+    let cursor = null;
+    do {
+      const result = await send({ method: 'GET', path: catalogPagePath(cursor), token: state.session.token,
+        label: 'Buscar una carta que no posees' });
+      if (!result || result.status !== HTTP_OK || !Array.isArray(result.body?.items)) return null;
+      const foreign = result.body.items.find((card) => card.owned === false);
+      if (foreign) return foreign.code;
+      cursor = result.body.nextCursor;
+    } while (cursor);
+    return null;
+  }
+
+  function wireDecks() {
+    deckBuilder = new DeckBuilder({ send, getSession: () => state.session, getGameOptions: () => state.options.game,
+      newKey: newIdempotencyKey, render: renderDeckBuilder });
+    myDecks = new MyDecks({ send, getSession: () => state.session, render: renderMyDecks });
+    $('#deck-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const result = await deckBuilder.save(form.elements.name.value);
+      if (result?.status === HTTP_CREATED) {
+        // El deck nuevo aparece en Mis decks.
+        form.elements.name.value = '';
+        myDecks.refresh();
+      }
+    });
+    $('#deck-clear').addEventListener('click', () => deckBuilder.clearSelection());
+    $('#deck-more').addEventListener('click', () => deckBuilder.loadCollection(true));
+    $('#my-decks-more').addEventListener('click', () => myDecks.load(true));
+    $('#my-decks-reload').addEventListener('click', () => myDecks.load());
+    // Después de cada caso, la lista se recarga en silencio: el panel conserva la respuesta del caso.
+    renderQuickTests('deck', deckQuickTests(deckBuilder, findForeignCard, (text) => {
+      $('#deck-quick-status').textContent = text;
+    }, () => myDecks.refresh()));
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Google: client id desde GET /api/v1/configuracion; el token de Google solo viaja a /sesiones.
   // ---------------------------------------------------------------------------------------------
 
@@ -1268,6 +1373,7 @@ import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMes
     wireLocationForm();
     wireSearchForm();
     wireCatalog();
+    wireDecks();
     renderQuickTests('catalog', catalogQuickTests(catalogFilterForm));
     renderQuickTests('card', CARD_QUICK_TESTS);
     renderQuickTests('location', LOCATION_QUICK_TESTS);

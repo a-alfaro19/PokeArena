@@ -15,6 +15,10 @@
 #   - Opciones de filtros (3.1.2 y 2.1.2) ...... GET  /api/v1/opciones/catalogo
 #   - Opciones de creación (2.1.1 y 2.2.1) ..... GET  /api/v1/opciones/creacion
 #   - Entrega de imágenes ...................... GET  /images/...
+# Sprint 3:
+#   - Opciones del juego (sección 7.4) .......... GET  /api/v1/opciones/juego
+#   - 3.1.3 Crear Deck ............................ POST /api/v1/decks
+#     Listar y consultar mis decks ................ GET  /api/v1/decks y GET /api/v1/decks/{id}
 # Cada etiqueta que usa una operación está declarada en "tags" (OpenApiContractTest lo comprueba).
 # Se escribe a mano y lo verifica OpenApiContractIT en los dos sentidos: todo lo
 # documentado existe en la aplicación, y toda operación de la aplicación está aquí.
@@ -81,6 +85,8 @@ tags:
     description: Configuración pública que la interfaz web lee al cargar (sección 11)
   - name: Opciones
     description: Valores permitidos que la interfaz web pide antes de mostrar filtros y formularios (sección 11)
+  - name: Decks
+    description: Historia 3.1.3 (Crear Deck); armar y consultar decks de mi colección (Sprint 3)
 
 security:
   - bearerAuth: []
@@ -686,6 +692,198 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/v1/opciones/juego:
+    get:
+      tags: [Opciones]
+      operationId: getGameOptions
+      summary: Opciones del juego (reglas que la interfaz no escribe a mano)
+      description: |
+        Sprint 3, sección 7.4. La interfaz web la pide antes de mostrar las pantallas del juego
+        (por ejemplo, Armar deck) para no repetir números de las reglas (decisión D-S3-11).
+        deckSize y deckNameMaxLength salen de DeckRules (DECK_SIZE y NAME_MAX_LENGTH), la misma
+        clase que valida los decks. Otras historias agregan sus campos a esta respuesta.
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Opciones del juego.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameOptionsResponse'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/decks:
+    post:
+      tags: [Decks]
+      operationId: createDeck
+      summary: Crear deck (3.1.3)
+      description: |
+        Arma un deck con cartas de mi colección (sección 7.1, Anexo A.7). El jugador es siempre el de
+        la sesión. Se valida en este orden: nombre, lista de cartas, cantidad exacta (deckSize de
+        GET /api/v1/opciones/juego), códigos no vacíos, repetidas y, por último, que el jugador posea
+        todas (una sola consulta a su colección). Todas las validaciones ocurren antes de guardar nada.
+
+        Idempotente (sección 5.4): la huella es el nombre y los códigos ORDENADOS, así el orden en que
+        se envían las cartas no la cambia. La misma clave con el mismo contenido devuelve la respuesta
+        guardada sin crear otro deck. Un nombre ya usado por el jugador (sin distinguir mayúsculas ni
+        tildes) es 409 DECK_NAME_TAKEN; ese error no se guarda como respuesta idempotente.
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeckRequest'
+      responses:
+        '201':
+          description: Deck creado, o la misma respuesta guardada si es un reintento con la misma clave.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckResponse'
+        '400':
+          description: Solicitud inválida.
+          x-error-types: [IDEMPOTENCY_KEY_REQUIRED, INVALID_FIELD, MISSING_FIELD, INVALID_DECK_SIZE,
+            DUPLICATE_DECK_CARDS, CARD_NOT_OWNED, BAD_REQUEST]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                type: INVALID_DECK_SIZE
+                title: Cantidad de cartas inválida
+                status: 400
+                detail: El deck debe tener exactamente 12 cartas y tiene 11.
+                field: cards
+                correlationId: b3f1c9e0-4f2a-4c1e-9d55-0d8a1f3e7c21
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '409':
+          description: El jugador ya tiene un deck con ese nombre.
+          x-error-types: [DECK_NAME_TAKEN]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Decks]
+      operationId: listMyDecks
+      summary: Listar mis decks (3.1.3)
+      description: |
+        Los decks del jugador de la sesión, ordenados por id y paginados según 5.5 (Anexo A.8).
+        Sin decks devuelve 200 con items vacío. Paginación inválida es INVALID_PAGINATION.
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Página de mis decks.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckPage'
+        '400':
+          description: Paginación inválida.
+          x-error-types: [INVALID_PAGINATION]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/decks/{id}:
+    get:
+      tags: [Decks]
+      operationId: getDeck
+      summary: Consultar un deck (3.1.3)
+      description: |
+        Un deck del jugador de la sesión con sus cartas, leídas en una sola consulta (Anexo A.8). Un
+        deck de otro jugador, uno inexistente o un id que no es un número responden igual, 404
+        DECK_NOT_FOUND, sin revelar si existe (sección 5.2; criterio C.7-R4).
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: El deck con sus cartas.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckResponse'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: El deck no existe o no es del jugador (mismo error para ambos casos).
+          x-error-types: [DECK_NOT_FOUND]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -936,6 +1134,12 @@ components:
             - METHOD_NOT_ALLOWED
             - UNSUPPORTED_MEDIA_TYPE
             - INTERNAL_ERROR
+            # Dominio, Sprint 3: Crear Deck (3.1.3)
+            - INVALID_DECK_SIZE
+            - DUPLICATE_DECK_CARDS
+            - CARD_NOT_OWNED
+            - DECK_NAME_TAKEN
+            - DECK_NOT_FOUND
         title:
           type: string
           description: Título fijo del tipo de error, en español.
@@ -1504,3 +1708,120 @@ components:
           type: integer
         minHeight:
           type: integer
+
+    # ---------------------------------------------------------------------------
+    # Sprint 3
+    # ---------------------------------------------------------------------------
+    GameOptionsResponse:
+      description: |
+        Opciones del juego (GET /api/v1/opciones/juego, sección 7.4). Otras historias del
+        Sprint 3 agregan sus campos (minCubesToSearch, searchPollSeconds).
+      type: object
+      required: [deckSize, deckNameMaxLength]
+      properties:
+        deckSize:
+          type: integer
+          description: Cantidad exacta de cartas distintas de un deck (DeckRules.DECK_SIZE).
+          example: 12
+        deckNameMaxLength:
+          type: integer
+          description: Largo máximo del nombre del deck, en caracteres (DeckRules.NAME_MAX_LENGTH).
+          example: 40
+
+    CreateDeckRequest:
+      description: |
+        Cuerpo de POST /api/v1/decks (historia 3.1.3, sección 7.1). Se valida en este orden
+        (DeckRules.validateShape): nombre presente (MISSING_FIELD) y de 1 a deckNameMaxLength
+        caracteres (INVALID_FIELD); lista cards presente (MISSING_FIELD); exactamente deckSize
+        cartas (INVALID_DECK_SIZE, con la cantidad actual); sin repetidas (DUPLICATE_DECK_CARDS,
+        con los códigos). Luego, todas poseídas por el jugador (CARD_NOT_OWNED, con los códigos).
+        El orden de cards no cambia la huella de idempotencia.
+      type: object
+      required: [name, cards]
+      properties:
+        name:
+          type: string
+          example: Fuego rápido
+        cards:
+          type: array
+          description: Códigos de las cartas de mi colección (GET /api/v1/opciones/juego da la cantidad exacta).
+          items:
+            type: string
+            pattern: '^PKA-(FUE|AGU|PLA|ELE|PSI|LUC)-[0-9]{3,}$'
+          example: [PKA-FUE-001, PKA-FUE-002, PKA-AGU-001, PKA-AGU-002, PKA-PLA-001, PKA-PLA-002,
+                    PKA-ELE-001, PKA-ELE-002, PKA-PSI-001, PKA-PSI-002, PKA-LUC-001, PKA-LUC-002]
+
+    DeckCard:
+      description: Carta de un deck, obtenida junto con las demás en una sola consulta (sección 7.1).
+      type: object
+      required: [code, name, type, rarity, cost, power, imageSmallUrl]
+      properties:
+        code:
+          type: string
+          example: PKA-FUE-001
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/CatalogValue'
+        rarity:
+          $ref: '#/components/schemas/CatalogValue'
+        cost:
+          $ref: '#/components/schemas/Cost'
+        power:
+          $ref: '#/components/schemas/Power'
+        imageSmallUrl:
+          type: string
+          description: Miniatura de la carta.
+
+    DeckResponse:
+      description: Deck con sus cartas (POST /api/v1/decks y GET /api/v1/decks/{id}).
+      type: object
+      required: [id, name, createdAt, cards]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          description: Nombre tal como lo escribió el jugador.
+        createdAt:
+          type: string
+          format: date-time
+        cards:
+          type: array
+          description: Las cartas del deck (deckSize, distintas), ordenadas por código.
+          items:
+            $ref: '#/components/schemas/DeckCard'
+
+    DeckSummaryResponse:
+      description: Un deck en la lista de mis decks (GET /api/v1/decks).
+      type: object
+      required: [id, name, size, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        size:
+          type: integer
+          description: Cantidad de cartas del deck.
+        createdAt:
+          type: string
+          format: date-time
+
+    DeckPage:
+      description: Página de mis decks, con la paginación única (sección 5.5), ordenada por id.
+      type: object
+      required: [items, nextCursor, limit]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeckSummaryResponse'
+        nextCursor:
+          type: [string, 'null']
+          description: Cursor de la página siguiente; null en la última.
+        limit:
+          type: integer
+          description: Tamaño de página con el que se pidió.

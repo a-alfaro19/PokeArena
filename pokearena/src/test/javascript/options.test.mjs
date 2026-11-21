@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
 // Importa exactamente el módulo servido al navegador sin exigir package.json ni dependencias.
 const source = await readFile(new URL('../../main/resources/static/options.js', import.meta.url), 'utf8');
 const { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMessage, rangeText, imageRequirementText,
-  acceptedTypes, energyAmountState, integersBetween, effectJson } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  acceptedTypes, energyAmountState, integersBetween, effectJson, gameOptionsFrom } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
 // Respuestas de ejemplo con la forma del contrato. Los números son datos de la prueba, no de la interfaz.
 const catalogBody = () => ({
@@ -90,4 +90,22 @@ test('opciones: el JSON del efecto sigue la descripción de parámetros; los vac
     { code: 'TYPE_BONUS', parameters: { type: 'AGU', amount: -2 } });
   assert.deepEqual(effectJson(bonus, () => ''), { code: 'TYPE_BONUS', parameters: {} });
   assert.equal(effectJson(undefined, () => ''), null);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Opciones del juego (Sprint 3, sección 7.4; historia 3.1.3)
+// ---------------------------------------------------------------------------------------------
+
+test('opciones del juego: deckSize y deckNameMaxLength llegan de GET /api/v1/opciones/juego', () => {
+  assert.equal(OPTIONS_PATHS.game, '/api/v1/opciones/juego');
+  const body = { deckSize: 5, deckNameMaxLength: 9, otroCampo: 'de otra historia' };
+  assert.deepEqual(gameOptionsFrom({ status: 200, body }), body);
+});
+
+test('opciones del juego: un error o una forma inesperada no producen opciones (sin valores de respaldo)', () => {
+  for (const result of [null, { status: 401, body: { type: 'NOT_AUTHENTICATED' } },
+    { status: 200, body: { deckSize: 0, deckNameMaxLength: 9 } }, { status: 200, body: { deckSize: '5', deckNameMaxLength: 9 } },
+    { status: 200, body: { deckSize: 5 } }]) {
+    assert.equal(gameOptionsFrom(result), null, JSON.stringify(result));
+  }
 });

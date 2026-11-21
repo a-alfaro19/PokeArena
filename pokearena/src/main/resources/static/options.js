@@ -1,6 +1,7 @@
 /*
  * Propósito: opciones de los filtros y formularios que la interfaz pide a la API antes de usarlos
- * (GET /api/v1/opciones/catalogo y GET /api/v1/opciones/creacion; Anexos A.1, A.2, A.3 y A.6).
+ * (GET /api/v1/opciones/catalogo y GET /api/v1/opciones/creacion; Anexos A.1, A.2, A.3 y A.6; y, desde el
+ * Sprint 3, GET /api/v1/opciones/juego, sección 7.4).
  * Responsabilidades: validar la forma de las respuestas, armar los textos de rangos y requisitos de imagen,
  * y construir el JSON del campo effect a partir de la descripción de parámetros que entrega el servidor.
  * Funciones puras, sin DOM: app.js las conecta con la página y src/test/javascript/options.test.mjs las prueba.
@@ -16,6 +17,8 @@
 export const OPTIONS_PATHS = {
   catalog: '/api/v1/opciones/catalogo',
   creation: '/api/v1/opciones/creacion',
+  // Sprint 3, sección 7.4: tamaño del deck y largo máximo de su nombre (historia 3.1.3).
+  game: '/api/v1/opciones/juego',
 };
 
 /** Unidad para mostrar el peso máximo de la imagen (el valor viene en bytes del servidor). */
@@ -60,6 +63,17 @@ export function creationOptionsFrom(result) {
     && Array.isArray(images?.formats) && images.formats.length > 0 && images.formats.every((f) => typeof f === 'string')
     && Number.isInteger(images.maxFileBytes) && images.maxFileBytes > 0
     && isImageRequirement(images.card) && isImageRequirement(images.location);
+  return valid ? body : null;
+}
+
+/**
+ * Opciones del juego de una respuesta 200 con la forma del contrato (deckSize y deckNameMaxLength enteros
+ * positivos), o null. Otras historias agregan campos a esta respuesta: se ignoran los que no se usan aquí.
+ */
+export function gameOptionsFrom(result) {
+  const body = result && result.status === 200 ? result.body : null;
+  const valid = Number.isInteger(body?.deckSize) && body.deckSize > 0
+    && Number.isInteger(body?.deckNameMaxLength) && body.deckNameMaxLength > 0;
   return valid ? body : null;
 }
 

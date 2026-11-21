@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 import cr.ac.tec.pokearena.application.usecase.GetCatalogOptionsUseCase;
 import cr.ac.tec.pokearena.application.usecase.GetCreationOptionsUseCase;
+import cr.ac.tec.pokearena.application.usecase.GetGameOptionsUseCase;
 import cr.ac.tec.pokearena.application.usecase.Pagination;
 import cr.ac.tec.pokearena.domain.effect.LocationEffectRegistry;
 import cr.ac.tec.pokearena.domain.repository.AbilityRepository;
@@ -29,5 +30,11 @@ public class OptionsConfiguration {
     public GetCreationOptionsUseCase getCreationOptionsUseCase(AbilityRepository abilities,
             LocationEffectRegistry effects) {
         return new GetCreationOptionsUseCase(abilities, effects);
+    }
+
+    /** Opciones del juego (Sprint 3, sección 7.4): por ahora solo lee constantes de {@code DeckRules}. */
+    @Bean
+    public GetGameOptionsUseCase getGameOptionsUseCase() {
+        return new GetGameOptionsUseCase();
     }
 }
