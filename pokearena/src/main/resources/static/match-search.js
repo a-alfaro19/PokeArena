@@ -11,7 +11,8 @@ export function showAssignedMatch(matchId) {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class MatchSearchScreen {
-  constructor({ send, render, openMatch, newKey, schedule = setTimeout, unschedule = clearTimeout }) {
+  constructor({ send, render, openMatch, newKey,
+    schedule = globalThis.setTimeout.bind(globalThis), unschedule = globalThis.clearTimeout.bind(globalThis) }) {
     Object.assign(this, { send, render, openMatch, newKey, schedule, unschedule });
     this.version = 0;
     this.visible = true;

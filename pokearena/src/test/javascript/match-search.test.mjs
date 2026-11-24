@@ -120,3 +120,22 @@ test('Una búsqueda ajena limpia el estado anterior y detiene el sondeo', async 
   assert.equal(f.screen.message, 'La búsqueda no existe.');
   assert.equal(f.timers.size, 0);
 });
+
+test('Arranque y sondeo: los temporizadores del navegador conservan su receptor global', async (t) => {
+  const handle = 41;
+  const cleared = [];
+  t.mock.method(globalThis, 'clearTimeout', function (timer) {
+    assert.equal(this === globalThis, true, 'clearTimeout requiere el receptor del navegador');
+    cleared.push(timer);
+  });
+  t.mock.method(globalThis, 'setTimeout', function (callback, ms) {
+    assert.equal(this === globalThis, true, 'setTimeout requiere el receptor del navegador');
+    assert.equal(ms, 7000);
+    return handle;
+  });
+  const screen = new MatchSearchScreen({ send: async () => ok('WAITING'), render() {} });
+  assert.equal(screen.data, null);
+  await screen.open(id);
+  screen.reset();
+  assert.equal(cleared.at(-1), handle);
+});
