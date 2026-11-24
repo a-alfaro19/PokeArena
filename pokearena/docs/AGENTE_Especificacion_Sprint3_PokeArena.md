@@ -1174,6 +1174,7 @@ UC->>RULES: checkAvailable(búsqueda, hora);
 RULES-->>UC: la oferta del bot está disponible;
 UC->>BOT: select();
 BOT-->>UC: 12 cartas Comunes distintas para el bot;
+Note over UC,START: El asiento humano conserva el deckId y lee sus códigos mediante DeckRepository.findCardCodes;
 UC->>START: execute(MatchRequest con el jugador y el bot);
 START-->>UC: MatchStarted con el id de la partida (A.14);
 UC->>SRCH: markMatched(búsqueda, partida);
@@ -1193,6 +1194,8 @@ UI-->>Jug: Abre la partida contra el bot;
 | 13 y 14 | Búsqueda inexistente o ajena | `SEARCH_NOT_FOUND` |
 | 13 y 14 | Estado `MATCHED` (lo comprueba el caso de uso con la fila ya bloqueada) | `SEARCH_ALREADY_MATCHED` con el id de la partida |
 | 13 y 14 | Estado `CANCELLED` o `EXPIRED` (igual) | `SEARCH_NOT_OPEN` |
+| 13 y 14 | WAITING con última actividad anterior al corte de inactividad | SEARCH_NOT_OPEN (C.9-R1) |
+| 17 | Menos de 12 cartas Comunes elegibles | MATCH_PREPARATION_FAILED y rollback |
 | 15 | Aún no pasa el tiempo de espera | `BOT_OFFER_NOT_AVAILABLE` |
 | 19 | No hay ubicaciones válidas (`StartMatchUseCase` lanza `LocationsUnavailableException`; no hay mensaje 20) | Rollback y `MATCH_PREPARATION_FAILED`; la búsqueda sigue `WAITING` |
 

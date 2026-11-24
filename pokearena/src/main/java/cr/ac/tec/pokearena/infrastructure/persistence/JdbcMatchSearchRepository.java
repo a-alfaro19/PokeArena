@@ -75,6 +75,16 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
     }
 
     @Override
+    public MatchSearch markMatched(UUID id, UUID matchId, Instant now) {
+        requireTransaction();
+        return jdbc.query("""
+                UPDATE match_search SET status = 'MATCHED', match_id = ?, closed_at = ?
+                WHERE id = ? AND status = 'WAITING' RETURNING *
+                """, (rs, row) -> read(rs), matchId, Timestamp.from(now), id).stream().findFirst()
+                .orElseThrow(() -> new IllegalStateException("Se esperaba una búsqueda bloqueada en espera."));
+    }
+
+    @Override
     public MatchSearch markCancelled(UUID id, Instant now) {
         requireTransaction();
         // A.12, mensaje 14: devolver las fechas con la precisión guardada por PostgreSQL.

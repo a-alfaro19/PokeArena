@@ -18,6 +18,9 @@ public interface MatchSearchRepository {
     /** Lee la búsqueda del titular con bloqueo exclusivo hasta el fin de la transacción (A.12). */
     Optional<MatchSearch> lockById(UUID id, UUID playerId);
 
+    /** Asigna una partida a la fila en espera previamente bloqueada. */
+    MatchSearch markMatched(UUID id, UUID matchId, Instant now);
+
     /** Cancela la búsqueda en espera previamente bloqueada y devuelve la fila actualizada. */
     MatchSearch markCancelled(UUID id, Instant now);
 }

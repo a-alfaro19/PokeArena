@@ -125,6 +125,11 @@ class CancelMatchSearchUseCaseTest {
         }
 
         @Override
+        public MatchSearch markMatched(UUID id, UUID matchId, Instant now) {
+            throw new AssertionError("Una salida no asigna partida");
+        }
+
+        @Override
         public MatchSearch markCancelled(UUID id, Instant now) {
             assertThat(active && locked).isTrue();
             assertThat(id).isEqualTo(row.id());
