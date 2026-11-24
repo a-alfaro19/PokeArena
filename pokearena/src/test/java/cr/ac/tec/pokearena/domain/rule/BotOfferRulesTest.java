@@ -1,6 +1,8 @@
 package cr.ac.tec.pokearena.domain.rule;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -12,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import cr.ac.tec.pokearena.domain.error.ErrorType;
+import cr.ac.tec.pokearena.domain.error.MatchSearchException;
 import cr.ac.tec.pokearena.domain.model.MatchContext;
 import cr.ac.tec.pokearena.domain.model.MatchSearch;
 import cr.ac.tec.pokearena.domain.model.MatchSearchStatus;
@@ -52,6 +56,17 @@ class BotOfferRulesTest {
             assertThat(longerWait.isAvailable(search, START.plusSeconds(60))).isFalse();
             assertThat(longerWait.isAvailable(search, START.plusSeconds(70))).isTrue();
         }
+    }
+
+    @Test
+    @DisplayName("C.9-E3: aceptar y mostrar el bot usan el mismo instante de apertura")
+    void checkAcceptanceAtThreshold() {
+        MatchSearch waiting = searchWithStatus(MatchSearchStatus.WAITING);
+        Instant threshold = START.plusSeconds(60);
+        assertThatThrownBy(() -> rules.checkAvailable(waiting, threshold.minusNanos(1)))
+                .isInstanceOfSatisfying(MatchSearchException.class,
+                        error -> assertThat(error.type()).isEqualTo(ErrorType.BOT_OFFER_NOT_AVAILABLE));
+        assertThatCode(() -> rules.checkAvailable(waiting, threshold)).doesNotThrowAnyException();
     }
 
     private MatchSearch searchWithStatus(MatchSearchStatus status) {

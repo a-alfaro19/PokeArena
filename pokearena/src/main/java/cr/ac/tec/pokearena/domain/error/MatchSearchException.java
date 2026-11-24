@@ -36,4 +36,9 @@ public final class MatchSearchException extends DomainException {
         return new MatchSearchException(ErrorType.MATCH_PREPARATION_FAILED,
                 "No hay ubicaciones disponibles. La búsqueda continúa.");
     }
+
+    public static MatchSearchException insufficientBotCards() {
+        return new MatchSearchException(ErrorType.MATCH_PREPARATION_FAILED,
+                "No hay suficientes cartas Comunes disponibles para el deck del bot. La búsqueda continúa.");
+    }
 }
