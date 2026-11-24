@@ -439,7 +439,7 @@ Orden de las comprobaciones (importa para los criterios):
 
 En cada ejecución:
 
-1. **Expirar las inactivas.** `MatchSearchRepository.expireStale(límite)` pone `EXPIRED` a las `WAITING` cuyo `last_polled_at` sea anterior a `ahora - inactivity-timeout`. Una expirada **nunca** se empareja.
+1. **Expirar las inactivas.** `MatchSearchRepository.expireStale(límite, ahora)` pone `EXPIRED` a las `WAITING` cuyo `last_polled_at` sea anterior a `ahora - inactivity-timeout`. El cierre se registra con la hora del barrido y se conserva la última actividad. El método devuelve el número de filas expiradas. Una expirada **nunca** se empareja.
 2. **Repetir hasta `max-pairs-per-tick` veces**, y **cada pareja en su propia transacción** (`UnitOfWork.execute`):
    1. `lockOldestWaiting(ahora, límiteDeInactividad)`: la búsqueda `WAITING` más antigua, no inactiva y con `not_before` vencido, con `FOR UPDATE SKIP LOCKED`. Si no hay, termina.
    2. `lockCandidates(A, ahora, límiteDeInactividad, max-elo-range, candidate-batch-size)`: hasta N candidatas `WAITING` (mismo contexto, otro jugador, no inactivas) con diferencia de Elo menor o igual al rango **máximo**, ordenadas por cercanía de Elo y antigüedad, con `FOR UPDATE SKIP LOCKED`.
@@ -467,7 +467,7 @@ Dos búsquedas son compatibles si `|eloA - eloB| <= max(rango(A), rango(B))` (la
 `GET /api/v1/busquedas/{id}`.
 
 1. Autoriza.
-2. `MatchSearchRepository.touchAndFind(id, jugador, ahora)`: si la búsqueda está `WAITING`, actualiza `last_polled_at = ahora`; luego la devuelve. Si no existe o no es del jugador: `SEARCH_NOT_FOUND`.
+2. `MatchSearchRepository.touchAndFind(id, jugador, ahora)`: si está `WAITING` y `last_polled_at < ahora - inactivity-timeout`, pasa a `EXPIRED` con `closed_at = ahora` y conserva la última actividad. En el límite exacto sigue vigente. Una consulta vigente renueva la actividad sin retroceder su instante. La decisión y la lectura ocurren bajo el mismo bloqueo de fila. Si no existe o no es del jugador: `SEARCH_NOT_FOUND`.
 3. `BotOfferRules.isAvailable(búsqueda, ahora)`: `WAITING` y `ahora >= created_at + bot-offer-after`.
 4. Responde `200` con `MatchSearchResponse`.
 
@@ -1001,7 +1001,7 @@ participant START as StartMatchUseCase;
 JOB->>UC: execute() en cada ejecución programada;
 UC->>CLK: now();
 CLK-->>UC: hora actual;
-UC->>SRCH: expireStale(hora menos el tiempo de inactividad);
+UC->>SRCH: expireStale(hora menos el tiempo de inactividad, hora);
 SRCH-->>UC: búsquedas inactivas marcadas EXPIRED;
 loop Mientras haya pareja y no se supere el máximo por ejecución;
 UC->>UOW: execute(emparejar una pareja);
@@ -1065,6 +1065,7 @@ API->>UC: execute(GetMatchSearchCommand);
 UC->>CLK: now();
 CLK-->>UC: hora actual;
 UC->>SRCH: touchAndFind(id, jugador, hora);
+Note over SRCH: Con la fila bloqueada una espera vencida pasa a EXPIRED sin renovar actividad. En el límite exacto sigue vigente;
 alt La búsqueda existe y es del jugador;
 SRCH-->>UC: búsqueda con su estado actualizado;
 UC->>RULES: isAvailable(búsqueda, hora);
@@ -1173,6 +1174,7 @@ UC->>RULES: checkAvailable(búsqueda, hora);
 RULES-->>UC: la oferta del bot está disponible;
 UC->>BOT: select();
 BOT-->>UC: 12 cartas Comunes distintas para el bot;
+Note over UC,START: El asiento humano conserva el deckId y lee sus códigos mediante DeckRepository.findCardCodes;
 UC->>START: execute(MatchRequest con el jugador y el bot);
 START-->>UC: MatchStarted con el id de la partida (A.14);
 UC->>SRCH: markMatched(búsqueda, partida);
@@ -1192,6 +1194,8 @@ UI-->>Jug: Abre la partida contra el bot;
 | 13 y 14 | Búsqueda inexistente o ajena | `SEARCH_NOT_FOUND` |
 | 13 y 14 | Estado `MATCHED` (lo comprueba el caso de uso con la fila ya bloqueada) | `SEARCH_ALREADY_MATCHED` con el id de la partida |
 | 13 y 14 | Estado `CANCELLED` o `EXPIRED` (igual) | `SEARCH_NOT_OPEN` |
+| 13 y 14 | WAITING con última actividad anterior al corte de inactividad | SEARCH_NOT_OPEN (C.9-R1) |
+| 17 | Menos de 12 cartas Comunes elegibles | MATCH_PREPARATION_FAILED y rollback |
 | 15 | Aún no pasa el tiempo de espera | `BOT_OFFER_NOT_AVAILABLE` |
 | 19 | No hay ubicaciones válidas (`StartMatchUseCase` lanza `LocationsUnavailableException`; no hay mensaje 20) | Rollback y `MATCH_PREPARATION_FAILED`; la búsqueda sigue `WAITING` |
 

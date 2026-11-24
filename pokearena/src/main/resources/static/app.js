@@ -25,6 +25,7 @@
 
 import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, googleClientIdFrom, CatalogFilterForm, catalogQuickTests } from './player.js';
 import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMessage, rangeText, imageRequirementText, acceptedTypes, energyAmountState, integersBetween, effectJson, gameOptionsFrom } from './options.js';
+import { MatchSearchScreen, showAssignedMatch } from './match-search.js';
 import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNode, deckSummaryNode, deckDetailNodes } from './deck.js';
 
 (() => {
@@ -108,6 +109,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
   let catalogFilterForm;
   let deckBuilder;
   let myDecks;
+  let matchSearch;
   let googleSdk = null;
   let googleAttempt = null;
   let googleConfigured = false;
@@ -413,6 +415,8 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     // Decks (3.1.3): la colección, la selección y la lista son de la sesión anterior.
     deckBuilder.clear();
     myDecks.clear();
+    matchSearch.reset();
+    $('#match-search-form').reset();
     $('#deck-form').elements.name.value = '';
     $('#deck-quick-status').textContent = '';
     renderSession();
@@ -425,6 +429,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     state.session = { ...session, source };
     expiryTimer = setTimeout(expireSession, Math.max(0, session.expiresAt - Date.now()));
     renderSession();
+    renderMatchSearch(matchSearch);
     $('#tab-catalog').click();
     playerCatalog.load();
     loadOptions(attempt);
@@ -1339,6 +1344,58 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     }));
   }
 
+  function renderMatchSearch({ data, id, busy, message }) {
+    const form = $('#match-search-form');
+    const signedIn = Boolean(state.session.token);
+    form.elements.searchId.disabled = !signedIn || busy;
+    form.querySelector('button').disabled = !signedIn || busy;
+    const waiting = data?.status === 'WAITING';
+    const matched = data?.status === 'MATCHED';
+    const labels = { WAITING: 'Esperando rival.', CANCELLED: 'Búsqueda cancelada.',
+      EXPIRED: 'Búsqueda expirada por inactividad.', MATCHED: 'Partida encontrada: ' + (data?.matchId ?? '') };
+    $('#match-search-status').textContent = labels[data?.status] || (!signedIn ? 'Inicia sesión para consultar tu búsqueda.'
+      : id && !message ? 'Consultando…' : '');
+    const notice = $('#match-search-notice');
+    notice.textContent = data?.notice === 'LOCATIONS_UNAVAILABLE'
+      ? 'No hay ubicaciones disponibles. La búsqueda continúa.' : data?.notice || '';
+    notice.hidden = !notice.textContent;
+    $('#match-search-error').textContent = message;
+    $('#match-search-exit').hidden = !waiting;
+    $('#match-search-bot').hidden = !waiting || !data.botOfferAvailable;
+    $('#match-search-exit').disabled = busy;
+    $('#match-search-bot').disabled = busy;
+    $('#match-test-exit').disabled = busy || !matched;
+    $('#match-test-bot').disabled = busy || !waiting || data.botOfferAvailable;
+  }
+
+  function wireMatchSearch() {
+    matchSearch = new MatchSearchScreen({
+      send: (request) => send({ ...request, token: state.session.token }),
+      render: renderMatchSearch, openMatch: showAssignedMatch, newKey: newIdempotencyKey,
+    });
+    document.addEventListener('visibilitychange', syncMatchSearchVisibility);
+    syncMatchSearchVisibility();
+    const form = $('#match-search-form');
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (state.session.token) matchSearch.open(form.elements.searchId.value);
+    });
+    document.addEventListener('pokearena:busqueda', ({ detail }) => {
+      if (!state.session.token || !detail?.id) return;
+      $('#tab-match-search').click();
+      form.elements.searchId.value = detail.id;
+      matchSearch.open(detail.id);
+    });
+    $('#match-search-exit').addEventListener('click', () => matchSearch.cancel());
+    $('#match-search-bot').addEventListener('click', () => matchSearch.accept());
+    $('#match-test-exit').addEventListener('click', () => matchSearch.cancel(true));
+    $('#match-test-bot').addEventListener('click', () => matchSearch.accept(true));
+  }
+
+  function syncMatchSearchVisibility() {
+    matchSearch?.setVisible(!document.hidden && !$('#panel-match-search').hidden);
+  }
+
   function wireTabs() {
     const tabs = $$('[role="tab"]');
     const select = (tab) => {
@@ -1348,6 +1405,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
         other.tabIndex = selected ? 0 : -1;
         $('#' + other.getAttribute('aria-controls')).hidden = !selected;
       });
+      syncMatchSearchVisibility();
     };
     tabs.forEach((tab) => {
       tab.addEventListener('click', () => select(tab));
@@ -1374,6 +1432,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     wireSearchForm();
     wireCatalog();
     wireDecks();
+    wireMatchSearch();
     renderQuickTests('catalog', catalogQuickTests(catalogFilterForm));
     renderQuickTests('card', CARD_QUICK_TESTS);
     renderQuickTests('location', LOCATION_QUICK_TESTS);

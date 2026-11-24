@@ -41,7 +41,7 @@ class StaticInterfaceSafetyTest {
             "\\beval\\s*\\(", "new Function\\s*\\(" })
     @DisplayName("app.js no inserta HTML ni ejecuta texto: solo textContent y nodos creados a mano")
     void noHtmlInjection(String forbidden) {
-        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js", "match-search.js"}) {
             assertThat(Pattern.compile(forbidden).matcher(read(file)).find()).as(file + ": " + forbidden).isFalse();
         }
     }
@@ -49,7 +49,7 @@ class StaticInterfaceSafetyTest {
     @Test
     @DisplayName("El token vive solo en memoria: app.js no usa localStorage, sessionStorage ni cookies")
     void tokenOnlyInMemory() {
-        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js", "match-search.js"}) {
             assertThat(read(file)).doesNotContain("localStorage", "sessionStorage", "document.cookie");
         }
     }
@@ -66,7 +66,7 @@ class StaticInterfaceSafetyTest {
     @Test
     @DisplayName("11: la interfaz no repite cifras de la configuración del servidor (cartas y cubos de la colección inicial)")
     void noConfiguredFiguresInInterface() {
-        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js", "index.html"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js", "match-search.js", "index.html"}) {
             assertThat(read(file)).as(file).doesNotContain("15 cartas", "1.000 cubos", "1000 cubos");
         }
     }
@@ -88,7 +88,7 @@ class StaticInterfaceSafetyTest {
     @Test
     @DisplayName("Las historias se citan por su número (3.1.2, 1.1.1, 3.1.1), no por identificadores internos US")
     void storiesByNumber() {
-        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js", "index.html"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js", "match-search.js", "index.html"}) {
             assertThat(Pattern.compile("\\bUS ?\\d").matcher(read(file)).find()).as(file).isFalse();
         }
     }
