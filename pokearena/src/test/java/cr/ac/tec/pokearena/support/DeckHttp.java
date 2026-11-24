@@ -72,6 +72,15 @@ public final class DeckHttp {
         return send(request(path, bearer).GET());
     }
 
+    /** POST sin cuerpo, con clave opcional para probar su validación. */
+    public Result post(String path, String bearer, String key) {
+        HttpRequest.Builder builder = request(path, bearer);
+        if (key != null) {
+            builder.header("Idempotency-Key", key);
+        }
+        return send(builder.POST(HttpRequest.BodyPublishers.noBody()));
+    }
+
     /** DELETE autenticado sin cuerpo ni clave de idempotencia. */
     public Result delete(String path, String bearer) {
         return send(request(path, bearer).DELETE());

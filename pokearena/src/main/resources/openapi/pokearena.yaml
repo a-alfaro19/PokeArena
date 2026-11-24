@@ -991,6 +991,75 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/v1/busquedas/{id}/bot:
+    post:
+      tags: [Búsquedas]
+      operationId: acceptBotMatch
+      summary: Aceptar jugar contra el bot (4.1.2)
+      description: |
+        Acepta la oferta vigente para la búsqueda del titular. Requiere Idempotency-Key.
+        Una repetición con la misma búsqueda y clave devuelve la partida asignada anteriormente.
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '201':
+          description: Búsqueda MATCHED con el matchId de la partida contra el bot.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchSearchResponse'
+        '400':
+          description: Falta la clave de idempotencia o excede la longitud permitida.
+          x-error-types: [IDEMPOTENCY_KEY_REQUIRED, INVALID_FIELD]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Búsqueda inexistente, ajena o identificador inválido.
+          x-error-types: [SEARCH_NOT_FOUND]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Búsqueda emparejada, cerrada o inactiva, oferta prematura o fallo al preparar la partida. Si ya está emparejada, detail incluye el matchId.
+          x-error-types: [SEARCH_ALREADY_MATCHED, SEARCH_NOT_OPEN, BOT_OFFER_NOT_AVAILABLE, MATCH_PREPARATION_FAILED]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     bearerAuth:
