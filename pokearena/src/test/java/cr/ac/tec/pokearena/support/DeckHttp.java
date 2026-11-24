@@ -72,6 +72,11 @@ public final class DeckHttp {
         return send(request(path, bearer).GET());
     }
 
+    /** DELETE autenticado sin cuerpo ni clave de idempotencia. */
+    public Result delete(String path, String bearer) {
+        return send(request(path, bearer).DELETE());
+    }
+
     /**
      * Ejecuta las solicitudes a la vez: cada una espera en el mismo {@link CountDownLatch} y todas salen
      * juntas cuando están listas. Sin pausas fijas.

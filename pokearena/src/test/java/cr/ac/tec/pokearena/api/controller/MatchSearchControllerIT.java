@@ -29,7 +29,7 @@ import cr.ac.tec.pokearena.support.DeckHttp;
 import cr.ac.tec.pokearena.support.DeckHttp.Result;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
 
-/** Contrato HTTP de la consulta con seguridad real. JdbcMatchSearchRepositoryIT prueba la operación SQL. */
+/** Contrato HTTP de consulta y salida con seguridad real. JdbcMatchSearchRepositoryIT prueba la operación SQL. */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "app.matchmaking.client-poll-interval=PT7S")
 class MatchSearchControllerIT extends PostgresIntegrationTestBase {
@@ -85,6 +85,62 @@ class MatchSearchControllerIT extends PostgresIntegrationTestBase {
         Result invalid = get("invalido", token(owner, Role.PLAYER));
         assertThat(invalid.status()).isEqualTo(404);
         assertThat(invalid.body().get("type").asString()).isEqualTo("SEARCH_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("C.9-E2: el titular puede salir dos veces sin clave de idempotencia")
+    void cancelTwice() {
+        MatchSearch waiting = search(MatchSearchStatus.WAITING, null);
+        MatchSearch closed = search(MatchSearchStatus.CANCELLED, null);
+        when(searches.lockById(id, owner)).thenReturn(Optional.of(waiting)).thenReturn(Optional.of(closed));
+        when(searches.markCancelled(eq(id), any())).thenReturn(closed);
+
+        Result first = delete(token(owner, Role.PLAYER));
+        Result second = delete(token(owner, Role.PLAYER));
+        assertThat(first.status()).isEqualTo(200);
+        assertThat(first.body().get("status").asString()).isEqualTo("CANCELLED");
+        assertThat(first.body().get("matchId").isNull()).isTrue();
+        assertThat(second.status()).isEqualTo(200);
+        assertThat(second.body()).isEqualTo(first.body());
+    }
+
+    @Test
+    @DisplayName("C.9-E2: un administrador puede salir de su búsqueda expirada")
+    void cancelExpired() {
+        when(searches.lockById(id, owner)).thenReturn(Optional.of(search(MatchSearchStatus.EXPIRED, null)));
+        Result response = delete(token(owner, Role.ADMIN));
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.body().get("status").asString()).isEqualTo("EXPIRED");
+    }
+
+    @Test
+    @DisplayName("C.9-R2: salir después del emparejamiento devuelve 409 con el id de la partida")
+    void cancelMatched() {
+        UUID match = UUID.randomUUID();
+        when(searches.lockById(id, owner)).thenReturn(Optional.of(search(MatchSearchStatus.MATCHED, match)));
+        Result response = delete(token(owner, Role.PLAYER));
+        assertThat(response.status()).isEqualTo(409);
+        assertThat(response.body().get("type").asString()).isEqualTo("SEARCH_ALREADY_MATCHED");
+        assertThat(response.body().get("detail").asString()).contains(match.toString());
+    }
+
+    @Test
+    @DisplayName("Salir exige sesión y oculta la existencia de búsquedas ajenas")
+    void cancelRequiresOwner() {
+        when(searches.lockById(id, owner)).thenReturn(Optional.of(search(MatchSearchStatus.WAITING, null)));
+        assertThat(delete(null).status()).isEqualTo(401);
+        Result foreign = delete(token(UUID.randomUUID(), Role.ADMIN));
+        assertThat(foreign.status()).isEqualTo(404);
+        assertThat(foreign.body().get("type").asString()).isEqualTo("SEARCH_NOT_FOUND");
+    }
+
+    private MatchSearch search(MatchSearchStatus status, UUID matchId) {
+        return new MatchSearch(id, owner, 7, MatchContext.RANKED, status, 0, matchId, null, null,
+                CREATED, CREATED, status == MatchSearchStatus.WAITING ? null : CREATED);
+    }
+
+    private Result delete(String bearer) {
+        return new DeckHttp(port).delete("/api/v1/busquedas/" + id, bearer);
     }
 
     private String token(UUID player, Role role) {
