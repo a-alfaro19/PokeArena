@@ -439,7 +439,7 @@ Orden de las comprobaciones (importa para los criterios):
 
 En cada ejecución:
 
-1. **Expirar las inactivas.** `MatchSearchRepository.expireStale(límite)` pone `EXPIRED` a las `WAITING` cuyo `last_polled_at` sea anterior a `ahora - inactivity-timeout`. Una expirada **nunca** se empareja.
+1. **Expirar las inactivas.** `MatchSearchRepository.expireStale(límite, ahora)` pone `EXPIRED` a las `WAITING` cuyo `last_polled_at` sea anterior a `ahora - inactivity-timeout`. El cierre se registra con la hora del barrido y se conserva la última actividad. El método devuelve el número de filas expiradas. Una expirada **nunca** se empareja.
 2. **Repetir hasta `max-pairs-per-tick` veces**, y **cada pareja en su propia transacción** (`UnitOfWork.execute`):
    1. `lockOldestWaiting(ahora, límiteDeInactividad)`: la búsqueda `WAITING` más antigua, no inactiva y con `not_before` vencido, con `FOR UPDATE SKIP LOCKED`. Si no hay, termina.
    2. `lockCandidates(A, ahora, límiteDeInactividad, max-elo-range, candidate-batch-size)`: hasta N candidatas `WAITING` (mismo contexto, otro jugador, no inactivas) con diferencia de Elo menor o igual al rango **máximo**, ordenadas por cercanía de Elo y antigüedad, con `FOR UPDATE SKIP LOCKED`.
@@ -1001,7 +1001,7 @@ participant START as StartMatchUseCase;
 JOB->>UC: execute() en cada ejecución programada;
 UC->>CLK: now();
 CLK-->>UC: hora actual;
-UC->>SRCH: expireStale(hora menos el tiempo de inactividad);
+UC->>SRCH: expireStale(hora menos el tiempo de inactividad, hora);
 SRCH-->>UC: búsquedas inactivas marcadas EXPIRED;
 loop Mientras haya pareja y no se supere el máximo por ejecución;
 UC->>UOW: execute(emparejar una pareja);

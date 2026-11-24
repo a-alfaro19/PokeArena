@@ -52,6 +52,46 @@ class JdbcMatchSearchRepositoryIT extends PostgresIntegrationTestBase {
     }
 
     @Test
+    @DisplayName("C.9-R1: el barrido expira solo las esperas anteriores al corte y conserva su última actividad")
+    void expireOnlyOlderWaitingRows() {
+        Instant cutoff = START.plusNanos(1000);
+        Instant now = cutoff.plusSeconds(30);
+        UUID atBoundary = insertWaitingAt(cutoff);
+        UUID recent = insertWaitingAt(cutoff.plusSeconds(1));
+        assertThat(searches.expireStale(cutoff, now)).isOne();
+        MatchSearch expired = searches.lockById(id, player).orElseThrow();
+        assertThat(expired.status()).isEqualTo(MatchSearchStatus.EXPIRED);
+        assertThat(expired.closedAt()).isEqualTo(now);
+        assertThat(expired.lastPolledAt()).isEqualTo(START);
+        assertThat(expired.matchId()).isNull();
+        assertThat(jdbc.queryForList("SELECT id FROM match_search WHERE status = 'WAITING'", UUID.class))
+                .containsExactlyInAnyOrder(atBoundary, recent);
+        assertThat(searches.expireStale(cutoff, now.plusSeconds(1))).isZero();
+        assertThat(searches.lockById(id, player)).contains(expired);
+    }
+
+    private UUID insertWaitingAt(Instant lastPoll) {
+        UUID searchId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO match_search (id, player_id, deck_id, context, status, elo, created_at, last_polled_at)
+                VALUES (?, ?, 7, 'RANKED', 'WAITING', 100, ?, ?)
+                """, searchId, UUID.randomUUID(), Timestamp.from(START), Timestamp.from(lastPoll));
+        return searchId;
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = MatchSearchStatus.class, names = "WAITING", mode = EnumSource.Mode.EXCLUDE)
+    @DisplayName("C.9-R1: el barrido preserva todas las búsquedas ya cerradas")
+    void sweepPreservesClosedSearch(MatchSearchStatus status) {
+        UUID match = status == MatchSearchStatus.MATCHED ? UUID.randomUUID() : null;
+        jdbc.update("UPDATE match_search SET status = ?, match_id = ?, closed_at = ? WHERE id = ?",
+                status.name(), match, Timestamp.from(START), id);
+        MatchSearch original = searches.lockById(id, player).orElseThrow();
+        assertThat(searches.expireStale(START.plusSeconds(1), START.plusSeconds(31))).isZero();
+        assertThat(searches.lockById(id, player)).contains(original);
+    }
+
+    @Test
     @DisplayName("C.9-E2: bloquear y cancelar conserva el deck y la actividad, y guarda la hora de salida")
     void cancelOwnedWaitingSearch() {
         Instant exitTime = START.plusSeconds(7);

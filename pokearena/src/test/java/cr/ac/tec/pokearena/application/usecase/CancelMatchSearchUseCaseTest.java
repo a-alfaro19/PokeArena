@@ -134,6 +134,11 @@ class CancelMatchSearchUseCaseTest {
         }
 
         @Override
+        public int expireStale(Instant cutoff, Instant now) {
+            throw new AssertionError("La salida de un jugador no ejecuta el barrido de inactividad");
+        }
+
+        @Override
         public Optional<MatchSearch> touchAndFind(UUID id, UUID playerId, Instant now) {
             throw new AssertionError("Salir de la búsqueda no renueva la actividad");
         }

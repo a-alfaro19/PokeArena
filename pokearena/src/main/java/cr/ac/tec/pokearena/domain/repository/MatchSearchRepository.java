@@ -12,6 +12,9 @@ public interface MatchSearchRepository {
     /** Renueva una espera vigente o la expira si venció. Solo devuelve búsquedas del titular. */
     Optional<MatchSearch> touchAndFind(UUID id, UUID playerId, Instant now);
 
+    /** Expira esperas anteriores al corte exclusivo y registra el instante del barrido (A.10, mensaje 4). */
+    int expireStale(Instant cutoff, Instant now);
+
     /** Lee la búsqueda del titular con bloqueo exclusivo hasta el fin de la transacción (A.12). */
     Optional<MatchSearch> lockById(UUID id, UUID playerId);
 

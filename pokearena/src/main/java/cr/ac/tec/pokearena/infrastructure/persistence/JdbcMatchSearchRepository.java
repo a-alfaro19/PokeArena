@@ -57,6 +57,16 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
     }
 
     @Override
+    public int expireStale(Instant cutoff, Instant now) {
+        // A.10, mensajes 4 y 5. PostgreSQL vuelve a comprobar el predicado si una consulta
+        // o un cierre concurrente modificó la fila antes de obtener el bloqueo.
+        return jdbc.update("""
+                UPDATE match_search SET status = 'EXPIRED', closed_at = ?
+                WHERE status = 'WAITING' AND last_polled_at < ?
+                """, Timestamp.from(now), Timestamp.from(cutoff));
+    }
+
+    @Override
     public Optional<MatchSearch> lockById(UUID id, UUID playerId) {
         requireTransaction();
         // A.12, mensaje 9: esperar al emparejador si ya adquirió el bloqueo.
