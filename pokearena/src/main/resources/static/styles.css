@@ -283,3 +283,29 @@ tbody tr:hover { background: var(--surface-2); }
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .deck-summary .btn { margin-left: auto; }
 .deck-detail { margin-top: 1rem; }
+
+/* ===================================================== Inicio de partida (Sprint 3, historia 5.1.1) */
+.match-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 0.6rem;
+  margin: 1rem 0;
+}
+.match-stat {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.match-section { margin-top: 1.25rem; }
+.match-section > h3 { margin-bottom: 0.65rem; }
+.match-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.match-locations { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); }
+.match-cards { grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); }
+.match-card { display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: start; }
+.match-card-image { width: 90px; height: 126px; object-fit: contain; background: var(--surface-2); }
+@media (max-width: 760px) {
+  .match-columns { grid-template-columns: minmax(0, 1fr); }
+}

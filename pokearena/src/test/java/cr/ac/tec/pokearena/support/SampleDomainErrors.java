@@ -10,6 +10,7 @@ import cr.ac.tec.pokearena.domain.error.ErrorType;
 import cr.ac.tec.pokearena.domain.error.IdempotencyException;
 import cr.ac.tec.pokearena.domain.error.IdentityProviderException;
 import cr.ac.tec.pokearena.domain.error.ImageValidationException;
+import cr.ac.tec.pokearena.domain.error.MatchException;
 import cr.ac.tec.pokearena.domain.error.ValidationException;
 
 /**
@@ -59,6 +60,27 @@ public final class SampleDomainErrors {
             case CARD_NOT_OWNED -> DeckException.cardNotOwned("No posees estas cartas: PKA-AGU-007.");
             case DECK_NAME_TAKEN -> DeckException.nameTaken("Ya tienes un deck llamado Fuego.");
             case DECK_NOT_FOUND -> DeckException.notFound("El deck no existe.");
+            case INVALID_DECK -> sample(type, "El deck no cumple las reglas.");
+            case ACTIVE_MATCH_EXISTS -> sample(type, "Ya tienes una partida activa.");
+            case SEARCH_ALREADY_OPEN -> sample(type, "Ya tienes una búsqueda abierta.");
+            case INSUFFICIENT_CUBES -> sample(type, "No tienes suficientes cubos.");
+            case SEARCH_NOT_FOUND -> sample(type, "La búsqueda no existe.");
+            case SEARCH_ALREADY_MATCHED -> sample(type, "La búsqueda ya encontró partida.");
+            case SEARCH_NOT_OPEN -> sample(type, "La búsqueda ya no está abierta.");
+            case BOT_OFFER_NOT_AVAILABLE -> sample(type, "La oferta del bot aún no está disponible.");
+            case MATCH_PREPARATION_FAILED -> sample(type, "No se pudo preparar la partida.");
+            case MATCH_NOT_FOUND -> MatchException.notFound("La partida no existe.");
         };
+    }
+
+    private static DomainException sample(ErrorType type, String message) {
+        return new SampleDomainException(type, message);
+    }
+
+    private static final class SampleDomainException extends DomainException {
+
+        private SampleDomainException(ErrorType type, String message) {
+            super(type, message);
+        }
     }
 }

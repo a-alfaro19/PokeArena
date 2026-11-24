@@ -1249,6 +1249,11 @@ end;
 
 ### A.15 Ver el inicio de la partida (historia 5.1.1)
 
+En la interfaz de la fase 6, mientras no esté implementada la pantalla de búsqueda, se puede abrir esta vista con
+`/?partida=<uuid>`. El enlace contiene solo el identificador de la partida; el token se conserva en memoria y se
+envía en la solicitud autenticada. Cuando la búsqueda esté disponible, abrirá esta misma vista con el `matchId`
+que recibe al detectar el estado `MATCHED` (A.13).
+
 ```mermaid
 sequenceDiagram;
 autonumber;

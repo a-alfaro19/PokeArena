@@ -118,6 +118,25 @@ class LocationEffectsTest {
             assertInvalid("TURN_RESTRICTION", Map.of("turns", List.of(2, 2)));
             assertInvalid("TURN_RESTRICTION", Map.of("turns", 2));
         }
+
+        @Test
+        @DisplayName("Solo restringir todos los turnos hace que una ubicación no sea jugable")
+        void detectsRestrictionAcrossEveryTurn() {
+            List<Integer> everyTurn = java.util.stream.IntStream
+                    .rangeClosed(TurnRestrictionEffect.FIRST_TURN, TurnRestrictionEffect.LAST_TURN)
+                    .boxed().toList();
+
+            assertThat(new TurnRestrictionEffect().blocksAllTurns(Map.of("turns", everyTurn))).isTrue();
+            assertThat(new TurnRestrictionEffect().blocksAllTurns(Map.of("turns", List.of(1, 2, 3, 4, 5))))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("Parámetros persistidos sin la lista turns indican datos de dominio inválidos")
+        void malformedStoredParametersAreSurfaced() {
+            assertThatThrownBy(() -> new TurnRestrictionEffect().blocksAllTurns(Map.of()))
+                    .isInstanceOf(IllegalStateException.class);
+        }
     }
 
     @Nested

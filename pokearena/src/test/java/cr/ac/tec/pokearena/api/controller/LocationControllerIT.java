@@ -44,6 +44,7 @@ import cr.ac.tec.pokearena.application.port.AuthenticatedUser;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.application.usecase.PlayerAccountService;
 import cr.ac.tec.pokearena.domain.model.Location;
+import cr.ac.tec.pokearena.domain.model.AvailableLocation;
 import cr.ac.tec.pokearena.domain.model.Role;
 import cr.ac.tec.pokearena.domain.repository.LocationRepository;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
@@ -460,6 +461,11 @@ class LocationControllerIT extends PostgresIntegrationTestBase {
                 throw new IllegalStateException("Falla simulada de la base al guardar la ubicación");
             }
             return real.save(location);
+        }
+
+        @Override
+        public List<AvailableLocation> findAllAvailable() {
+            return real.findAllAvailable();
         }
     }
 

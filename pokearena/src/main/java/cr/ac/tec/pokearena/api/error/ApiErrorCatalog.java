@@ -74,6 +74,16 @@ final class ApiErrorCatalog {
             case CARD_NOT_OWNED -> new Entry(HttpStatus.BAD_REQUEST, "Carta no poseída");
             case DECK_NAME_TAKEN -> new Entry(HttpStatus.CONFLICT, "Nombre de deck en uso");
             case DECK_NOT_FOUND -> new Entry(HttpStatus.NOT_FOUND, "Deck no encontrado");
+            case INVALID_DECK -> new Entry(HttpStatus.BAD_REQUEST, "Deck inválido");
+            case ACTIVE_MATCH_EXISTS -> new Entry(HttpStatus.CONFLICT, "Partida activa existente");
+            case SEARCH_ALREADY_OPEN -> new Entry(HttpStatus.CONFLICT, "Búsqueda ya abierta");
+            case INSUFFICIENT_CUBES -> new Entry(HttpStatus.UNPROCESSABLE_CONTENT, "Cubos insuficientes");
+            case SEARCH_NOT_FOUND -> new Entry(HttpStatus.NOT_FOUND, "Búsqueda no encontrada");
+            case SEARCH_ALREADY_MATCHED -> new Entry(HttpStatus.CONFLICT, "La búsqueda ya encontró partida");
+            case SEARCH_NOT_OPEN -> new Entry(HttpStatus.CONFLICT, "La búsqueda ya no está abierta");
+            case BOT_OFFER_NOT_AVAILABLE -> new Entry(HttpStatus.CONFLICT, "Oferta del bot no disponible");
+            case MATCH_PREPARATION_FAILED -> new Entry(HttpStatus.CONFLICT, "No se pudo preparar la partida");
+            case MATCH_NOT_FOUND -> new Entry(HttpStatus.NOT_FOUND, "Partida no encontrada");
         };
     }
 

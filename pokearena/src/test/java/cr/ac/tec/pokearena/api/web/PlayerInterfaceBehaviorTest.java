@@ -50,7 +50,7 @@ class PlayerInterfaceBehaviorTest {
         // Ejecuta los comportamientos reales, incluidos eventos del formulario y acciones de casos rápidos.
         String output = runNode(node, temporaryDirectory.resolve("player-tests.log"),
                 "--test", "src/test/javascript/player.test.mjs", "src/test/javascript/options.test.mjs",
-                "src/test/javascript/deck.test.mjs");
+                "src/test/javascript/deck.test.mjs", "src/test/javascript/match.test.mjs");
         assertThat(output).as("node --test no ejecutó ninguna prueba").contains("pass");
     }
 

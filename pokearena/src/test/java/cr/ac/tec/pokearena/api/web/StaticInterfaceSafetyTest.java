@@ -41,7 +41,7 @@ class StaticInterfaceSafetyTest {
             "\\beval\\s*\\(", "new Function\\s*\\(" })
     @DisplayName("app.js no inserta HTML ni ejecuta texto: solo textContent y nodos creados a mano")
     void noHtmlInjection(String forbidden) {
-        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js", "match.js"}) {
             assertThat(Pattern.compile(forbidden).matcher(read(file)).find()).as(file + ": " + forbidden).isFalse();
         }
     }
@@ -49,7 +49,7 @@ class StaticInterfaceSafetyTest {
     @Test
     @DisplayName("El token vive solo en memoria: app.js no usa localStorage, sessionStorage ni cookies")
     void tokenOnlyInMemory() {
-        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js"}) {
+        for (String file : new String[] {"app.js", "player.js", "options.js", "deck.js", "match.js"}) {
             assertThat(read(file)).doesNotContain("localStorage", "sessionStorage", "document.cookie");
         }
     }

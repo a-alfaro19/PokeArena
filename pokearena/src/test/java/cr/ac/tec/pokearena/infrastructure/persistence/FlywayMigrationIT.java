@@ -19,37 +19,38 @@ import org.springframework.transaction.annotation.Transactional;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
 
 /**
- * Propósito: verificar las migraciones (V1 inicial, V2 y V3 de decks) sobre un PostgreSQL real.
+ * Propósito: verificar las migraciones V1 a V5 sobre un PostgreSQL real.
  * Responsabilidades: comprobar que Flyway crea todo el esquema de la sección 6, siembra los
  * catálogos de la sección 14 y que la base rechaza los datos que violan sus restricciones.
- * Referencia: secciones 6 y 14 de la especificación; sección 6.1 del Sprint 3 (V3).
+ * Referencia: secciones 6 y 14 de la especificación del Sprint 3.
  *
  * <p>Cada prueba corre en una transacción que se revierte al terminar ({@code @Transactional}),
  * así las filas insertadas no afectan a otras pruebas que compartan el contenedor.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @Transactional
-@DisplayName("Migración inicial de la base de datos (Flyway V1)")
+@DisplayName("Migraciones de la base de datos (Flyway V1 a V5)")
 class FlywayMigrationIT extends PostgresIntegrationTestBase {
 
-    // Las once tablas de la sección 6, las de V3 (decks, Sprint 3) y la tabla de control de Flyway.
+    // Las tablas de V1 a V5 y la tabla de control de Flyway.
     private static final List<String> EXPECTED_TABLES = List.of(
             "card_type", "rarity", "ability", "card_type_counter", "card", "location",
             "player", "player_identity", "player_card", "cube_movement", "idempotency_key",
-            "deck", "deck_card",
+            "deck", "deck_card", "game_match", "game_match_player", "game_match_location",
+            "game_match_card", "match_search",
             "flyway_schema_history");
 
     @Autowired
     private JdbcTemplate jdbc;
 
     @Test
-    @DisplayName("Las migraciones V1, V2 y V3 se aplican en orden sobre una base vacía y quedan registradas como exitosas")
+    @DisplayName("Las migraciones V1 a V5 se aplican en orden sobre una base vacía y quedan registradas como exitosas")
     void migrationIsAppliedOnEmptyDatabase() {
-        // El contenedor arranca vacío: V1 (esquema), V2 (evolución sin clave foránea) y V3 (decks, Sprint 3).
+        // El contenedor arranca vacío y Flyway registra el esquema, decks, partidas y búsquedas.
         List<Map<String, Object>> history = jdbc.queryForList(
                 "SELECT installed_rank, version, success FROM flyway_schema_history ORDER BY installed_rank");
 
-        assertThat(history).extracting(row -> row.get("version")).containsExactly("1", "2", "3");
+        assertThat(history).extracting(row -> row.get("version")).containsExactly("1", "2", "3", "4", "5");
         assertThat(history).allSatisfy(row -> assertThat(row).containsEntry("success", true));
         assertThat(history.getFirst()).containsEntry("installed_rank", 1);
     }

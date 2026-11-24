@@ -323,6 +323,11 @@ class CreateLocationUseCaseTest {
             saved.add(location);
             return saved.size();
         }
+
+        @Override
+        public List<cr.ac.tec.pokearena.domain.model.AvailableLocation> findAllAvailable() {
+            return List.of();
+        }
     }
 
     private static final class InMemoryIdempotencyStore implements IdempotencyStore {

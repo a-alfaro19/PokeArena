@@ -2,6 +2,7 @@ package cr.ac.tec.pokearena.domain.effect;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 /**
  * Propósito: plug-in del efecto "Restricción por turno" (criterio C.2): turnos en los que no se pueden
@@ -42,5 +43,14 @@ public final class TurnRestrictionEffect implements LocationEffectType {
     public void validate(Map<String, Object> parameters) {
         EffectParameters.allowOnly(CODE, parameters, PARAMETERS);
         EffectParameters.requireDistinctIntegers(CODE, parameters, TURNS, FIRST_TURN, LAST_TURN);
+    }
+
+    @Override
+    public boolean blocksAllTurns(Map<String, Object> parameters) {
+        Object value = parameters.get(TURNS);
+        if (!(value instanceof List<?> turns)) {
+            throw new IllegalStateException("Los parámetros validados de TURN_RESTRICTION no contienen turns.");
+        }
+        return IntStream.rangeClosed(FIRST_TURN, LAST_TURN).allMatch(turns::contains);
     }
 }

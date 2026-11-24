@@ -34,4 +34,14 @@ public interface LocationEffectType {
      * @throws ValidationException INVALID_EFFECT si faltan, sobran o tienen un valor inválido
      */
     void validate(Map<String, Object> parameters);
+
+    /**
+     * Indica si el efecto impide jugar cartas durante todos los turnos de una partida.
+     *
+     * @param parameters parámetros validados del efecto
+     * @return {@code true} solo si el efecto bloquea todos los turnos
+     */
+    default boolean blocksAllTurns(Map<String, Object> parameters) {
+        return false;
+    }
 }

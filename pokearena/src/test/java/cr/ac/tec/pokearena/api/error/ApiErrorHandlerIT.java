@@ -390,6 +390,11 @@ class ApiErrorHandlerIT extends PostgresIntegrationTestBase {
             // Crear Deck (Sprint 3, sección 5.3).
             case DECK_NAME_TAKEN -> 409;
             case DECK_NOT_FOUND -> 404;
+            // Búsquedas y partidas (Sprint 3, sección 5.3).
+            case ACTIVE_MATCH_EXISTS, SEARCH_ALREADY_OPEN, SEARCH_ALREADY_MATCHED, SEARCH_NOT_OPEN,
+                    BOT_OFFER_NOT_AVAILABLE, MATCH_PREPARATION_FAILED -> 409;
+            case INSUFFICIENT_CUBES -> 422;
+            case SEARCH_NOT_FOUND, MATCH_NOT_FOUND -> 404;
             default -> 400;
         };
     }

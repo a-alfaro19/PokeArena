@@ -26,6 +26,7 @@
 import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, googleClientIdFrom, CatalogFilterForm, catalogQuickTests } from './player.js';
 import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMessage, rangeText, imageRequirementText, acceptedTypes, energyAmountState, integersBetween, effectJson, gameOptionsFrom } from './options.js';
 import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNode, deckSummaryNode, deckDetailNodes } from './deck.js';
+import { MatchViewer, matchPath } from './match.js';
 
 (() => {
   // ---------------------------------------------------------------------------------------------
@@ -55,6 +56,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
   const MS_PER_SECOND = 1000;
   const SECONDS_PER_MINUTE = 60;
   const SESSION_REFRESH_MS = 15 * MS_PER_SECOND;
+  const MATCH_CLOCK_TICK_MS = MS_PER_SECOND;
   /** Margen para no usar un token que vence en medio de la solicitud. */
   const TOKEN_SAFETY_MS = 10 * MS_PER_SECOND;
   const MAX_PREVIEWS = 8;
@@ -98,6 +100,8 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     search: { params: null, token: null, nextCursor: null, shown: 0 },
     /** Opciones de la API para la sesión actual; null mientras no se cargan o si la carga falló. */
     options: { catalog: null, creation: null, game: null },
+    /** Identificador incluido en el enlace de entrada de la pantalla de partida. */
+    matchId: null,
   };
 
   // ---------------------------------------------------------------------------------------------
@@ -108,6 +112,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
   let catalogFilterForm;
   let deckBuilder;
   let myDecks;
+  let matchViewer;
   let googleSdk = null;
   let googleAttempt = null;
   let googleConfigured = false;
@@ -413,6 +418,9 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     // Decks (3.1.3): la colección, la selección y la lista son de la sesión anterior.
     deckBuilder.clear();
     myDecks.clear();
+    matchViewer.clear(state.matchId
+      ? 'Inicia sesión para consultar la partida indicada en este enlace.'
+      : 'Abre esta pantalla desde el enlace de una partida.');
     $('#deck-form').elements.name.value = '';
     $('#deck-quick-status').textContent = '';
     renderSession();
@@ -425,7 +433,12 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     state.session = { ...session, source };
     expiryTimer = setTimeout(expireSession, Math.max(0, session.expiresAt - Date.now()));
     renderSession();
-    $('#tab-catalog').click();
+    if (state.matchId) {
+      $('#tab-match').click();
+      matchViewer.open(state.matchId);
+    } else {
+      $('#tab-catalog').click();
+    }
     playerCatalog.load();
     loadOptions(attempt);
     deckBuilder.loadCollection();
@@ -1240,6 +1253,101 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
   }
 
   // ---------------------------------------------------------------------------------------------
+  // Inicio de partida (5.1.1): la búsqueda puede abrir esta vista con ?partida=<id>.
+  // ---------------------------------------------------------------------------------------------
+
+  function renderMatch(view) {
+    const message = $('#match-message');
+    message.textContent = view.message;
+    message.className = 'catalog-message' + (view.error ? ' catalog-error' : '');
+    $('#match-reload').disabled = !state.session.token || !state.matchId || view.loading;
+
+    const summary = $('#match-summary');
+    const locations = $('#match-locations');
+    const hand = $('#match-hand');
+    const rival = $('#match-rival');
+    const graveyard = $('#match-graveyard');
+    const graveyardMessage = $('#match-graveyard-message');
+    if (!view.match) {
+      summary.replaceChildren();
+      locations.replaceChildren();
+      hand.replaceChildren();
+      rival.textContent = 'Todavía no hay una partida cargada.';
+      graveyard.replaceChildren();
+      graveyardMessage.textContent = '';
+      return;
+    }
+
+    const match = view.match;
+    const yourHand = Array.isArray(match.you?.hand) ? match.you.hand : [];
+    const yourGraveyard = Array.isArray(match.you?.graveyard) ? match.you.graveyard : [];
+    summary.replaceChildren(
+      el('p', { className: 'match-stat', text: 'Partida ' + match.id + ' · ' + match.status }),
+      el('p', { className: 'match-stat', text: 'Turno ' + match.turn + ' · Tiempo restante: '
+        + (view.secondsRemaining === null ? 'no disponible' : view.secondsRemaining + ' s') }),
+      el('p', { className: 'match-stat', text: 'Tu energía: ' + match.you.energy + ' · Apuesta: '
+        + match.bet + ' cubos' }),
+      el('p', { className: 'match-stat', text: (match.vsBot ? 'Partida contra el bot' : 'Partida contra un jugador')
+        + ' · ' + match.context }),
+    );
+    locations.replaceChildren(...(Array.isArray(match.locations) ? match.locations : []).map((location) => {
+      const card = el('article', { className: 'catalog-card match-location' },
+        safeImage(location.imageLargeUrl, location.name || 'Ubicación', 'catalog-image'),
+        el('div', { className: 'catalog-card-body' },
+          el('p', { className: 'muted', text: 'Ubicación ' + location.slot }),
+          el('h3', { text: location.name }),
+          el('p', { text: location.description }),
+          el('p', { text: 'Límite de cartas: ' + location.cardLimit }),
+          el('p', { text: 'Energía extra (' + location.extraEnergyMode + '): ' + location.extraEnergyAmount }),
+        ));
+      return card;
+    }));
+    hand.replaceChildren(...yourHand.map((card) => matchCardNode(card)));
+    if (!yourHand.length) hand.replaceChildren(el('p', { className: 'muted', text: 'No hay cartas en tu mano.' }));
+    rival.textContent = 'Tu rival (' + (match.rival.isBot ? 'bot' : 'jugador') + ') tiene '
+      + match.rival.handCount + ' carta(s) en la mano.';
+    graveyardMessage.textContent = yourGraveyard.length
+      ? 'Cartas en tu cementerio: ' + yourGraveyard.length + '.'
+      : 'Tu cementerio está vacío.';
+    graveyard.replaceChildren(...yourGraveyard.map((card) => matchCardNode(card)));
+  }
+
+  function matchCardNode(card) {
+    return el('article', { className: 'catalog-card match-card' },
+      safeImage(card.imageSmallUrl, card.name || card.code, 'match-card-image'),
+      el('div', { className: 'catalog-card-body' },
+        el('code', { text: card.code }),
+        el('h3', { text: card.name }),
+        el('p', { text: 'Costo: ' + card.cost + ' · Poder: ' + card.power }),
+      ));
+  }
+
+  function wireMatch() {
+    matchViewer = new MatchViewer({ send, getSession: () => state.session, render: renderMatch });
+    $('#match-reload').addEventListener('click', () => {
+      if (state.matchId) matchViewer.open(state.matchId);
+    });
+    if (state.matchId) {
+      $('#tab-match').click();
+      matchViewer.clear('Inicia sesión para consultar la partida indicada en este enlace.');
+    }
+    renderQuickTests('match', [{
+      label: 'Partida inexistente o ajena', expected: { status: 404, type: 'MATCH_NOT_FOUND' },
+      run: (expected) => {
+        const token = state.session.token;
+        if (!token) {
+          $('#match-quick-status').textContent = 'Inicia sesión como jugador o administrador para ejecutar este caso.';
+          return null;
+        }
+        $('#match-quick-status').textContent = '';
+        return send({ method: 'GET', path: matchPath('id-inexistente'), token,
+          label: 'Partida inexistente o ajena', expected });
+      },
+    }]);
+    setInterval(() => matchViewer.tick(), MATCH_CLOCK_TICK_MS);
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Google: client id desde GET /api/v1/configuracion; el token de Google solo viaja a /sesiones.
   // ---------------------------------------------------------------------------------------------
 
@@ -1365,6 +1473,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
   }
 
   function start() {
+    state.matchId = new URLSearchParams(window.location.search).get('partida');
     renderOptions();
     wireTabs();
     $('#tab-catalog').click();
@@ -1374,6 +1483,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     wireSearchForm();
     wireCatalog();
     wireDecks();
+    wireMatch();
     renderQuickTests('catalog', catalogQuickTests(catalogFilterForm));
     renderQuickTests('card', CARD_QUICK_TESTS);
     renderQuickTests('location', LOCATION_QUICK_TESTS);

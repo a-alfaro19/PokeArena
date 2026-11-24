@@ -3,7 +3,7 @@
 Proyecto PokéArena del curso CE-1116 (TEC): un backend en **Java 21 con Spring Boot**,
 PostgreSQL, Redis (caché opcional) y una interfaz web servida por la misma aplicación. La especificación completa,
 fuente de verdad del proyecto, está en
-[pokearena/docs/AGENTE_Especificacion_v2_Sprint2_PokeArena.md](pokearena/docs/AGENTE_Especificacion_v2_Sprint2_PokeArena.md).
+[pokearena/docs/AGENTE_Especificacion_Sprint3_PokeArena.md](pokearena/docs/AGENTE_Especificacion_Sprint3_PokeArena.md).
 
 ## Historias implementadas
 
@@ -19,6 +19,7 @@ fuente de verdad del proyecto, está en
 | 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` (jugador o administrador) | Pestaña "Catálogo y mi colección" | Sprint 2, terminada |
 | Opciones de la interfaz (Refactory SP2) | `GET /api/v1/opciones/catalogo` (jugador o administrador) y `GET /api/v1/opciones/creacion` (administrador) | Tipos, rarezas, rangos, habilidades, energía extra, efectos y requisitos de imagen de filtros y formularios | Terminada |
 | 3.1.3 Crear Deck | `POST /api/v1/decks`, `GET /api/v1/decks`, `GET /api/v1/decks/{id}` y `GET /api/v1/opciones/juego` (jugador o administrador) | Pestañas "Armar deck" y "Mis decks" | Sprint 3, terminada (ver [Crear Deck](#crear-deck-sprint-3-historia-313)) |
+| 5.1.1 Iniciar partida | Preparación transaccional desde `StartMatchUseCase` y `GET /api/v1/partidas/{id}` (jugador o administrador) | Pestaña "Inicio de partida" mediante `?partida=<uuid>` | Preparación y visor implementados; integración con la búsqueda pendiente |
 
 Para desarrollo y demostraciones, el perfil `dev` ofrece además credenciales de prueba
 (`POST /api/v1/dev/sesiones`), que no existen con ningún otro perfil.
@@ -32,11 +33,11 @@ y una prueba de contrato lo compara con la aplicación en los dos sentidos.
 - **Java 21** (JDK). Maven no hace falta: el proyecto trae su propio wrapper (`mvnw.cmd`).
 - **Docker Desktop** encendido: lo usan las pruebas de integración (Testcontainers) y la base local.
 - **Node.js 20 o superior (opcional)**, en `PATH`: las pruebas de comportamiento de la interfaz
-  (`src/test/javascript/player.test.mjs` y `options.test.mjs`) usan `node:test`, sin paquetes npm, y
+  (`src/test/javascript/*.test.mjs`) usan `node:test`, sin paquetes npm, y
   Maven las ejecuta con `PlayerInterfaceBehaviorTest`. Sin Node, o con una versión menor, esa prueba se
   **omite** con un aviso ("Pruebas de JavaScript OMITIDAS") y el build sigue. Comprueba la
   instalación con `node --version`, o ejecútalas solas con
-  `node --test src/test/javascript/player.test.mjs src/test/javascript/options.test.mjs`.
+  `node --test src/test/javascript/player.test.mjs src/test/javascript/options.test.mjs src/test/javascript/deck.test.mjs src/test/javascript/match.test.mjs`.
 - Git y PowerShell (los comandos de este documento son de PowerShell, en Windows).
 
 ## Compilar y ejecutar las pruebas
@@ -273,7 +274,7 @@ Para volver a los logs en JSON y quitar las sesiones de prueba: `Remove-Item Env
 ### Interfaz web
 
 La interfaz (sección 11 de la especificación) es una sola página en
-`pokearena/src/main/resources/static/` (`index.html`, `app.js`, `player.js`, `options.js` y `styles.css`), sin
+`pokearena/src/main/resources/static/` (`index.html`, `app.js`, `player.js`, `options.js`, `deck.js`, `match.js` y `styles.css`), sin
 frameworks ni bibliotecas externas, que habla con la API real en el mismo origen. La única
 excepción es el script oficial de Google Identity Services, que la política de seguridad de
 contenido permite solo desde `accounts.google.com/gsi/`.
@@ -303,6 +304,13 @@ contenido permite solo desde `accounts.google.com/gsi/`.
 - **Idempotencia:** cada creación genera su `Idempotency-Key` en el navegador; "Repetir con la
   misma clave" reenvía la última creación con la misma clave, el mismo contenido y la misma sesión,
   y debe devolver la misma respuesta sin crear nada nuevo.
+- **Inicio de partida (5.1.1):** `GET /api/v1/partidas/{id}` carga las ubicaciones compartidas, tu
+  mano y energía, el turno y su tiempo restante, la apuesta y el conteo de la mano rival. La interfaz
+  abre la pestaña con `/?partida=<uuid>`; el token no va en el enlace y sigue solo en memoria. Si se
+  abre el enlace sin sesión, después de iniciar sesión se consulta la partida. El contador se calcula
+  con `serverTime` y `turnEndsAt` del servidor. El caso rápido "Partida inexistente o ajena" comprueba
+  `404 MATCH_NOT_FOUND`. La pantalla de búsqueda aún no está implementada; al encontrar partida deberá
+  abrir esta misma vista con el `matchId` recibido.
 - **Panel de respuesta:** método y ruta, código HTTP con color (verde 2xx, naranja 4xx, rojo 5xx),
   el JSON completo, el `correlationId`, la `Idempotency-Key` y la vista previa de las imágenes, con
   una imagen de reemplazo si alguna no carga.
@@ -332,10 +340,10 @@ PokeArena
         │       ├── application.properties, application-dev.properties
         │       ├── db/migration          migraciones Flyway (V1 esquema y semillas, V2, ...)
         │       ├── openapi/pokearena.yaml contrato HTTP
-        │       └── static                interfaz web (index.html, app.js, player.js, options.js, styles.css)
+        │       └── static                interfaz web (index.html, app.js, player.js, options.js, deck.js, match.js, styles.css)
         └── test
             ├── java/cr/ac/tec/pokearena  pruebas (*Test unitarias, *IT de integración, support/)
-            └── javascript                pruebas de la interfaz (player y opciones, node --test)
+            └── javascript                pruebas de la interfaz (node --test)
 ```
 
 El código vive en `cr.ac.tec.pokearena`, organizado en capas (sección 4.1 de la especificación).
@@ -343,21 +351,21 @@ Cada paquete tiene un `package-info.java` que explica su responsabilidad y lo qu
 
 | Capa | Paquete | Qué contiene | Puede usar |
 |---|---|---|---|
-| Presentación | `src/main/resources/static/` | Interfaz web: `index.html` (estructura), `app.js` (sesiones, formularios del administrador, casos rápidos y panel de respuesta), `player.js` (estado del catálogo del jugador, bienvenida y Google, sin DOM), `options.js` (lectura de las opciones de la API, sin DOM; ambos los prueban las pruebas de JavaScript) y `styles.css` | La API por HTTP |
-| API | `api.controller` | `SessionController` (inicio de sesión), `CatalogController` (catálogo del jugador), `CardController`, `LocationController`, `ImageFileController`, `ConfigurationController` (client id de Google), `OptionsController` (opciones de filtros y formularios) y `DevSessionController` (solo `dev`) | `application` |
-| | `api.dto` | Cuerpos HTTP: fichas, páginas y sesiones | |
+| Presentación | `src/main/resources/static/` | Interfaz web: `index.html` (estructura), `app.js` (sesiones, formularios, casos rápidos y presentación), `player.js` (estado del catálogo del jugador), `options.js` (opciones de la API), `deck.js` (estado de decks), `match.js` (consulta y contador del inicio de partida) y `styles.css` | La API por HTTP |
+| API | `api.controller` | `SessionController`, `CatalogController`, `CardController`, `LocationController`, `MatchController` (inicio de partida), `ImageFileController`, `ConfigurationController`, `OptionsController` y `DevSessionController` (solo `dev`) | `application` |
+| | `api.dto` | Cuerpos HTTP: fichas, páginas, sesiones y `MatchResponse` | |
 | | `api.error` | `ApiErrorHandler` (único manejador global) y el formato único `ApiError` | |
 | | `api.security` | `AuthorizationInterceptor`, `@RequiresRole`, `@PublicRoute` | |
 | | `api.web` | `CorrelationIdFilter` y el encabezado `Idempotency-Key` | |
-| Aplicación | `application.usecase` | Un caso de uso por historia, `IdempotencyGuard`, `Pagination`, `ThumbnailRetryUseCase` | `domain` |
+| Aplicación | `application.usecase` | Casos de uso por historia, `StartMatchUseCase`, `GetMatchUseCase`, `IdempotencyGuard`, `Pagination` y `ThumbnailRetryUseCase` | `domain` |
 | | `application.port` | Puertos: `UnitOfWork`, `ImageProcessor`, `ImageStorage`, `CatalogCache`, `TokenIssuer`, `Clock`, ... | |
 | | `application.dto` | Comandos y resultados | |
-| Dominio | `domain.model` | `Card`, `Location`, `Ability`, `Player`, criterios de búsqueda, ... | Solo `java.*` |
-| | `domain.rule` | Validaciones (`CardFieldRules`, `CardSearchRules`, `EvolutionRules`, `ImageRules`, ...) | |
+| Dominio | `domain.model` | `Card`, `Location`, `Ability`, `Player`, `Match`, `MatchSeat`, `MatchLocation`, criterios de búsqueda, ... | Solo `java.*` |
+| | `domain.rule` | Validaciones (`CardFieldRules`, `CardSearchRules`, `LocationSelectionRules`, `TurnStartRules`, `MatchView`, ...) | |
 | | `domain.effect` | Plug-ins de efectos de ubicación y su registro | |
 | | `domain.error` | `DomainException` y sus familias | |
 | | `domain.repository` | Puertos de persistencia | |
-| Infraestructura | `infrastructure.persistence` | Repositorios JDBC (un adaptador por puerto, con el mapeo de cartas compartido en `CardRows`) y `TransactionalUnitOfWork` | `domain` y `application` |
+| Infraestructura | `infrastructure.persistence` | Repositorios JDBC (`JdbcMatchRepository` y adaptadores por puerto, con el mapeo de cartas compartido en `CardRows`) y `TransactionalUnitOfWork` | `domain` y `application` |
 | | `infrastructure.storage` | Procesador y almacenamiento de imágenes, tarea de reintentos | |
 | | `infrastructure.identity` | Emisión y verificación de las credenciales propias (JWT) y `GoogleIdentityProvider`, el verificador de los tokens de Google (firma con las llaves públicas JWKS, emisor, vencimiento y audiencia) | |
 | | `infrastructure.cache` | Caché del catálogo: `RedisCatalogCache` (con `REDIS_HOST`) y `NoCatalogCache` (sin Redis) | |

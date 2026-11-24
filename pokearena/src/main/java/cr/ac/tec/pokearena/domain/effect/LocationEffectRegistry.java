@@ -46,6 +46,21 @@ public final class LocationEffectRegistry {
     }
 
     /**
+     * Consulta si el plug-in de un efecto bloquea todos los turnos.
+     *
+     * @param effect efecto con parámetros validados
+     * @return {@code true} si el efecto bloquea todos los turnos
+     * @throws IllegalStateException si el efecto guardado ya no tiene un plug-in registrado
+     */
+    public boolean blocksAllTurns(LocationEffect effect) {
+        LocationEffectType type = types.get(effect.code());
+        if (type == null) {
+            throw new IllegalStateException("No está registrado el efecto de ubicación " + effect.code() + ".");
+        }
+        return type.blocksAllTurns(effect.parameters());
+    }
+
+    /**
      * Paso 6: valida el efecto. El efecto es opcional.
      *
      * @param code       código del tipo de efecto, o {@code null} o vacío si la ubicación no tiene efecto
