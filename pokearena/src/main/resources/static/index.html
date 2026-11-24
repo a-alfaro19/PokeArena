@@ -71,6 +71,7 @@
         <button type="button" role="tab" class="tab" id="tab-search" aria-controls="panel-search" aria-selected="false">Buscar carta</button>
         <button type="button" role="tab" class="tab" id="tab-deck" aria-controls="panel-deck" aria-selected="false">Armar deck</button>
         <button type="button" role="tab" class="tab" id="tab-my-decks" aria-controls="panel-my-decks" aria-selected="false">Mis decks</button>
+        <button type="button" role="tab" class="tab" id="tab-match-search" aria-controls="panel-match-search" aria-selected="false">Estado de búsqueda</button>
       </nav>
 
       <!-- Catálogo del jugador: la API decide propiedad, copias y reglas de disponibilidad. -->
@@ -304,6 +305,29 @@
         <ul id="my-decks-list" class="deck-list"></ul>
         <button type="button" id="my-decks-more" class="btn btn-ghost load-more" hidden>Cargar más</button>
         <div id="deck-detail" class="deck-detail" aria-live="polite"></div>
+      </section>
+      <section id="panel-match-search" class="panel" role="tabpanel" aria-labelledby="tab-match-search" hidden>
+        <div class="panel-head"><h2>Estado de la búsqueda</h2></div>
+        <form id="match-search-form" class="form-grid">
+          <label class="field"><span class="field-label">Identificador de búsqueda</span>
+            <input name="searchId" required autocomplete="off" spellcheck="false">
+          </label>
+          <div class="actions"><button class="btn btn-primary" type="submit">Consultar</button></div>
+        </form>
+        <p id="match-search-status" role="status" class="catalog-message"></p>
+        <p id="match-search-notice" hidden></p>
+        <p id="match-search-error" role="alert"></p>
+        <div class="actions">
+          <button type="button" class="btn btn-ghost" id="match-search-exit" hidden>Salir de la búsqueda</button>
+          <button type="button" class="btn btn-primary" id="match-search-bot" hidden>Jugar contra el bot</button>
+        </div>
+        <details class="quick">
+          <summary>Casos de prueba rápidos</summary>
+          <div class="actions">
+            <button type="button" class="btn btn-ghost" id="match-test-exit">Salir de una búsqueda con partida</button>
+            <button type="button" class="btn btn-ghost" id="match-test-bot">Aceptar el bot antes de tiempo</button>
+          </div>
+        </details>
       </section>
     </section>
 
