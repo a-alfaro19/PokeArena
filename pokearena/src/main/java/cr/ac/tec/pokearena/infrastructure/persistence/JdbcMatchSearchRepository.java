@@ -11,13 +11,14 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import cr.ac.tec.pokearena.domain.model.MatchContext;
 import cr.ac.tec.pokearena.domain.model.MatchSearch;
 import cr.ac.tec.pokearena.domain.model.MatchSearchStatus;
 import cr.ac.tec.pokearena.domain.repository.MatchSearchRepository;
 
-/** Consulta atómica con comprobación de titularidad y de inactividad (A.11, mensaje 8). */
+/** Consulta con control de titularidad e inactividad (A.11) y salida transaccional (A.12). */
 @Repository
 public class JdbcMatchSearchRepository implements MatchSearchRepository {
 
@@ -53,6 +54,31 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
                        created_at, last_polled_at, closed_at FROM owned WHERE status <> 'WAITING'
                 """, (rs, row) -> read(rs), Timestamp.from(now.minus(inactivityTimeout)), id, playerId,
                 Timestamp.from(now), Timestamp.from(now)).stream().findFirst();
+    }
+
+    @Override
+    public Optional<MatchSearch> lockById(UUID id, UUID playerId) {
+        requireTransaction();
+        // A.12, mensaje 9: esperar al emparejador si ya adquirió el bloqueo.
+        return jdbc.query("SELECT * FROM match_search WHERE id = ? AND player_id = ? FOR UPDATE",
+                (rs, row) -> read(rs), id, playerId).stream().findFirst();
+    }
+
+    @Override
+    public MatchSearch markCancelled(UUID id, Instant now) {
+        requireTransaction();
+        // A.12, mensaje 14: devolver las fechas con la precisión guardada por PostgreSQL.
+        return jdbc.query("""
+                UPDATE match_search SET status = 'CANCELLED', closed_at = ?
+                WHERE id = ? AND status = 'WAITING' RETURNING *
+                """, (rs, row) -> read(rs), Timestamp.from(now), id).stream().findFirst()
+                .orElseThrow(() -> new IllegalStateException("Se esperaba una búsqueda bloqueada en espera."));
+    }
+
+    private static void requireTransaction() {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("La salida de la búsqueda requiere una transacción activa.");
+        }
     }
 
     private static MatchSearch read(ResultSet rs) throws SQLException {

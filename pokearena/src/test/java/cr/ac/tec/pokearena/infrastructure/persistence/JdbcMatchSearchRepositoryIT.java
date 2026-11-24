@@ -1,6 +1,7 @@
 package cr.ac.tec.pokearena.infrastructure.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -48,6 +49,41 @@ class JdbcMatchSearchRepositoryIT extends PostgresIntegrationTestBase {
                 INSERT INTO match_search (id, player_id, deck_id, context, status, elo, created_at, last_polled_at)
                 VALUES (?, ?, 7, 'RANKED', 'WAITING', 100, ?, ?)
                 """, id, player, Timestamp.from(START), Timestamp.from(START));
+    }
+
+    @Test
+    @DisplayName("C.9-E2: bloquear y cancelar conserva el deck y la actividad, y guarda la hora de salida")
+    void cancelOwnedWaitingSearch() {
+        Instant exitTime = START.plusSeconds(7);
+        MatchSearch before = searches.lockById(id, player).orElseThrow();
+        assertThat(before.status()).isEqualTo(MatchSearchStatus.WAITING);
+        MatchSearch after = searches.markCancelled(id, exitTime);
+        assertThat(after.status()).isEqualTo(MatchSearchStatus.CANCELLED);
+        assertThat(after.closedAt()).isEqualTo(exitTime);
+        assertThat(after.matchId()).isNull();
+        assertThat(after.deckId()).isEqualTo(before.deckId());
+        assertThat(after.lastPolledAt()).isEqualTo(before.lastPolledAt());
+        assertThat(searches.lockById(id, player)).contains(after);
+    }
+
+    @Test
+    @DisplayName("C.9-E2: una búsqueda ajena o inexistente no se entrega para cancelar")
+    void onlyOwnerCanLockSearch() {
+        assertThat(searches.lockById(id, UUID.randomUUID())).isEmpty();
+        assertThat(searches.lockById(UUID.randomUUID(), player)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = MatchSearchStatus.class, names = "WAITING", mode = EnumSource.Mode.EXCLUDE)
+    @DisplayName("C.9-R2 y C.9-E2: la escritura de cancelación protege las búsquedas ya cerradas")
+    void cancellationCannotOverwriteClosedState(MatchSearchStatus status) {
+        UUID match = status == MatchSearchStatus.MATCHED ? UUID.randomUUID() : null;
+        jdbc.update("UPDATE match_search SET status = ?, match_id = ?, closed_at = ? WHERE id = ?",
+                status.name(), match, Timestamp.from(START), id);
+        MatchSearch before = searches.lockById(id, player).orElseThrow();
+        assertThatThrownBy(() -> searches.markCancelled(id, START.plusSeconds(1)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(searches.lockById(id, player)).contains(before);
     }
 
     @Test
