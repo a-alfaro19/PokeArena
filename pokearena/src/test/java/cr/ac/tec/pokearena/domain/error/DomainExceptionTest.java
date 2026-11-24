@@ -34,7 +34,7 @@ class DomainExceptionTest {
     }
 
     @Test
-    @DisplayName("El catálogo tiene los 18 tipos de la sección 5.3 del Sprint 2 y los 5 de Crear Deck del Sprint 3")
+    @DisplayName("El catálogo contiene los errores de Sprint 2, de decks y de búsquedas de partida")
     void catalogMatchesSpecification() {
         assertThat(ErrorType.values()).extracting(Enum::name).containsExactlyInAnyOrder(
                 "NOT_AUTHENTICATED", "FORBIDDEN", "INVALID_IDENTITY_TOKEN", "IDENTITY_PROVIDER_UNAVAILABLE",
@@ -43,7 +43,9 @@ class DomainExceptionTest {
                 "IMAGE_TOO_LARGE", "INVALID_IMAGE_RATIO", "IMAGE_RESOLUTION_TOO_LOW", "IDEMPOTENCY_KEY_REQUIRED",
                 "IDEMPOTENCY_KEY_REUSED",
                 // Sprint 3, historia 3.1.3 Crear Deck.
-                "INVALID_DECK_SIZE", "DUPLICATE_DECK_CARDS", "CARD_NOT_OWNED", "DECK_NAME_TAKEN", "DECK_NOT_FOUND");
+                "INVALID_DECK_SIZE", "DUPLICATE_DECK_CARDS", "CARD_NOT_OWNED", "DECK_NAME_TAKEN", "DECK_NOT_FOUND",
+                "SEARCH_NOT_FOUND", "SEARCH_ALREADY_MATCHED", "SEARCH_NOT_OPEN", "BOT_OFFER_NOT_AVAILABLE",
+                "MATCH_PREPARATION_FAILED");
     }
 
     @Test

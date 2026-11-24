@@ -41,5 +41,12 @@ public enum ErrorType {
     DUPLICATE_DECK_CARDS,
     CARD_NOT_OWNED,
     DECK_NAME_TAKEN,
-    DECK_NOT_FOUND
+    DECK_NOT_FOUND,
+
+    // Consultar y salir de la búsqueda (historia 4.1.2).
+    SEARCH_NOT_FOUND,
+    SEARCH_ALREADY_MATCHED,
+    SEARCH_NOT_OPEN,
+    BOT_OFFER_NOT_AVAILABLE,
+    MATCH_PREPARATION_FAILED
 }

@@ -74,6 +74,11 @@ final class ApiErrorCatalog {
             case CARD_NOT_OWNED -> new Entry(HttpStatus.BAD_REQUEST, "Carta no poseída");
             case DECK_NAME_TAKEN -> new Entry(HttpStatus.CONFLICT, "Nombre de deck en uso");
             case DECK_NOT_FOUND -> new Entry(HttpStatus.NOT_FOUND, "Deck no encontrado");
+            case SEARCH_NOT_FOUND -> new Entry(HttpStatus.NOT_FOUND, "Búsqueda no encontrada");
+            case SEARCH_ALREADY_MATCHED -> new Entry(HttpStatus.CONFLICT, "Partida ya asignada");
+            case SEARCH_NOT_OPEN -> new Entry(HttpStatus.CONFLICT, "Búsqueda cerrada");
+            case BOT_OFFER_NOT_AVAILABLE -> new Entry(HttpStatus.CONFLICT, "Oferta del bot no disponible");
+            case MATCH_PREPARATION_FAILED -> new Entry(HttpStatus.CONFLICT, "No se pudo preparar la partida");
         };
     }
 

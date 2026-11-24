@@ -88,6 +88,9 @@ tags:
   - name: Decks
     description: Historia 3.1.3 (Crear Deck); armar y consultar decks de mi colección (Sprint 3)
 
+  - name: Búsquedas
+    description: Búsqueda de partida, consulta de estado, salida y aceptación de la oferta del bot.
+
 security:
   - bearerAuth: []
 
@@ -1140,6 +1143,12 @@ components:
             - CARD_NOT_OWNED
             - DECK_NAME_TAKEN
             - DECK_NOT_FOUND
+            # Búsquedas de partida (4.1.2)
+            - SEARCH_NOT_FOUND          # 404: búsqueda inexistente o ajena.
+            - SEARCH_ALREADY_MATCHED    # 409: detail incluye el id de la partida asignada.
+            - SEARCH_NOT_OPEN           # 409: búsqueda cancelada o expirada al aceptar el bot.
+            - BOT_OFFER_NOT_AVAILABLE   # 409: aún no se cumple el tiempo de espera.
+            - MATCH_PREPARATION_FAILED  # 409: falló la preparación y la búsqueda sigue abierta.
         title:
           type: string
           description: Título fijo del tipo de error, en español.
@@ -1825,3 +1834,49 @@ components:
         limit:
           type: integer
           description: Tamaño de página con el que se pidió.
+
+
+    MatchSearchResponse:
+      description: Estado de la búsqueda del jugador autenticado.
+      type: object
+      required: [id, status, deckId, context, createdAt, matchId, botOfferAvailable, notice, pollIntervalSeconds]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [WAITING, MATCHED, CANCELLED, EXPIRED]
+        deckId:
+          type: integer
+          format: int64
+          description: Deck elegido al entrar en la búsqueda.
+        context:
+          type: string
+          enum: [RANKED, TOURNAMENT]
+        createdAt:
+          type: string
+          format: date-time
+        matchId:
+          type: [string, 'null']
+          format: uuid
+          description: Identificador de la partida asignada cuando el estado es MATCHED.
+        botOfferAvailable:
+          type: boolean
+          description: Verdadero si la búsqueda sigue en espera y ya se alcanzó el tiempo de oferta del bot.
+        notice:
+          type: [string, 'null']
+          description: LOCATIONS_UNAVAILABLE si la última pareja no pudo prepararse, o null si no hay aviso.
+        pollIntervalSeconds:
+          type: integer
+          minimum: 1
+          description: Intervalo entre consultas indicado por el servidor, en segundos.
+      if:
+        properties:
+          status: {const: MATCHED}
+      then:
+        properties:
+          matchId: {type: string}
+      else:
+        properties:
+          matchId: {type: 'null'}
