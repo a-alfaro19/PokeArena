@@ -467,7 +467,7 @@ Dos búsquedas son compatibles si `|eloA - eloB| <= max(rango(A), rango(B))` (la
 `GET /api/v1/busquedas/{id}`.
 
 1. Autoriza.
-2. `MatchSearchRepository.touchAndFind(id, jugador, ahora)`: si la búsqueda está `WAITING`, actualiza `last_polled_at = ahora`; luego la devuelve. Si no existe o no es del jugador: `SEARCH_NOT_FOUND`.
+2. `MatchSearchRepository.touchAndFind(id, jugador, ahora)`: si está `WAITING` y `last_polled_at < ahora - inactivity-timeout`, pasa a `EXPIRED` con `closed_at = ahora` y conserva la última actividad. En el límite exacto sigue vigente. Una consulta vigente renueva la actividad sin retroceder su instante. La decisión y la lectura ocurren bajo el mismo bloqueo de fila. Si no existe o no es del jugador: `SEARCH_NOT_FOUND`.
 3. `BotOfferRules.isAvailable(búsqueda, ahora)`: `WAITING` y `ahora >= created_at + bot-offer-after`.
 4. Responde `200` con `MatchSearchResponse`.
 
@@ -1065,6 +1065,7 @@ API->>UC: execute(GetMatchSearchCommand);
 UC->>CLK: now();
 CLK-->>UC: hora actual;
 UC->>SRCH: touchAndFind(id, jugador, hora);
+Note over SRCH: Con la fila bloqueada una espera vencida pasa a EXPIRED sin renovar actividad. En el límite exacto sigue vigente;
 alt La búsqueda existe y es del jugador;
 SRCH-->>UC: búsqueda con su estado actualizado;
 UC->>RULES: isAvailable(búsqueda, hora);
