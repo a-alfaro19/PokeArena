@@ -42,6 +42,7 @@ import cr.ac.tec.pokearena.domain.error.ErrorType;
 import cr.ac.tec.pokearena.domain.error.IdempotencyConflictException;
 import cr.ac.tec.pokearena.domain.error.ThumbnailGenerationException;
 import cr.ac.tec.pokearena.domain.error.ValidationException;
+import cr.ac.tec.pokearena.domain.model.AvailableLocation;
 import cr.ac.tec.pokearena.domain.model.Location;
 import cr.ac.tec.pokearena.domain.repository.LocationRepository;
 import cr.ac.tec.pokearena.domain.rule.ImageRules;
@@ -322,6 +323,11 @@ class CreateLocationUseCaseTest {
             }
             saved.add(location);
             return saved.size();
+        }
+
+        @Override
+        public List<AvailableLocation> findAllAvailable() {
+            return List.of();
         }
     }
 

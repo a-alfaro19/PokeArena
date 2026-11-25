@@ -42,7 +42,7 @@ class PlayerInterfaceBehaviorTest {
     Path temporaryDirectory;
 
     @Test
-    @DisplayName("Historias 3.1.2, 1.1.1 y 3.1.1 y opciones de la API: filtros, paginación, sesión, privacidad, colección y opciones sin valores fijos")
+    @DisplayName("Sección 11: interfaz de catálogo, decks, búsqueda e inicio de partida")
     void javascriptBehavior() throws Exception {
         String node = System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node";
         requireNode(node, temporaryDirectory.resolve("node-version.log"));
@@ -50,7 +50,8 @@ class PlayerInterfaceBehaviorTest {
         // Ejecuta los comportamientos reales, incluidos eventos del formulario y acciones de casos rápidos.
         String output = runNode(node, temporaryDirectory.resolve("player-tests.log"),
                 "--test", "src/test/javascript/player.test.mjs", "src/test/javascript/options.test.mjs",
-                "src/test/javascript/deck.test.mjs", "src/test/javascript/match-search.test.mjs");
+                "src/test/javascript/deck.test.mjs", "src/test/javascript/match-search.test.mjs",
+                "src/test/javascript/match-view.test.mjs");
         assertThat(output).as("node --test no ejecutó ninguna prueba").contains("pass");
     }
 

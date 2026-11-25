@@ -40,7 +40,16 @@ public final class TurnRestrictionEffect implements LocationEffectType {
 
     @Override
     public void validate(Map<String, Object> parameters) {
+        validatedTurns(parameters);
+    }
+
+    @Override
+    public boolean blocksAllTurns(Map<String, Object> parameters) {
+        return validatedTurns(parameters).size() == LAST_TURN - FIRST_TURN + 1;
+    }
+
+    private List<Integer> validatedTurns(Map<String, Object> parameters) {
         EffectParameters.allowOnly(CODE, parameters, PARAMETERS);
-        EffectParameters.requireDistinctIntegers(CODE, parameters, TURNS, FIRST_TURN, LAST_TURN);
+        return EffectParameters.requireDistinctIntegers(CODE, parameters, TURNS, FIRST_TURN, LAST_TURN);
     }
 }

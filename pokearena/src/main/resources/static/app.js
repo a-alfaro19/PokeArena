@@ -2,7 +2,7 @@
  * Propósito: comportamiento de la interfaz web de PokéArena (corrección 1; sección 11).
  * Responsabilidades: sesiones, bienvenida y catálogo del jugador, formularios de Crear carta,
  * Crear ubicación y Buscar carta contra la API real, las pantallas Armar deck y Mis decks (Sprint 3,
- * historia 3.1.3; su estado vive en deck.js), casos rápidos y panel de respuesta.
+ * historia 3.1.3; su estado vive en deck.js), Buscar partida y su vista inicial, casos rápidos y panel de respuesta.
  * Al cargar pide GET /api/v1/configuracion: con el client id de Google inicializa Google Identity
  * Services y habilita "Entrar con Google"; sin él, deja el botón deshabilitado con un aviso.
  * Referencia: sección 11 (administrador y jugador), 5.2 (sesiones), 5.3 (errores), 5.4 (idempotencia),
@@ -26,6 +26,7 @@
 import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, googleClientIdFrom, CatalogFilterForm, catalogQuickTests } from './player.js';
 import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMessage, rangeText, imageRequirementText, acceptedTypes, energyAmountState, integersBetween, effectJson, gameOptionsFrom } from './options.js';
 import { MatchSearchScreen, MatchSearchStarter, showAssignedMatch, showMatchSearch } from './match-search.js';
+import { MatchViewScreen } from './match-view.js';
 import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNode, deckSummaryNode, deckDetailNodes } from './deck.js';
 
 (() => {
@@ -111,6 +112,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
   let myDecks;
   let matchStarter;
   let matchSearch;
+  let matchViewScreen;
   let googleSdk = null;
   let googleAttempt = null;
   let googleConfigured = false;
@@ -420,6 +422,8 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     $('#match-start-foreign-form').reset();
     matchSearch.reset();
     $('#match-search-form').reset();
+    matchViewScreen.reset();
+    $('#match-view-form').reset();
     $('#deck-form').elements.name.value = '';
     $('#deck-quick-status').textContent = '';
     renderSession();
@@ -433,6 +437,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     expiryTimer = setTimeout(expireSession, Math.max(0, session.expiresAt - Date.now()));
     renderSession();
     renderMatchSearch(matchSearch);
+    renderMatchView(matchViewScreen);
     $('#tab-catalog').click();
     playerCatalog.load();
     loadOptions(attempt);
@@ -1451,6 +1456,87 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     $('#match-test-bot').addEventListener('click', () => matchSearch.accept(true));
   }
 
+  function matchCardNode(card) {
+    const body = el('div', { className: 'match-card-body' },
+      el('h4', { text: card.name }),
+      el('code', { text: card.code }),
+      el('p', { text: 'Costo: ' + card.cost + ' · Poder: ' + card.power }));
+    return el('article', { className: 'match-card' },
+      safeImage(card.imageSmallUrl, card.name || card.code, 'match-card-image'), body);
+  }
+
+  function matchLocationNode(location) {
+    const energy = location.extraEnergyMode === 'PER_CARD'
+      ? location.extraEnergyAmount + ' por carta propia' : location.extraEnergyAmount + ' fija';
+    const details = el('div', { className: 'match-location-body' },
+      el('p', { className: 'muted', text: 'Ubicación ' + location.slot }),
+      el('h4', { text: location.name }),
+      el('p', { text: location.description }),
+      el('p', { className: 'muted', text: 'Límite de cartas: ' + location.cardLimit }),
+      el('p', { className: 'muted', text: 'Energía extra: ' + energy }));
+    return el('article', { className: 'match-location' },
+      safeImage(location.imageLargeUrl, location.name, 'match-location-image'), details);
+  }
+
+  function formatTurnClock(seconds) {
+    if (!Number.isSafeInteger(seconds) || seconds < 0) return '—';
+    const minutes = Math.floor(seconds / SECONDS_PER_MINUTE);
+    const remaining = seconds % SECONDS_PER_MINUTE;
+    return String(minutes).padStart(2, '0') + ':' + String(remaining).padStart(2, '0');
+  }
+
+  function renderMatchView({ data, id, busy, message, remainingSeconds } = {}) {
+    const signedIn = Boolean(state.session.token);
+    const form = $('#match-view-form');
+    form.elements.matchId.disabled = !signedIn || busy;
+    form.querySelector('button[type="submit"]').disabled = !signedIn || busy;
+    $('#match-view-refresh').disabled = !signedIn || busy || !id;
+    $('#match-view-status').textContent = busy ? 'Cargando el inicio de la partida…'
+      : !signedIn ? 'Inicia sesión para consultar la partida.' : id && !message && !data ? 'Consultando…' : '';
+    $('#match-view-error').textContent = message || '';
+    const content = $('#match-view-content');
+    content.hidden = !data;
+    if (!data) {
+      $('#match-view-locations').replaceChildren();
+      $('#match-view-hand').replaceChildren();
+      return;
+    }
+
+    $('#match-view-title').textContent = 'Partida ' + data.id;
+    $('#match-view-context').textContent = data.context + ' · '
+      + (data.vsBot ? 'Contra el bot' : 'Contra otro jugador')
+      + ' · Apuesta: ' + data.bet + ' cubos · Turno ' + data.turn + ' · Estado: ' + data.status;
+    $('#match-view-turn-clock').textContent = 'Tiempo restante: ' + formatTurnClock(remainingSeconds);
+    $('#match-view-locations').replaceChildren(...data.locations.map(matchLocationNode));
+    $('#match-view-energy').textContent = 'Energía disponible: ' + data.you.energy;
+    $('#match-view-hand').replaceChildren(...data.you.hand.map(matchCardNode));
+    $('#match-view-deck').textContent = 'Cartas restantes en tu deck: ' + data.you.deckRemaining;
+    $('#match-view-rival-hand').textContent = 'Cartas en la mano del rival: ' + data.rival.handCount;
+    $('#match-view-rival-deck').textContent = 'Cartas restantes en su deck: ' + data.rival.deckRemaining;
+  }
+
+  function wireMatchView() {
+    matchViewScreen = new MatchViewScreen({
+      send: (request) => send({ ...request, token: state.session.token }),
+      getSession: () => state.session,
+      render: renderMatchView,
+    });
+    const form = $('#match-view-form');
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      matchViewScreen.open(form.elements.matchId.value);
+    });
+    $('#match-view-refresh').addEventListener('click', () => matchViewScreen.refresh());
+    document.addEventListener('pokearena:partida', ({ detail }) => {
+      if (!state.session.token || !detail?.matchId) return;
+      const tab = $('#tab-match-view');
+      tab.click();
+      tab.focus();
+      form.elements.matchId.value = detail.matchId;
+      matchViewScreen.open(detail.matchId);
+    });
+  }
+
   function syncMatchSearchVisibility() {
     matchSearch?.setVisible(!document.hidden && !$('#panel-match-search').hidden);
   }
@@ -1491,6 +1577,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     wireSearchForm();
     wireCatalog();
     wireDecks();
+    wireMatchView();
     wireMatchSearch();
     wireMatchStarter();
     renderQuickTests('catalog', catalogQuickTests(catalogFilterForm));

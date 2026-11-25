@@ -70,4 +70,21 @@ public final class LocationEffectRegistry {
         type.validate(safeParameters);
         return Optional.of(new LocationEffect(code, safeParameters));
     }
+
+    /**
+     * Indica si un efecto validado impide jugar cartas en todos los turnos.
+     *
+     * @throws IllegalArgumentException si el efecto no pertenece a este registro
+     */
+    public boolean blocksAllTurns(LocationEffect effect) {
+        if (effect == null) {
+            throw new IllegalArgumentException("El efecto es obligatorio");
+        }
+        LocationEffectType type = types.get(effect.code());
+        if (type == null) {
+            throw new IllegalArgumentException("No hay un plug-in registrado para el efecto " + effect.code());
+        }
+        type.validate(effect.parameters());
+        return type.blocksAllTurns(effect.parameters());
+    }
 }

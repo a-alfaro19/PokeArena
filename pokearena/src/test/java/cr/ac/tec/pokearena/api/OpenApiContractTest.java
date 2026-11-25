@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import cr.ac.tec.pokearena.support.OpenApiContract;
+import cr.ac.tec.pokearena.support.OpenApiContract.Operation;
 
 /**
  * Propósito: pruebas del contrato {@code openapi/pokearena.yaml} que no necesitan la aplicación.
@@ -21,7 +22,13 @@ class OpenApiContractTest {
     @Test
     @DisplayName("10: cada etiqueta usada por una operación (incluidas Catálogo y Opciones) está declarada en tags")
     void usedTagsAreDeclared() {
-        assertThat(contract.usedTags()).contains("Catálogo", "Opciones");
+        assertThat(contract.usedTags()).contains("Catálogo", "Opciones", "Partidas");
         assertThat(contract.declaredTags()).containsAll(contract.usedTags());
+    }
+
+    @Test
+    @DisplayName("10: el inicio de partida está documentado como consulta segura")
+    void matchStartViewIsDocumented() {
+        assertThat(contract.operations()).contains(new Operation("GET", "/api/v1/partidas/{id}"));
     }
 }

@@ -50,6 +50,9 @@ public enum ErrorType {
     BOT_OFFER_NOT_AVAILABLE,
     MATCH_PREPARATION_FAILED,
 
+    // Consultar el inicio de la partida (historia 5.1.1).
+    MATCH_NOT_FOUND,
+
     // Alta de una búsqueda clasificatoria (historia 4.1.1).
     INVALID_DECK,
     ACTIVE_MATCH_EXISTS,
