@@ -71,6 +71,7 @@
         <button type="button" role="tab" class="tab" id="tab-search" aria-controls="panel-search" aria-selected="false">Buscar carta</button>
         <button type="button" role="tab" class="tab" id="tab-deck" aria-controls="panel-deck" aria-selected="false">Armar deck</button>
         <button type="button" role="tab" class="tab" id="tab-my-decks" aria-controls="panel-my-decks" aria-selected="false">Mis decks</button>
+        <button type="button" role="tab" class="tab" id="tab-match-start" aria-controls="panel-match-start" aria-selected="false">Buscar partida</button>
         <button type="button" role="tab" class="tab" id="tab-match-search" aria-controls="panel-match-search" aria-selected="false">Estado de búsqueda</button>
       </nav>
 
@@ -305,6 +306,36 @@
         <ul id="my-decks-list" class="deck-list"></ul>
         <button type="button" id="my-decks-more" class="btn btn-ghost load-more" hidden>Cargar más</button>
         <div id="deck-detail" class="deck-detail" aria-live="polite"></div>
+      </section>
+      <section id="panel-match-start" class="panel" role="tabpanel" aria-labelledby="tab-match-start" hidden>
+        <div class="panel-head"><h2>Buscar partida clasificatoria</h2></div>
+        <form id="match-start-form" class="form-grid">
+          <label class="field"><span class="field-label">Deck</span>
+            <select name="deckId" disabled></select>
+          </label>
+          <div class="actions">
+            <button id="match-start-submit" type="submit" class="btn btn-primary" disabled>Buscar partida</button>
+            <button id="match-start-more" type="button" class="btn btn-ghost" hidden>Cargar más decks</button>
+            <button id="match-start-reload" type="button" class="btn btn-ghost" disabled>Actualizar decks</button>
+          </div>
+        </form>
+        <p id="match-start-decks" class="catalog-message" role="status">Inicia sesión para ver tus decks.</p>
+        <p id="match-start-feedback" class="catalog-message" role="alert"></p>
+        <details class="quick">
+          <summary>Casos de prueba rápidos</summary>
+          <div class="actions">
+            <button id="match-start-test-missing" type="button" class="btn btn-ghost" disabled>Buscar sin deck</button>
+            <button id="match-start-test-twice" type="button" class="btn btn-ghost" disabled>Buscar dos veces</button>
+          </div>
+          <form id="match-start-foreign-form" class="form-grid">
+            <label class="field"><span class="field-label">Identificador de un deck ajeno</span>
+              <input name="foreignDeckId" type="number" required disabled>
+            </label>
+            <div class="actions">
+              <button id="match-start-test-foreign" type="submit" class="btn btn-ghost" disabled>Buscar con deck ajeno</button>
+            </div>
+          </form>
+        </details>
       </section>
       <section id="panel-match-search" class="panel" role="tabpanel" aria-labelledby="tab-match-search" hidden>
         <div class="panel-head"><h2>Estado de la búsqueda</h2></div>
