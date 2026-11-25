@@ -118,6 +118,20 @@ class LocationEffectsTest {
             assertInvalid("TURN_RESTRICTION", Map.of("turns", List.of(2, 2)));
             assertInvalid("TURN_RESTRICTION", Map.of("turns", 2));
         }
+
+        @Test
+        @DisplayName("Solo bloquea la ubicación si restringe los seis turnos")
+        void blocksAllTurnsOnlyWhenEveryTurnIsRestricted() {
+            assertThat(registry.blocksAllTurns(
+                    new LocationEffect("TURN_RESTRICTION", Map.of("turns", List.of(1, 2, 3, 4, 5, 6)))))
+                    .isTrue();
+            assertThat(registry.blocksAllTurns(
+                    new LocationEffect("TURN_RESTRICTION", Map.of("turns", List.of(1, 2, 3, 4, 5)))))
+                    .isFalse();
+            assertThat(registry.blocksAllTurns(
+                    new LocationEffect("TURN_RESTRICTION", Map.of("turns", List.of(1, 6)))))
+                    .isFalse();
+        }
     }
 
     @Nested
@@ -164,6 +178,8 @@ class LocationEffectsTest {
             // La interfaz también lo recibe, con sus parámetros, sin cambiar el registro.
             assertThat(extended.types()).extracting(LocationEffectType::code)
                     .containsExactly("TURN_RESTRICTION", "WEATHER");
+            assertThat(extended.blocksAllTurns(new LocationEffect("WEATHER", Map.of("intensity", 2))))
+                    .isFalse();
         }
     }
 

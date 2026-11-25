@@ -1,12 +1,12 @@
 <!doctype html>
 <!--
   Propósito: interfaz web de PokéArena (corrección 1 del profesor; sección 11 de la especificación).
-  Responsabilidades: estructura de la página para las seis historias: barra de sesión (Entrar con Google y,
+  Responsabilidades: estructura de la página para las historias: barra de sesión (Entrar con Google y,
   en el perfil dev, sesiones de prueba), bienvenida con el estado de la colección inicial (1.1.1 y 3.1.1),
   pestaña "Catálogo y mi colección" del jugador (3.1.2), pestañas de administrador (Crear carta, Crear
   ubicación y Buscar carta), pestañas "Armar deck" y "Mis decks" (Sprint 3, historia 3.1.3), casos de
   prueba rápidos y panel de respuesta. El comportamiento está en app.js, player.js, options.js y deck.js,
-  y el diseño en styles.css. Sin frameworks ni bibliotecas externas
+  y   el diseño en styles.css y la vista de inicio de partida en match-view.js. Sin frameworks ni bibliotecas externas
   (salvo el script oficial de Google Identity Services): todo se sirve desde la misma aplicación y habla
   con la API real en el mismo origen. Los valores permitidos de filtros y formularios (tipos, rarezas,
   rangos, habilidades, energía, efectos y requisitos de imagen) no están escritos aquí: app.js los pide a
@@ -32,7 +32,7 @@
       <span class="brand-mark" aria-hidden="true"></span>
       <div>
         <h1>PokéArena</h1>
-        <p class="subtitle">Catálogo, colección y administración</p>
+        <p class="subtitle">Catálogo, colección y partidas</p>
       </div>
     </div>
 
@@ -73,6 +73,7 @@
         <button type="button" role="tab" class="tab" id="tab-my-decks" aria-controls="panel-my-decks" aria-selected="false">Mis decks</button>
         <button type="button" role="tab" class="tab" id="tab-match-start" aria-controls="panel-match-start" aria-selected="false">Buscar partida</button>
         <button type="button" role="tab" class="tab" id="tab-match-search" aria-controls="panel-match-search" aria-selected="false">Estado de búsqueda</button>
+        <button type="button" role="tab" class="tab" id="tab-match-view" aria-controls="panel-match-view" aria-selected="false">Inicio de partida</button>
       </nav>
 
       <!-- Catálogo del jugador: la API decide propiedad, copias y reglas de disponibilidad. -->
@@ -359,6 +360,51 @@
             <button type="button" class="btn btn-ghost" id="match-test-bot">Aceptar el bot antes de tiempo</button>
           </div>
         </details>
+      </section>
+      <section id="panel-match-view" class="panel" role="tabpanel" aria-labelledby="tab-match-view" hidden>
+        <div class="panel-head">
+          <h2>Inicio de partida</h2>
+          <p class="muted"><code>GET /api/v1/partidas/{id}</code> · Historia 5.1.1</p>
+        </div>
+        <form id="match-view-form" class="form-grid">
+          <label class="field"><span class="field-label">Identificador de partida</span>
+            <input name="matchId" required autocomplete="off" spellcheck="false">
+          </label>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary">Consultar partida</button>
+            <button type="button" class="btn btn-ghost" id="match-view-refresh" disabled>Actualizar</button>
+          </div>
+        </form>
+        <p id="match-view-status" class="catalog-message" role="status" aria-live="polite"></p>
+        <p id="match-view-error" class="catalog-error" role="alert"></p>
+        <div id="match-view-content" class="match-view" hidden>
+          <div class="match-summary">
+            <div>
+              <h3 id="match-view-title"></h3>
+              <p id="match-view-context" class="muted"></p>
+            </div>
+            <p id="match-view-turn-clock" class="match-turn-clock" role="timer" aria-live="off"></p>
+          </div>
+          <section aria-labelledby="match-view-locations-title">
+            <h3 id="match-view-locations-title">Ubicaciones</h3>
+            <div id="match-view-locations" class="match-location-grid"></div>
+          </section>
+          <div class="match-player-grid">
+            <section class="match-player" aria-labelledby="match-view-you-title">
+              <h3 id="match-view-you-title">Tu estado</h3>
+              <p id="match-view-energy" class="match-energy"></p>
+              <h4>Tu mano</h4>
+              <div id="match-view-hand" class="match-hand-grid"></div>
+              <p id="match-view-deck" class="muted"></p>
+            </section>
+            <section class="match-player" aria-labelledby="match-view-rival-title">
+              <h3 id="match-view-rival-title">Rival</h3>
+              <p id="match-view-rival-hand"></p>
+              <p id="match-view-rival-deck" class="muted"></p>
+              <p class="muted">La mano y el orden del deck del rival no se muestran.</p>
+            </section>
+          </div>
+        </div>
       </section>
     </section>
 

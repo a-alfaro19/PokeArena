@@ -50,11 +50,14 @@ class StaticInterfaceIT extends PostgresIntegrationTestBase {
         assertThat(response.body()).contains("<title>PokéArena", "app.js", "styles.css");
         // Las dos pestañas deben estar en el HTML que se sirve al jugador.
         assertThat(response.body()).contains("aria-controls=\"panel-match-start\"", "id=\"match-start-form\"",
-                "name=\"deckId\"", "id=\"match-start-more\"", "aria-controls=\"panel-match-search\"");
+                "name=\"deckId\"", "id=\"match-start-more\"", "aria-controls=\"panel-match-search\"",
+                "aria-controls=\"panel-match-view\"", "id=\"match-view-form\"");
     }
 
     @ParameterizedTest(name = "{0}")
-    @CsvSource({ "/index.html, text/html", "/app.js, text/javascript", "/player.js, text/javascript", "/options.js, text/javascript", "/match-search.js, text/javascript", "/styles.css, text/css" })
+    @CsvSource({ "/index.html, text/html", "/app.js, text/javascript", "/player.js, text/javascript",
+            "/options.js, text/javascript", "/match-search.js, text/javascript", "/match-view.js, text/javascript",
+            "/styles.css, text/css" })
     @DisplayName("11: los archivos estáticos son accesibles sin autenticación y con su tipo de contenido")
     void staticFilesArePublic(String path, String contentType) throws Exception {
         HttpResponse<String> response = get(path, "*/*");
