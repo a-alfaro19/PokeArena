@@ -124,6 +124,18 @@ class CancelMatchSearchUseCaseTest {
             return locked ? Optional.of(row) : Optional.empty();
         }
 
+        // El doble rechaza las operaciones del alta porque no forman parte de una cancelación.
+        @Override
+        public Optional<MatchSearch> findOpenByPlayer(UUID playerId) {
+            throw new AssertionError("Una salida consulta la búsqueda por identificador");
+        }
+
+        @Override
+        public Optional<MatchSearch> insertWaiting(UUID playerId, long deckId, MatchContext context, int elo,
+                Instant now) {
+            throw new AssertionError("Una salida no registra una búsqueda");
+        }
+
         @Override
         public MatchSearch markMatched(UUID id, UUID matchId, Instant now) {
             throw new AssertionError("Una salida no asigna partida");

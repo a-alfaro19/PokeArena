@@ -18,7 +18,7 @@ import cr.ac.tec.pokearena.domain.model.MatchSearch;
 import cr.ac.tec.pokearena.domain.model.MatchSearchStatus;
 import cr.ac.tec.pokearena.domain.repository.MatchSearchRepository;
 
-/** Consulta con control de titularidad e inactividad (A.11) y salida transaccional (A.12). */
+/** Persistencia del alta (A.9), la consulta (A.11) y la salida de la búsqueda (A.12). */
 @Repository
 public class JdbcMatchSearchRepository implements MatchSearchRepository {
 
@@ -29,6 +29,27 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
             @Value("${app.matchmaking.inactivity-timeout}") Duration inactivityTimeout) {
         this.jdbc = jdbc;
         this.inactivityTimeout = inactivityTimeout;
+    }
+
+    @Override
+    public Optional<MatchSearch> findOpenByPlayer(UUID playerId) {
+        // A.9: la restricción de una sola espera abarca todos los contextos del jugador.
+        return jdbc.query("SELECT * FROM match_search WHERE player_id = ? AND status = 'WAITING'",
+                (rs, row) -> read(rs), playerId).stream().findFirst();
+    }
+
+    @Override
+    public Optional<MatchSearch> insertWaiting(UUID playerId, long deckId, MatchContext context, int elo, Instant now) {
+        requireTransaction();
+        // A.9: aislar el conflicto del índice parcial para que el llamador revierta y resuelva el reintento.
+        Timestamp startedAt = Timestamp.from(now);
+        return jdbc.query("""
+                INSERT INTO match_search (id, player_id, deck_id, context, status, elo, created_at, last_polled_at)
+                VALUES (gen_random_uuid(), ?, ?, ?, 'WAITING', ?, ?, ?)
+                ON CONFLICT (player_id) WHERE status = 'WAITING' DO NOTHING
+                RETURNING *
+                """, (rs, row) -> read(rs), playerId, deckId, context.name(), elo, startedAt, startedAt)
+                .stream().findFirst();
     }
 
     @Override
@@ -97,7 +118,7 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
 
     private static void requireTransaction() {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
-            throw new IllegalStateException("La salida de la búsqueda requiere una transacción activa.");
+            throw new IllegalStateException("La operación de búsqueda requiere una transacción activa.");
         }
     }
 

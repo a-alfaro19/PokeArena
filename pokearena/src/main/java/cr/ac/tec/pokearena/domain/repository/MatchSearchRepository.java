@@ -4,10 +4,20 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import cr.ac.tec.pokearena.domain.model.MatchContext;
 import cr.ac.tec.pokearena.domain.model.MatchSearch;
 
-/** Puerto de persistencia de las búsquedas de partida (US 47, A.11 y A.12). */
+/** Puerto de persistencia de las búsquedas de partida (US 46 y US 47). */
 public interface MatchSearchRepository {
+
+    /** Busca la espera del jugador en cualquier contexto (A.9). */
+    Optional<MatchSearch> findOpenByPlayer(UUID playerId);
+
+    /**
+     * Registra la espera dentro de la transacción del llamador (A.9).
+     * Devuelve vacío si el jugador ya tiene una búsqueda abierta.
+     */
+    Optional<MatchSearch> insertWaiting(UUID playerId, long deckId, MatchContext context, int elo, Instant now);
 
     /** Renueva una espera vigente o la expira si venció. Solo devuelve búsquedas del titular. */
     Optional<MatchSearch> touchAndFind(UUID id, UUID playerId, Instant now);
