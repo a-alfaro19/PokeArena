@@ -1100,6 +1100,7 @@ API-->>UI: 404 con el cuerpo de error;
 end;
 end;
 alt Estado MATCHED;
+Note over UI: MatchSearchScreen invoca showAssignedMatch(matchId), que emite pokearena:partida; app.js abre Inicio de partida y llama MatchViewScreen.open(matchId);
 UI->>MAPI: GET /api/v1/partidas/matchId (A.15);
 MAPI-->>UI: Inicio de la partida;
 UI-->>Jug: Muestra la partida;
@@ -1223,54 +1224,65 @@ UI-->>Jug: Abre la partida contra el bot;
 ### A.14 Iniciar la partida (historia 5.1.1)
 
 ```mermaid
-sequenceDiagram;
-autonumber;
-participant CALL as RunMatchmakingUseCase o AcceptBotMatchUseCase;
-participant START as StartMatchUseCase;
-participant RND as RandomSource;
-participant CLK as Clock;
-participant LOC as LocationRepository;
-participant MIX as SeedMixer;
-participant LSEL as LocationSelectionRules;
-participant SHUF as SeededShuffle;
-participant TURN as TurnStartRules;
-participant MATCH as MatchRepository;
-Note over CALL,MATCH: Todo dentro de la transacción de quien llama;
-CALL->>START: execute(MatchRequest con contexto y dos asientos);
-START->>RND: seed();
-RND-->>START: semilla de la partida;
-START->>CLK: now();
-CLK-->>START: hora actual;
-START->>LOC: findAllAvailable();
-LOC-->>START: ubicaciones disponibles y activas;
-START->>MIX: derive(semilla, ubicaciones);
-MIX-->>START: semilla de las ubicaciones;
-START->>LSEL: select(ubicaciones, semilla de las ubicaciones);
-alt No hay 3 ubicaciones que cumplan las reglas;
-LSEL-->>START: LocationsUnavailableException;
-START-->>CALL: la excepción sube y no se guardó nada;
-else Selección válida con al menos 2 ubicaciones jugables;
-LSEL-->>START: 3 ubicaciones distintas;
-loop Para cada asiento;
-START->>MIX: derive(semilla, asiento);
-MIX-->>START: semilla del asiento;
-START->>SHUF: shuffle(12 códigos del deck, semilla del asiento);
-SHUF-->>START: deck barajado;
-START->>TURN: startTurn(turno 1, deck barajado, ubicaciones);
-TURN-->>START: mano de 3 cartas, robo del turno 1 y energía del turno;
-end;
-START->>START: arma la apuesta inicial, el turno 1 y la hora de inicio;
-START->>MATCH: save(partida, asientos, ubicaciones, cartas por zona, semilla);
-MATCH-->>START: partida guardada;
-START-->>CALL: MatchStarted con el id de la partida;
-end;
+sequenceDiagram
+autonumber
+participant CALL as RunMatchmakingUseCase o AcceptBotMatchUseCase
+participant PORT as StartMatch (puerto)
+participant START as StartMatchUseCase
+participant RND as RandomSource
+participant CLK as Clock
+participant LOC as LocationRepository
+participant MIX as SeedMixer
+participant LSEL as LocationSelectionRules
+participant SHUF as SeededShuffle
+participant TURN as TurnStartRules
+participant MATCH as MatchRepository
+Note over CALL,MATCH: La transacción la abre el UnitOfWork del llamador; StartMatchUseCase no abre otra
+CALL->>PORT: execute(MatchRequest(contexto, dos MatchSeat con decks ya cargados))
+PORT->>START: delega en la implementación StartMatchUseCase
+START->>RND: seed()
+RND-->>START: matchSeed del servidor
+START->>CLK: now()
+CLK-->>START: hora actual
+START->>LOC: findAllAvailable()
+LOC-->>START: ubicaciones disponibles y activas
+START->>MIX: derive(matchSeed, "locations")
+MIX-->>START: locationsSeed
+START->>LSEL: select(ubicaciones, locationsSeed)
+LSEL->>SHUF: shuffle(ubicaciones ordenadas por id, locationsSeed)
+SHUF-->>LSEL: ubicaciones en orden determinista
+LSEL->>LSEL: elegir ubicaciones distintas y completar el mínimo jugable
+alt No se pueden seleccionar 3 ubicaciones con al menos 2 jugables
+LSEL-->>START: LocationsUnavailableException
+START-->>PORT: propaga la excepción sin guardar la partida
+PORT-->>CALL: la excepción llega al llamador
+else Selección válida
+LSEL-->>START: ubicaciones seleccionadas
+loop Para cada MatchSeat
+START->>MIX: derive(matchSeed, "seat-" + seat)
+MIX-->>START: seatSeed
+START->>SHUF: shuffle(seat.deckCodes(), seatSeed)
+SHUF-->>START: deckCodes barajados
+START->>TURN: initialDeck(deckCodes barajados)
+TURN-->>START: cartas con posiciones y zona inicial DECK
+START->>TURN: startTurn(1, deck, ubicaciones, Map.of())
+TURN-->>START: TurnStartResult con cartas por zona y energía del turno 1
+end
+START->>START: construir NewMatch con apuesta, turno 1, hora y participantes
+START->>MATCH: save(NewMatch)
+MATCH-->>START: id de partida
+START-->>PORT: MatchStarted(id)
+PORT-->>CALL: MatchStarted(id)
+end
 ```
 
 **Notas:**
 
-- Todo lo aleatorio sale de **una sola semilla** entregada por `RandomSource`; ningún dato del cliente participa. La semilla y el orden de cada deck se **guardan** en `MatchRepository.save` (mensaje 21 de la numeración de Mermaid, que cuenta las ramas del `alt` en orden), y con ellos la repetición reproduce la partida.
-- El asiento del bot se prepara igual: su deck lo trae `BotDeckSelector` y no tiene `playerId`.
-- El único mensaje que escribe en la base es `save`, y ocurre después de tener la selección de ubicaciones. Si cualquier paso falla, el rollback del llamador deja la base sin ninguna fila `game_match*`.
+- `RunMatchmakingUseCase` carga los códigos de ambos decks y `AcceptBotMatchUseCase` carga el deck humano y selecciona el del bot antes de invocar el puerto `StartMatch`. El asiento del bot no tiene `playerId` ni `deckId`.
+- Todo el azar reproducible parte de `RandomSource.seed()`; el cliente no envía la semilla. Las semillas derivadas, el orden barajado de cada deck y el estado inicial quedan guardados para poder reproducir la partida. El UUID identifica la partida y lo genera el adaptador de persistencia, no participa en el azar.
+- `TurnStartRules.initialDeck` prepara el deck con su orden y posiciones. `startTurn` recibe `Map.of()` porque al iniciar la partida no hay cartas propias en ubicaciones; reparte 3 cartas y ejecuta el robo del turno 1 antes de calcular la energía.
+- `MatchRepository.save` es una sola operación lógica que persiste el agregado completo dentro de la transacción existente. Si la preparación falla antes o durante el guardado, el rollback del llamador evita dejar una partida parcial.
+- Si no hay ubicaciones válidas, `RunMatchmakingUseCase` revierte la pareja y registra el aviso `LOCATIONS_UNAVAILABLE` en otra transacción; `AcceptBotMatchUseCase` revierte y responde `MATCH_PREPARATION_FAILED` (`409`). En ambos casos la búsqueda permanece `WAITING`.
 
 ### A.15 Ver el inicio de la partida (historia 5.1.1)
 
@@ -1278,14 +1290,14 @@ end;
 sequenceDiagram;
 autonumber;
 actor Jug as Jugador;
-participant UI as Interfaz web;
+participant UI as Interfaz web (app.js y MatchViewScreen);
 participant API as MatchController;
 participant SEG as AuthorizationInterceptor;
 participant UC as GetMatchUseCase;
 participant CLK as Clock;
 participant MATCH as MatchRepository;
 participant VIEW as MatchView;
-Jug->>UI: Abre la partida;
+UI->>UI: Recibe el matchId de MATCHED o el UUID de la consulta manual y abre Inicio de partida;
 UI->>API: GET /api/v1/partidas/id con token;
 API->>SEG: Verifica el token y el rol PLAYER o ADMIN;
 SEG-->>API: Jugador autenticado;
@@ -1297,9 +1309,9 @@ UC->>CLK: now();
 CLK-->>UC: hora actual;
 UC->>VIEW: forSeat(partida, asiento del jugador, hora);
 VIEW-->>UC: vista sin la mano del rival ni el orden de los decks;
-UC-->>API: MatchStartView;
-API-->>UI: 200 con MatchResponse;
-UI-->>Jug: Muestra ubicaciones, mano, energía, turno y apuesta;
+UC-->>API: MatchView;
+API-->>UI: 200 con MatchResponse y Cache-Control no-store;
+UI-->>Jug: Muestra ubicaciones, mano propia, energía, cuenta regresiva, apuesta y cantidad de cartas en la mano rival;
 else No existe o el usuario no participa;
 MATCH-->>UC: vacío;
 UC-->>API: MATCH_NOT_FOUND;
@@ -1470,7 +1482,7 @@ Las consultas de `lockOldestWaiting`, `lockCandidates` y `lockById` usan `FOR UP
 | `StartMatchUseCase`, `GetMatchUseCase` | Historia 5.1.1 (7.3) |
 | `GetGameOptionsUseCase` **[implementado]** | Opciones del juego (7.4); las demás historias agregan sus campos |
 | `BotDeckSelector` | Arma el deck del bot con `CollectibleCardRepository` y `RandomSource` |
-| Comandos y resultados | `CreateDeckCommand`, `StartMatchSearchCommand`, `AcceptBotMatchCommand`, `MatchRequest`, `MatchStarted`, `DeckDetails`, `MatchSearchDetails`, `MatchStartView` |
+| Comandos y resultados | `CreateDeckCommand`, `StartMatchSearchCommand`, `AcceptBotMatchCommand`, `MatchRequest`, `MatchStarted`, `DeckDetails`, `MatchSearchDetails`, `MatchView` |
 
 ### D.4 API (`api`) e infraestructura
 

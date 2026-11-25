@@ -11,6 +11,7 @@ import cr.ac.tec.pokearena.domain.error.ErrorType;
 import cr.ac.tec.pokearena.domain.error.IdempotencyException;
 import cr.ac.tec.pokearena.domain.error.IdentityProviderException;
 import cr.ac.tec.pokearena.domain.error.ImageValidationException;
+import cr.ac.tec.pokearena.domain.error.MatchException;
 import cr.ac.tec.pokearena.domain.error.MatchSearchException;
 import cr.ac.tec.pokearena.domain.error.ValidationException;
 
@@ -66,6 +67,7 @@ public final class SampleDomainErrors {
             case SEARCH_NOT_OPEN -> MatchSearchException.notOpen();
             case BOT_OFFER_NOT_AVAILABLE -> MatchSearchException.botOfferNotAvailable();
             case MATCH_PREPARATION_FAILED -> MatchSearchException.preparationFailed();
+            case MATCH_NOT_FOUND -> MatchException.notFound();
             case INVALID_DECK -> MatchSearchException.invalidDeck("El deck no tiene las cartas requeridas.");
             case ACTIVE_MATCH_EXISTS -> MatchSearchException.activeMatchExists(new UUID(0, 1));
             case SEARCH_ALREADY_OPEN -> MatchSearchException.alreadyOpen(new UUID(0, 1), 7);

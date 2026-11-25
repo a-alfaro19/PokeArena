@@ -19,6 +19,8 @@ fuente de verdad del proyecto, está en
 | 3.1.2 Explorar el catálogo y mi colección | `GET /api/v1/catalogo` (jugador o administrador) | Pestaña "Catálogo y mi colección" | Sprint 2, terminada |
 | Opciones de la interfaz (Refactory SP2) | `GET /api/v1/opciones/catalogo` (jugador o administrador) y `GET /api/v1/opciones/creacion` (administrador) | Tipos, rarezas, rangos, habilidades, energía extra, efectos y requisitos de imagen de filtros y formularios | Terminada |
 | 3.1.3 Crear Deck | `POST /api/v1/decks`, `GET /api/v1/decks`, `GET /api/v1/decks/{id}` y `GET /api/v1/opciones/juego` (jugador o administrador) | Pestañas "Armar deck" y "Mis decks" | Sprint 3, terminada (ver [Crear Deck](#crear-deck-sprint-3-historia-313)) |
+| 4.1.2 Buscar partida | `POST /api/v1/busquedas`, `GET` y `DELETE /api/v1/busquedas/{id}`, `POST /api/v1/busquedas/{id}/bot` | Pestañas "Buscar partida" y "Estado de búsqueda" | Sprint 3, implementada |
+| 5.1.1 Iniciar partida | Preparación transaccional desde la búsqueda o el bot; `GET /api/v1/partidas/{id}` | Pestaña "Inicio de partida", abre al encontrar rival | Sprint 3, implementada (ver [Probar búsqueda e inicio de partida](#probar-búsqueda-e-inicio-de-partida-desde-la-interfaz)) |
 
 Para desarrollo y demostraciones, el perfil `dev` ofrece además credenciales de prueba
 (`POST /api/v1/dev/sesiones`), que no existen con ningún otro perfil.
@@ -273,7 +275,8 @@ Para volver a los logs en JSON y quitar las sesiones de prueba: `Remove-Item Env
 ### Interfaz web
 
 La interfaz (sección 11 de la especificación) es una sola página en
-`pokearena/src/main/resources/static/` (`index.html`, `app.js`, `player.js`, `options.js` y `styles.css`), sin
+`pokearena/src/main/resources/static/` (`index.html`, `app.js`, `player.js`, `options.js`, `deck.js`,
+`match-search.js`, `match-view.js` y `styles.css`), sin
 frameworks ni bibliotecas externas, que habla con la API real en el mismo origen. La única
 excepción es el script oficial de Google Identity Services, que la política de seguridad de
 contenido permite solo desde `accounts.google.com/gsi/`.
@@ -310,6 +313,10 @@ contenido permite solo desde `accounts.google.com/gsi/`.
   costo 11, sin habilidad, imagen con proporción incorrecta, sin sesión, como jugador, ubicación
   válida, efecto inexistente, rango invertido, ...). Cada uno pide su propia sesión de prueba,
   genera sus imágenes y compara la respuesta con lo esperado ("✓ Coincide" o "✗ Se esperaba ...").
+- **Buscar partida e inicio:** el estado consulta según el intervalo indicado por la API; cuando llega a
+  `MATCHED`, la interfaz abre "Inicio de partida" con el `matchId` recibido. La vista consulta
+  `GET /api/v1/partidas/{id}` y presenta ubicaciones, mano propia, energía, tiempo restante, apuesta y
+  solo el conteo de la mano rival.
 
 ## Estructura del proyecto
 
@@ -432,3 +439,40 @@ Nested Loop
   ->  Index Scan using pk_card_type / pk_rarity / pk_ability  (loops=12)
 Execution Time: 0.462 ms
 ```
+
+## Probar búsqueda e inicio de partida desde la interfaz
+
+La historia 5.1.1 y los contratos están en
+[la especificación del Sprint 3](pokearena/docs/AGENTE_Especificacion_Sprint3_PokeArena.md)
+(secciones 7.2, 7.3 y 11; Anexos A.9, A.11, A.14 y A.15).
+
+### Preparar el entorno
+
+1. Define `APP_GOOGLE_CLIENT_ID` antes de iniciar la aplicación y levántala con el perfil `dev`, siguiendo [Ejecutar la aplicación y abrir la interfaz](#ejecutar-la-aplicación-y-abrir-la-interfaz).
+2. Carga cartas del catálogo con `pokearena/scripts/seed-10000-cartas.sql` (ver [Rendimiento con 10.000 cartas](#rendimiento-con-10000-cartas)). Las cartas semilla no tienen imágenes, por lo que la interfaz muestra el reemplazo.
+3. Con la sesión **Administrador** de desarrollo, crea tres ubicaciones. Al menos dos deben tener límite de cartas mayor que cero y no restringir todos los turnos; puedes generarlas desde "Crear ubicación".
+4. Prepara dos cuentas Google distintas, ambas con rol de jugador (no incluidas en `APP_ADMIN_IDENTITIES`). Usa perfiles de navegador separados: cada cuenta recibe su propia colección inicial al iniciar sesión y debe crear su deck desde "Armar deck".
+
+> Las sesiones de desarrollo `Jugador` y `Administrador` son identidades fijas y no sirven como dos jugadores independientes: repetir `Jugador` en dos ventanas reutiliza el mismo jugador. La sesión de administrador de desarrollo sirve para configurar ubicaciones, pero no recibe colección inicial.
+
+### Emparejar y ver el inicio
+
+1. En cada navegador, inicia sesión con una cuenta de jugador diferente y arma un deck con las cartas de su colección.
+2. En ambos, abre "Buscar partida", selecciona el deck y pulsa "Buscar partida". Mantén abiertas las dos sesiones mientras el sistema consulta su estado.
+3. Cuando la API confirme `MATCHED`, la interfaz abre automáticamente "Inicio de partida". Ambos jugadores consultan su propia vista mediante `GET /api/v1/partidas/{id}`.
+4. Comprueba que se muestran las mismas ubicaciones, la mano y energía propias, la cuenta regresiva del turno, la apuesta y el conteo de cartas en la mano rival. No se muestran la mano rival ni el orden de ningún deck.
+
+### Casos rápidos de Sprint 3
+
+Los botones están distribuidos en "Armar deck", "Buscar partida" y "Estado de búsqueda"; muestran el código HTTP y el tipo de error esperado.
+
+| Pantalla | Caso | Respuesta esperada |
+|---|---|---|
+| Armar deck | Deck con una carta de menos o de más | `400 INVALID_DECK_SIZE` |
+| Armar deck | Cartas repetidas | `400 DUPLICATE_DECK_CARDS` |
+| Armar deck | Carta ajena | `400 CARD_NOT_OWNED` |
+| Buscar partida | Buscar sin deck | `400 MISSING_FIELD` |
+| Buscar partida | Buscar con deck ajeno | `404 DECK_NOT_FOUND` |
+| Buscar partida | Buscar dos veces | La segunda solicitud reutiliza la búsqueda (`200`) |
+| Estado de búsqueda | Salir después de emparejar | `409 SEARCH_ALREADY_MATCHED` |
+| Estado de búsqueda | Aceptar el bot antes de la oferta | `409 BOT_OFFER_NOT_AVAILABLE` |

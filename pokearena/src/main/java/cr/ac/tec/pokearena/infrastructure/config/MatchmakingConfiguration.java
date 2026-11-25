@@ -72,7 +72,7 @@ public class MatchmakingConfiguration {
         return new BotDeckSelector(cards, random);
     }
 
-    /** StartMatch se resuelve al preparar la partida, cuando la implementación de A.14 debe estar instalada. */
+    /** La implementación de A.14 comparte la transacción que abre este caso de uso. */
     @Bean
     public AcceptBotMatchUseCase acceptBotMatchUseCase(MatchSearchRepository searches, DeckRepository decks,
             BotOfferRules rules, BotDeckSelector bots, @Lazy StartMatch start, IdempotencyGuard keys, UnitOfWork uow,

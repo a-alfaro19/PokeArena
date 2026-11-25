@@ -2,11 +2,13 @@ package cr.ac.tec.pokearena.infrastructure.persistence;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import cr.ac.tec.pokearena.domain.model.AvailableLocation;
 import cr.ac.tec.pokearena.domain.model.Location;
 import cr.ac.tec.pokearena.domain.model.LocationEffect;
 import cr.ac.tec.pokearena.domain.repository.LocationRepository;
@@ -24,10 +26,12 @@ public class JdbcLocationRepository implements LocationRepository {
 
     private final JdbcTemplate jdbc;
     private final JsonMapper json;
+    private final LocationRows locationRows;
 
-    public JdbcLocationRepository(JdbcTemplate jdbc, JsonMapper json) {
+    public JdbcLocationRepository(JdbcTemplate jdbc, JsonMapper json, LocationRows locationRows) {
         this.jdbc = jdbc;
         this.json = json;
+        this.locationRows = locationRows;
     }
 
     @Override
@@ -47,5 +51,14 @@ public class JdbcLocationRepository implements LocationRepository {
                 location.imageLargeUrl(), location.imageSmallUrl(), location.imageStatus().name(),
                 location.available(), OffsetDateTime.ofInstant(location.createdAt(), ZoneOffset.UTC));
         return id;
+    }
+
+    @Override
+    public List<AvailableLocation> findAllAvailable() {
+        return jdbc.query("SELECT " + LocationRows.COLUMNS + """
+                FROM location l
+                WHERE l.available AND l.active
+                ORDER BY l.id
+                """, (rs, row) -> locationRows.mapAvailableLocation(rs));
     }
 }

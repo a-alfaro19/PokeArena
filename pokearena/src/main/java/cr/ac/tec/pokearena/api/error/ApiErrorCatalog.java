@@ -79,6 +79,7 @@ final class ApiErrorCatalog {
             case SEARCH_NOT_OPEN -> new Entry(HttpStatus.CONFLICT, "Búsqueda cerrada");
             case BOT_OFFER_NOT_AVAILABLE -> new Entry(HttpStatus.CONFLICT, "Oferta del bot no disponible");
             case MATCH_PREPARATION_FAILED -> new Entry(HttpStatus.CONFLICT, "No se pudo preparar la partida");
+            case MATCH_NOT_FOUND -> new Entry(HttpStatus.NOT_FOUND, "Partida no encontrada");
             case INVALID_DECK -> new Entry(HttpStatus.BAD_REQUEST, "Deck no jugable");
             case ACTIVE_MATCH_EXISTS -> new Entry(HttpStatus.CONFLICT, "Ya tienes una partida activa");
             case SEARCH_ALREADY_OPEN -> new Entry(HttpStatus.CONFLICT, "Búsqueda ya abierta");
