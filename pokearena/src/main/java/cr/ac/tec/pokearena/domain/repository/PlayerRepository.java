@@ -4,6 +4,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import cr.ac.tec.pokearena.domain.model.InitialCollectionState;
+import cr.ac.tec.pokearena.domain.model.MatchmakingPlayer;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.PlayerAccount;
@@ -23,6 +24,9 @@ public interface PlayerRepository {
 
     /** Jugador asociado a la identidad, si existe. */
     Optional<Player> findByIdentity(ProviderIdentity identity);
+
+    /** Elo y saldo del jugador en una sola lectura para el alta de búsqueda (A.9). */
+    Optional<MatchmakingPlayer> findMatchmakingPlayer(UUID playerId);
 
     /**
      * Devuelve el jugador de la identidad; si no existe, lo crea con los datos de {@code candidate}.

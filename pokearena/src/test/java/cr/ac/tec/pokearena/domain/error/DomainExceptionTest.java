@@ -45,7 +45,9 @@ class DomainExceptionTest {
                 // Sprint 3, historia 3.1.3 Crear Deck.
                 "INVALID_DECK_SIZE", "DUPLICATE_DECK_CARDS", "CARD_NOT_OWNED", "DECK_NAME_TAKEN", "DECK_NOT_FOUND",
                 "SEARCH_NOT_FOUND", "SEARCH_ALREADY_MATCHED", "SEARCH_NOT_OPEN", "BOT_OFFER_NOT_AVAILABLE",
-                "MATCH_PREPARATION_FAILED");
+                "MATCH_PREPARATION_FAILED",
+                // Sprint 3, historia 4.1.1 Buscar Partida.
+                "INVALID_DECK", "ACTIVE_MATCH_EXISTS", "SEARCH_ALREADY_OPEN", "INSUFFICIENT_CUBES");
     }
 
     @Test

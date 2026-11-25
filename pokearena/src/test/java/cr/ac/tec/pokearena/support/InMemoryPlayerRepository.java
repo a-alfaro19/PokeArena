@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import cr.ac.tec.pokearena.domain.model.InitialCollectionState;
+import cr.ac.tec.pokearena.domain.model.MatchmakingPlayer;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.PlayerAccount;
@@ -44,6 +45,13 @@ public final class InMemoryPlayerRepository implements PlayerRepository {
     @Override
     public Optional<Player> findByIdentity(ProviderIdentity identity) {
         return Optional.ofNullable(accounts.get(identity));
+    }
+
+    @Override
+    public Optional<MatchmakingPlayer> findMatchmakingPlayer(UUID playerId) {
+        // Este doble solo representa cuentas con los valores iniciales de Elo y cubos.
+        return accounts.values().stream().filter(player -> player.id().equals(playerId)).findFirst()
+                .map(player -> new MatchmakingPlayer(0, 0));
     }
 
     @Override

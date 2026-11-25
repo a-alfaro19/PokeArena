@@ -74,11 +74,20 @@ public final class DeckHttp {
 
     /** POST sin cuerpo, con clave opcional para probar su validación. */
     public Result post(String path, String bearer, String key) {
+        return post(path, bearer, key, null);
+    }
+
+    /** Envía JSON con la misma sesión y clave que usan las solicitudes de creación. */
+    public Result post(String path, String bearer, String key, String jsonBody) {
         HttpRequest.Builder builder = request(path, bearer);
         if (key != null) {
             builder.header("Idempotency-Key", key);
         }
-        return send(builder.POST(HttpRequest.BodyPublishers.noBody()));
+        if (jsonBody == null) {
+            return send(builder.POST(HttpRequest.BodyPublishers.noBody()));
+        }
+        return send(builder.header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody)));
     }
 
     /** DELETE autenticado sin cuerpo ni clave de idempotencia. */
