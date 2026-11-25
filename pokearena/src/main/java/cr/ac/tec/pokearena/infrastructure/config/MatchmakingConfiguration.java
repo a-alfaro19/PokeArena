@@ -5,7 +5,6 @@ import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Lazy;
 
 import cr.ac.tec.pokearena.application.dto.MatchmakingSettings;
 import cr.ac.tec.pokearena.application.port.Clock;
@@ -34,8 +33,8 @@ public class MatchmakingConfiguration {
 
     @Bean
     public RunMatchmakingUseCase runMatchmakingUseCase(MatchSearchRepository searches, DeckRepository decks,
-            @Lazy StartMatch start, UnitOfWork transactions, Clock clock, MatchmakingSettings settings) {
-        // La implementación del preparador se instala al integrar la US 48.
+            StartMatch start, UnitOfWork transactions, Clock clock, MatchmakingSettings settings) {
+        // El preparador real participa en la misma transacción que el cierre de ambas búsquedas.
         return new RunMatchmakingUseCase(searches, decks, start, transactions, clock, settings);
     }
 
@@ -75,7 +74,7 @@ public class MatchmakingConfiguration {
     /** La implementación de A.14 comparte la transacción que abre este caso de uso. */
     @Bean
     public AcceptBotMatchUseCase acceptBotMatchUseCase(MatchSearchRepository searches, DeckRepository decks,
-            BotOfferRules rules, BotDeckSelector bots, @Lazy StartMatch start, IdempotencyGuard keys, UnitOfWork uow,
+            BotOfferRules rules, BotDeckSelector bots, StartMatch start, IdempotencyGuard keys, UnitOfWork uow,
             Clock clock, @Value("${app.matchmaking.inactivity-timeout}") Duration inactivity,
             @Value("${app.matchmaking.client-poll-interval}") Duration interval) {
         return new AcceptBotMatchUseCase(searches, decks, rules, bots, start, keys, uow, clock, inactivity, interval);

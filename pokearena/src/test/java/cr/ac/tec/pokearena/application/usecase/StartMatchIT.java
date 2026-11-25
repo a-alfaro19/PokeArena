@@ -23,9 +23,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import cr.ac.tec.pokearena.application.dto.MatchRequest;
+import cr.ac.tec.pokearena.application.dto.GetMatchSearchCommand;
+import cr.ac.tec.pokearena.application.dto.IdempotentRequest;
 import cr.ac.tec.pokearena.application.dto.MatchSeat;
 import cr.ac.tec.pokearena.application.dto.MatchView;
+import cr.ac.tec.pokearena.application.dto.StartMatchSearchCommand;
 import cr.ac.tec.pokearena.application.port.Clock;
+import cr.ac.tec.pokearena.application.port.IdempotencyKey;
 import cr.ac.tec.pokearena.application.port.RandomSource;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.domain.effect.LocationEffectRegistry;
@@ -37,14 +41,17 @@ import cr.ac.tec.pokearena.domain.model.LocationFields;
 import cr.ac.tec.pokearena.domain.model.Match;
 import cr.ac.tec.pokearena.domain.model.MatchContext;
 import cr.ac.tec.pokearena.domain.model.MatchParticipant;
+import cr.ac.tec.pokearena.domain.model.MatchSearchStatus;
 import cr.ac.tec.pokearena.domain.model.MatchZone;
 import cr.ac.tec.pokearena.domain.repository.DeckRepository;
 import cr.ac.tec.pokearena.domain.repository.LocationRepository;
 import cr.ac.tec.pokearena.domain.repository.MatchRepository;
+import cr.ac.tec.pokearena.domain.repository.PlayerCardRepository;
 import cr.ac.tec.pokearena.domain.rule.DeckRules;
 import cr.ac.tec.pokearena.domain.rule.SeedMixer;
 import cr.ac.tec.pokearena.domain.rule.SeededShuffle;
 import cr.ac.tec.pokearena.support.PostgresIntegrationTestBase;
+import cr.ac.tec.pokearena.support.DeckHttp;
 import cr.ac.tec.pokearena.support.TestCards;
 import cr.ac.tec.pokearena.support.TestPlayers;
 
@@ -82,6 +89,11 @@ class StartMatchIT extends PostgresIntegrationTestBase {
 
     @Autowired
     private StartMatchUseCase start;
+
+    @Autowired private StartMatchSearchUseCase startSearch;
+    @Autowired private GetMatchSearchUseCase getSearch;
+    @Autowired private RunMatchmakingUseCase matchmaking;
+    @Autowired private PlayerCardRepository playerCards;
 
     @Autowired
     private LocationEffectRegistry effects;
@@ -122,6 +134,10 @@ class StartMatchIT extends PostgresIntegrationTestBase {
 
     @AfterEach
     void cleanUp() {
+        // V5 referencia la partida y el deck, por lo que se limpian primero las búsquedas de la prueba.
+        for (UUID playerId : playerIds) {
+            jdbc.update("DELETE FROM match_search WHERE player_id = ?", playerId);
+        }
         for (UUID matchId : matchIds) {
             deleteMatch(matchId);
         }
@@ -133,6 +149,40 @@ class StartMatchIT extends PostgresIntegrationTestBase {
             }
             new TestCards(jdbc).reset();
         }
+    }
+
+    @Test
+    @DisplayName("C.8-E4: dos búsquedas reales comparten la partida preparada en V4 y V5")
+    void matchesBothPlayersUsingFlywaySchema() {
+        // Preparar dos colecciones y saldos que cumplan el alta clasificatoria.
+        when(random.seed()).thenReturn(MATCH_SEED);
+        DeckHttp.give(unitOfWork, playerCards, firstPlayer, firstDeck);
+        DeckHttp.give(unitOfWork, playerCards, secondPlayer, secondDeck);
+        jdbc.update("UPDATE player SET cube_balance = ? WHERE id IN (?, ?)", 8, firstPlayer, secondPlayer);
+        UUID firstSearch = queue(firstPlayer, firstDeckId);
+        UUID secondSearch = queue(secondPlayer, secondDeckId);
+
+        // Ejecutar el ciclo real y comprobar la asignación desde la consulta de cada participante.
+        matchmaking.execute();
+        var first = getSearch.execute(new GetMatchSearchCommand(firstPlayer, firstSearch.toString()));
+        var second = getSearch.execute(new GetMatchSearchCommand(secondPlayer, secondSearch.toString()));
+        assertThat(first.matchId()).isNotNull();
+        matchIds.add(first.matchId());
+        assertThat(first.status()).isEqualTo(MatchSearchStatus.MATCHED);
+        assertThat(second.status()).isEqualTo(MatchSearchStatus.MATCHED);
+        assertThat(second.matchId()).isEqualTo(first.matchId());
+        var match = matches.findByIdForPlayer(first.matchId(), firstPlayer).orElseThrow();
+        assertThat(match.participants()).extracting(MatchParticipant::deckId)
+                .containsExactlyInAnyOrder(firstDeckId, secondDeckId);
+    }
+
+    private UUID queue(UUID playerId, long deckId) {
+        // Cada jugador registra su propia búsqueda con una clave nueva.
+        var key = new IdempotencyKey(UUID.randomUUID().toString(), playerId, "POST /api/v1/busquedas");
+        var request = new IdempotentRequest(key, RequestHash.builder().field("deckId", deckId).build(), 201);
+        var result = startSearch.execute(request, new StartMatchSearchCommand(deckId, MatchContext.RANKED.name()));
+        assertThat(result.status()).isEqualTo(201);
+        return result.body().id();
     }
 
     @Nested

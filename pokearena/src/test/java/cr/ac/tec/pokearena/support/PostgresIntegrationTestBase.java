@@ -75,6 +75,8 @@ public abstract class PostgresIntegrationTestBase {
         // La tarea programada de reintentos no corre sola durante las pruebas: podría tomar las cartas
         // PENDING_RETRY que otra prueba está revisando. Las pruebas de reintentos invocan el caso de uso.
         registry.add("app.images.retry-interval", () -> SCHEDULED_TASKS_NEVER_DURING_TESTS);
+        // Las pruebas disparan el emparejador cuando sus búsquedas y su reloj están preparados.
+        registry.add("app.matchmaking.enabled", () -> false);
         // Todos los contextos en caché comparten el contenedor: pools pequeños para no agotar sus
         // conexiones (ver TEST_POOL_MAX_SIZE).
         registry.add("spring.datasource.hikari.maximum-pool-size", () -> TEST_POOL_MAX_SIZE);
