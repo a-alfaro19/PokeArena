@@ -239,7 +239,7 @@ El tamaño del deck (12) y la longitud máxima del nombre (40) son **constantes 
 
 Una clase de configuración (`MatchSettings`, `MatchmakingSettings`) lee estas propiedades y las entrega a los casos de uso y reglas; **el dominio recibe los valores por constructor**, no lee propiedades.
 
-Durante la integración por ramas, la tarea programada se mantiene desactivada hasta disponer de `V4`, `V5` y el preparador real de la US 48. El valor de habilitación indicado arriba corresponde al flujo integrado.
+El flujo integrado usa las migraciones `V4` y `V5` y el preparador de la US 48. Las pruebas de integración disparan el emparejador de forma explícita para controlar el reloj y la concurrencia.
 
 ### 5.8 El Elo y los cubos ya existen
 
