@@ -887,6 +887,95 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/v1/busquedas:
+    post:
+      tags: [Búsquedas]
+      operationId: startMatchSearch
+      summary: Buscar una partida clasificatoria (4.1.1)
+      description: |
+        Registra una búsqueda con un deck propio y jugable. Repetir una solicitud confirmada
+        con la misma clave devuelve su respuesta original. Una clave nueva y una búsqueda
+        abierta equivalente devuelven la búsqueda existente.
+      x-roles: [PLAYER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartMatchSearchRequest'
+      responses:
+        '200':
+          description: Búsqueda abierta con el mismo deck y contexto.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchSearchResponse'
+        '201':
+          description: Búsqueda registrada o respuesta original de un reintento.
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchSearchResponse'
+        '400':
+          description: Solicitud incompleta, campo inválido, deck no jugable o clave inválida.
+          x-error-types: [IDEMPOTENCY_KEY_REQUIRED, INVALID_FIELD, MISSING_FIELD, INVALID_DECK]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Deck inexistente o ajeno.
+          x-error-types: [DECK_NOT_FOUND]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Hay una partida activa o una búsqueda abierta con otro deck o contexto.
+          x-error-types: [ACTIVE_MATCH_EXISTS, SEARCH_ALREADY_OPEN]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          description: Saldo menor al mínimo requerido o clave de idempotencia reutilizada con contenido distinto.
+          x-error-types: [INSUFFICIENT_CUBES, IDEMPOTENCY_KEY_REUSED]
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/v1/busquedas/{id}:
     get:
       tags: [Búsquedas]
@@ -1320,6 +1409,10 @@ components:
             - SEARCH_NOT_FOUND          # 404: búsqueda inexistente o ajena.
             - SEARCH_ALREADY_MATCHED    # 409: detail incluye el id de la partida asignada.
             - SEARCH_NOT_OPEN           # 409: búsqueda cancelada o expirada al aceptar el bot.
+            - INVALID_DECK
+            - ACTIVE_MATCH_EXISTS
+            - SEARCH_ALREADY_OPEN
+            - INSUFFICIENT_CUBES
             - BOT_OFFER_NOT_AVAILABLE   # 409: aún no se cumple el tiempo de espera.
             - MATCH_PREPARATION_FAILED  # 409: falló la preparación y la búsqueda sigue abierta.
         title:
@@ -2008,6 +2101,18 @@ components:
           type: integer
           description: Tamaño de página con el que se pidió.
 
+
+    StartMatchSearchRequest:
+      type: object
+      required: [deckId, context]
+      properties:
+        deckId:
+          type: integer
+          format: int64
+          minimum: 1
+        context:
+          type: string
+          enum: [RANKED]
 
     MatchSearchResponse:
       description: Estado de la búsqueda del jugador autenticado.

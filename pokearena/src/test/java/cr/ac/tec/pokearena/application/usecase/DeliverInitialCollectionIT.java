@@ -28,6 +28,7 @@ import cr.ac.tec.pokearena.application.port.InitialCollectionStatus;
 import cr.ac.tec.pokearena.application.port.RandomSource;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.domain.model.InitialCollectionState;
+import cr.ac.tec.pokearena.domain.model.MatchmakingPlayer;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.PlayerAccount;
@@ -369,6 +370,12 @@ class DeliverInitialCollectionIT extends PostgresIntegrationTestBase {
         @Override
         public Optional<Player> findByIdentity(ProviderIdentity identity) {
             return real.findByIdentity(identity);
+        }
+
+        @Override
+        public Optional<MatchmakingPlayer> findMatchmakingPlayer(UUID playerId) {
+            // Solo se simula el fallo al marcar la entrega. Las lecturas se delegan.
+            return real.findMatchmakingPlayer(playerId);
         }
 
         @Override

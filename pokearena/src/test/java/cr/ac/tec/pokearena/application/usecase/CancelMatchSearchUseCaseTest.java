@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -124,6 +125,18 @@ class CancelMatchSearchUseCaseTest {
             return locked ? Optional.of(row) : Optional.empty();
         }
 
+        // El doble rechaza las operaciones del alta porque no forman parte de una cancelación.
+        @Override
+        public Optional<MatchSearch> findOpenByPlayer(UUID playerId) {
+            throw new AssertionError("Una salida consulta la búsqueda por identificador");
+        }
+
+        @Override
+        public Optional<MatchSearch> insertWaiting(UUID playerId, long deckId, MatchContext context, int elo,
+                Instant now) {
+            throw new AssertionError("Una salida no registra una búsqueda");
+        }
+
         @Override
         public MatchSearch markMatched(UUID id, UUID matchId, Instant now) {
             throw new AssertionError("Una salida no asigna partida");
@@ -141,6 +154,22 @@ class CancelMatchSearchUseCaseTest {
         @Override
         public int expireStale(Instant cutoff, Instant now) {
             throw new AssertionError("La salida de un jugador no ejecuta el barrido de inactividad");
+        }
+
+        // El doble solo implementa las operaciones que forman parte de la salida.
+        @Override
+        public Optional<MatchSearch> lockOldestWaiting(Instant now, Instant cutoff, MatchSearch after) {
+            throw new AssertionError("La salida no elige una pareja");
+        }
+
+        @Override
+        public List<MatchSearch> lockCandidates(MatchSearch anchor, Instant now, Instant cutoff, int maxRange, int limit) {
+            throw new AssertionError("La salida no consulta rivales");
+        }
+
+        @Override
+        public int markNotice(UUID first, UUID second, Instant retryAt) {
+            throw new AssertionError("La salida no registra avisos de preparación");
         }
 
         @Override

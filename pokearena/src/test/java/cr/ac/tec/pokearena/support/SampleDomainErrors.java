@@ -66,6 +66,10 @@ public final class SampleDomainErrors {
             case SEARCH_NOT_OPEN -> MatchSearchException.notOpen();
             case BOT_OFFER_NOT_AVAILABLE -> MatchSearchException.botOfferNotAvailable();
             case MATCH_PREPARATION_FAILED -> MatchSearchException.preparationFailed();
+            case INVALID_DECK -> MatchSearchException.invalidDeck("El deck no tiene las cartas requeridas.");
+            case ACTIVE_MATCH_EXISTS -> MatchSearchException.activeMatchExists(new UUID(0, 1));
+            case SEARCH_ALREADY_OPEN -> MatchSearchException.alreadyOpen(new UUID(0, 1), 7);
+            case INSUFFICIENT_CUBES -> MatchSearchException.insufficientCubes(7, 8);
         };
     }
 }

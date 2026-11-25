@@ -48,6 +48,9 @@ class StaticInterfaceIT extends PostgresIntegrationTestBase {
         assertThat(response.headers().firstValue("Content-Type")).hasValueSatisfying(
                 type -> assertThat(type).startsWith("text/html"));
         assertThat(response.body()).contains("<title>PokéArena", "app.js", "styles.css");
+        // Las dos pestañas deben estar en el HTML que se sirve al jugador.
+        assertThat(response.body()).contains("aria-controls=\"panel-match-start\"", "id=\"match-start-form\"",
+                "name=\"deckId\"", "id=\"match-start-more\"", "aria-controls=\"panel-match-search\"");
     }
 
     @ParameterizedTest(name = "{0}")

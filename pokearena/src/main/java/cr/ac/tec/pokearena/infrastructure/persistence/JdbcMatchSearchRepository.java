@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,7 +19,7 @@ import cr.ac.tec.pokearena.domain.model.MatchSearch;
 import cr.ac.tec.pokearena.domain.model.MatchSearchStatus;
 import cr.ac.tec.pokearena.domain.repository.MatchSearchRepository;
 
-/** Consulta con control de titularidad e inactividad (A.11) y salida transaccional (A.12). */
+/** Persistencia del alta, del emparejamiento, de la consulta y de la salida (A.9 a A.12). */
 @Repository
 public class JdbcMatchSearchRepository implements MatchSearchRepository {
 
@@ -29,6 +30,27 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
             @Value("${app.matchmaking.inactivity-timeout}") Duration inactivityTimeout) {
         this.jdbc = jdbc;
         this.inactivityTimeout = inactivityTimeout;
+    }
+
+    @Override
+    public Optional<MatchSearch> findOpenByPlayer(UUID playerId) {
+        // A.9: la restricción de una sola espera abarca todos los contextos del jugador.
+        return jdbc.query("SELECT * FROM match_search WHERE player_id = ? AND status = 'WAITING'",
+                (rs, row) -> read(rs), playerId).stream().findFirst();
+    }
+
+    @Override
+    public Optional<MatchSearch> insertWaiting(UUID playerId, long deckId, MatchContext context, int elo, Instant now) {
+        requireTransaction();
+        // A.9: aislar el conflicto del índice parcial para que el llamador revierta y resuelva el reintento.
+        Timestamp startedAt = Timestamp.from(now);
+        return jdbc.query("""
+                INSERT INTO match_search (id, player_id, deck_id, context, status, elo, created_at, last_polled_at)
+                VALUES (gen_random_uuid(), ?, ?, ?, 'WAITING', ?, ?, ?)
+                ON CONFLICT (player_id) WHERE status = 'WAITING' DO NOTHING
+                RETURNING *
+                """, (rs, row) -> read(rs), playerId, deckId, context.name(), elo, startedAt, startedAt)
+                .stream().findFirst();
     }
 
     @Override
@@ -67,6 +89,52 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
     }
 
     @Override
+    public Optional<MatchSearch> lockOldestWaiting(Instant now, Instant cutoff, MatchSearch after) {
+        requireTransaction();
+        // A.10: el cursor incluye el id para avanzar incluso si varias búsquedas nacieron a la misma hora.
+        Timestamp afterCreated = after == null ? null : Timestamp.from(after.createdAt());
+        UUID afterId = after == null ? null : after.id();
+        return jdbc.query("""
+                SELECT * FROM match_search
+                WHERE status = 'WAITING' AND last_polled_at >= ?
+                  AND (not_before IS NULL OR not_before <= ?)
+                  AND (?::timestamptz IS NULL OR (created_at, id) > (?, ?))
+                ORDER BY created_at, id
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+                """, (rs, row) -> read(rs), Timestamp.from(cutoff), Timestamp.from(now), afterCreated,
+                afterCreated, afterId).stream().findFirst();
+    }
+
+    @Override
+    public List<MatchSearch> lockCandidates(MatchSearch anchor, Instant now, Instant cutoff, int maxRange, int limit) {
+        requireTransaction();
+        // A.10: SQL acota el lote por el rango máximo. Java aplica la ventana efectiva de cada jugador.
+        return jdbc.query("""
+                SELECT * FROM match_search
+                WHERE status = 'WAITING' AND player_id <> ? AND context = ? AND last_polled_at >= ?
+                  AND (not_before IS NULL OR not_before <= ?)
+                  AND abs(elo::bigint - ?) <= ?
+                ORDER BY abs(elo::bigint - ?), created_at, id
+                LIMIT ? FOR UPDATE SKIP LOCKED
+                """, (rs, row) -> read(rs), anchor.playerId(), anchor.context().name(), Timestamp.from(cutoff),
+                Timestamp.from(now), anchor.elo(), maxRange, anchor.elo(), limit);
+    }
+
+    @Override
+    public int markNotice(UUID first, UUID second, Instant retryAt) {
+        requireTransaction();
+        // A.10: esperar por orden de id evita cruces entre avisos y respeta un cierre ya confirmado.
+        return jdbc.update("""
+                WITH waiting AS (
+                    SELECT id FROM match_search WHERE id IN (?, ?) AND status = 'WAITING'
+                    ORDER BY id FOR UPDATE
+                )
+                UPDATE match_search s SET notice = 'LOCATIONS_UNAVAILABLE', not_before = greatest(s.not_before, ?)
+                FROM waiting WHERE s.id = waiting.id
+                """, first, second, Timestamp.from(retryAt));
+    }
+
+    @Override
     public Optional<MatchSearch> lockById(UUID id, UUID playerId) {
         requireTransaction();
         // A.12, mensaje 9: esperar al emparejador si ya adquirió el bloqueo.
@@ -78,7 +146,8 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
     public MatchSearch markMatched(UUID id, UUID matchId, Instant now) {
         requireTransaction();
         return jdbc.query("""
-                UPDATE match_search SET status = 'MATCHED', match_id = ?, closed_at = ?
+                UPDATE match_search SET status = 'MATCHED', match_id = ?, closed_at = ?,
+                    notice = NULL, not_before = NULL
                 WHERE id = ? AND status = 'WAITING' RETURNING *
                 """, (rs, row) -> read(rs), matchId, Timestamp.from(now), id).stream().findFirst()
                 .orElseThrow(() -> new IllegalStateException("Se esperaba una búsqueda bloqueada en espera."));
@@ -97,7 +166,7 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
 
     private static void requireTransaction() {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
-            throw new IllegalStateException("La salida de la búsqueda requiere una transacción activa.");
+            throw new IllegalStateException("La operación de búsqueda requiere una transacción activa.");
         }
     }
 

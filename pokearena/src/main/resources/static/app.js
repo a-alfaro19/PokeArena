@@ -25,7 +25,7 @@
 
 import { PlayerCatalog, collectionMessage, sessionFromResponse, responseForDisplay, mountGoogleButton, googleSessionRequest, googleClientIdFrom, CatalogFilterForm, catalogQuickTests } from './player.js';
 import { OPTIONS_PATHS, catalogOptionsFrom, creationOptionsFrom, optionsErrorMessage, rangeText, imageRequirementText, acceptedTypes, energyAmountState, integersBetween, effectJson, gameOptionsFrom } from './options.js';
-import { MatchSearchScreen, showAssignedMatch } from './match-search.js';
+import { MatchSearchScreen, MatchSearchStarter, showAssignedMatch, showMatchSearch } from './match-search.js';
 import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNode, deckSummaryNode, deckDetailNodes } from './deck.js';
 
 (() => {
@@ -109,6 +109,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
   let catalogFilterForm;
   let deckBuilder;
   let myDecks;
+  let matchStarter;
   let matchSearch;
   let googleSdk = null;
   let googleAttempt = null;
@@ -415,6 +416,8 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     // Decks (3.1.3): la colección, la selección y la lista son de la sesión anterior.
     deckBuilder.clear();
     myDecks.clear();
+    matchStarter.reset();
+    $('#match-start-foreign-form').reset();
     matchSearch.reset();
     $('#match-search-form').reset();
     $('#deck-form').elements.name.value = '';
@@ -1194,6 +1197,8 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
 
   /** Lista de mis decks y el detalle abierto. */
   function renderMyDecks(view) {
+    // Las dos pantallas comparten la sesión, la paginación y la recarga después de guardar un deck.
+    renderMatchStartDecks(view);
     $('#my-decks-list').replaceChildren(...view.items.map((deck) => deckSummaryNode(document, deck,
       (id) => myDecks.open(id))));
     $('#my-decks-message').textContent = view.message;
@@ -1344,6 +1349,57 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     }));
   }
 
+  function renderMatchStartDecks(view) {
+    const select = $('#match-start-form').elements.deckId;
+    const previous = select.value;
+    select.replaceChildren(el('option', { text: 'Selecciona un deck', attrs: { value: '' } }),
+      ...view.items.map((deck) => el('option', { text: deck.name, attrs: { value: deck.id } })));
+    if (view.items.some((deck) => String(deck.id) === previous)) select.value = previous;
+    $('#match-start-decks').textContent = view.message;
+    $('#match-start-decks').className = 'catalog-message' + (view.error ? ' catalog-error' : '');
+    $('#match-start-more').hidden = !view.nextCursor;
+    renderMatchStarter(matchStarter);
+  }
+
+  function renderMatchStarter({ busy, message } = {}) {
+    // Mantener los controles sincronizados con la lista, la sesión y el estado de la solicitud.
+    const view = myDecks?.view;
+    const signedIn = Boolean(state.session.token);
+    const blocked = !signedIn || busy;
+    const select = $('#match-start-form').elements.deckId;
+    select.disabled = blocked || !view?.items.length;
+    $('#match-start-submit').disabled = select.disabled || !select.value;
+    $('#match-start-test-twice').disabled = $('#match-start-submit').disabled;
+    $('#match-start-more').disabled = blocked || view?.loading;
+    $('#match-start-reload').disabled = blocked || view?.loading;
+    $('#match-start-test-missing').disabled = blocked;
+    $('#match-start-test-foreign').disabled = blocked;
+    $('#match-start-foreign-form').elements.foreignDeckId.disabled = blocked;
+    const feedback = $('#match-start-feedback');
+    feedback.textContent = busy ? 'Iniciando búsqueda…' : message || '';
+    feedback.classList.toggle('catalog-error', Boolean(message));
+  }
+
+  function wireMatchStarter() {
+    // El identificador del POST llega a la pantalla existente por su enlace público.
+    matchStarter = new MatchSearchStarter({ send, getSession: () => state.session,
+      newKey: newIdempotencyKey, render: renderMatchStarter, openSearch: showMatchSearch });
+    const form = $('#match-start-form');
+    form.elements.deckId.addEventListener('change', () => matchStarter.select(form.elements.deckId.value));
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      matchStarter.start(form.elements.deckId.value);
+    });
+    $('#match-start-more').addEventListener('click', () => myDecks.load(true));
+    $('#match-start-reload').addEventListener('click', () => myDecks.load());
+    $('#match-start-test-missing').addEventListener('click', () => matchStarter.start('', 'missing'));
+    $('#match-start-test-twice').addEventListener('click', () => matchStarter.start(form.elements.deckId.value, 'twice'));
+    $('#match-start-foreign-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      matchStarter.start(event.currentTarget.elements.foreignDeckId.value, 'foreign');
+    });
+  }
+
   function renderMatchSearch({ data, id, busy, message }) {
     const form = $('#match-search-form');
     const signedIn = Boolean(state.session.token);
@@ -1382,9 +1438,12 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     });
     document.addEventListener('pokearena:busqueda', ({ detail }) => {
       if (!state.session.token || !detail?.id) return;
-      $('#tab-match-search').click();
+      const tab = $('#tab-match-search');
+      tab.click();
+      tab.focus();
       form.elements.searchId.value = detail.id;
-      matchSearch.open(detail.id);
+      // La consulta inicial mantiene visible el POST en el panel de respuesta.
+      matchSearch.open(detail.id, true);
     });
     $('#match-search-exit').addEventListener('click', () => matchSearch.cancel());
     $('#match-search-bot').addEventListener('click', () => matchSearch.accept());
@@ -1433,6 +1492,7 @@ import { DeckBuilder, MyDecks, deckQuickTests, catalogPagePath, collectionCardNo
     wireCatalog();
     wireDecks();
     wireMatchSearch();
+    wireMatchStarter();
     renderQuickTests('catalog', catalogQuickTests(catalogFilterForm));
     renderQuickTests('card', CARD_QUICK_TESTS);
     renderQuickTests('location', LOCATION_QUICK_TESTS);

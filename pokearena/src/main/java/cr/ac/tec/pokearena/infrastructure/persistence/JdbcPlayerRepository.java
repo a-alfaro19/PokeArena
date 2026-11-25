@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import cr.ac.tec.pokearena.domain.model.InitialCollectionState;
+import cr.ac.tec.pokearena.domain.model.MatchmakingPlayer;
 import cr.ac.tec.pokearena.domain.model.NewPlayer;
 import cr.ac.tec.pokearena.domain.model.Player;
 import cr.ac.tec.pokearena.domain.model.PlayerAccount;
@@ -86,6 +87,14 @@ public class JdbcPlayerRepository implements PlayerRepository {
     @Override
     public Optional<Player> findByIdentity(ProviderIdentity identity) {
         return jdbc.query(SELECT_BY_IDENTITY, PLAYER, identity.provider(), identity.subject()).stream().findFirst();
+    }
+
+    @Override
+    public Optional<MatchmakingPlayer> findMatchmakingPlayer(UUID playerId) {
+        // Leer por clave primaria mantiene el Elo y el saldo en la misma instantánea.
+        return jdbc.query("SELECT elo, cube_balance FROM player WHERE id = ?",
+                (rs, row) -> new MatchmakingPlayer(rs.getInt("elo"), rs.getLong("cube_balance")), playerId)
+                .stream().findFirst();
     }
 
     @Override

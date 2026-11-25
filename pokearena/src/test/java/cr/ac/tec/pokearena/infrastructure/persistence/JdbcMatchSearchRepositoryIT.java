@@ -17,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
+import cr.ac.tec.pokearena.domain.model.MatchContext;
 import cr.ac.tec.pokearena.domain.model.MatchSearch;
 import cr.ac.tec.pokearena.domain.model.MatchSearchStatus;
 import cr.ac.tec.pokearena.domain.repository.MatchSearchRepository;
@@ -45,10 +46,42 @@ class JdbcMatchSearchRepositoryIT extends PostgresIntegrationTestBase {
                     last_polled_at timestamptz NOT NULL, closed_at timestamptz
                 ) ON COMMIT DROP
                 """);
+        // Reproduce el índice parcial de V5 mientras la migración se integra con la US 48.
+        jdbc.execute("CREATE UNIQUE INDEX uq_match_search_open ON match_search (player_id) WHERE status = 'WAITING'");
         jdbc.update("""
                 INSERT INTO match_search (id, player_id, deck_id, context, status, elo, created_at, last_polled_at)
                 VALUES (?, ?, 7, 'RANKED', 'WAITING', 100, ?, ?)
                 """, id, player, Timestamp.from(START), Timestamp.from(START));
+    }
+
+    @Test
+    @DisplayName("C.8-E2: el alta conserva el deck, el Elo y la hora inicial de actividad")
+    void insertAndFindWaitingSearch() {
+        // Un jugador nuevo permite comprobar que el alta devuelve la fila que se consulta después.
+        UUID newPlayer = UUID.randomUUID();
+        assertThat(searches.findOpenByPlayer(newPlayer)).isEmpty();
+        MatchSearch opened = searches.insertWaiting(newPlayer, 9L, MatchContext.RANKED, 1450, START).orElseThrow();
+        assertThat(opened).isEqualTo(new MatchSearch(opened.id(), newPlayer, 9L, MatchContext.RANKED,
+                MatchSearchStatus.WAITING, 1450, null, null, null, START, START, null));
+        assertThat(opened.id()).isNotNull();
+        assertThat(searches.findOpenByPlayer(newPlayer)).contains(opened);
+    }
+
+    @Test
+    @DisplayName("C.8-R5 y C.8-A1: solo se admite una espera por jugador hasta que se cierre")
+    void rejectDuplicatesAcrossContextsUntilClosed() {
+        // Una espera vigente impide el alta incluso con otro deck o contexto.
+        assertThat(searches.insertWaiting(player, 7L, MatchContext.RANKED, 100, START)).isEmpty();
+        assertThat(searches.insertWaiting(player, 9L, MatchContext.TOURNAMENT, 100, START)).isEmpty();
+        assertThat(searches.findOpenByPlayer(player).orElseThrow().id()).isEqualTo(id);
+
+        // El índice parcial debe permitir otra búsqueda una vez que la anterior queda cerrada.
+        searches.lockById(id, player).orElseThrow();
+        Instant nextStart = START.plusSeconds(1);
+        searches.markCancelled(id, nextStart);
+        assertThat(searches.findOpenByPlayer(player)).isEmpty();
+        MatchSearch next = searches.insertWaiting(player, 9L, MatchContext.TOURNAMENT, 100, nextStart).orElseThrow();
+        assertThat(searches.findOpenByPlayer(player)).contains(next);
     }
 
     @Test

@@ -10,6 +10,83 @@ export function showAssignedMatch(matchId) {
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Alta clasificatoria (4.1.1). Tras el POST, la pantalla de estado administra el sondeo. */
+export class MatchSearchStarter {
+  constructor({ send, getSession, newKey, render, openSearch }) {
+    Object.assign(this, { send, getSession, newKey, render, openSearch });
+    this.version = 0;
+    this.reset();
+  }
+
+  reset() {
+    // Invalidar las respuestas pendientes al cerrar o cambiar la sesión.
+    this.version++;
+    this.pending = null;
+    this.busy = false;
+    this.message = '';
+    this.render(this);
+  }
+
+  select(deckId) {
+    // Cambiar el deck inicia una solicitud diferente aunque se vuelva a elegir el anterior.
+    if (this.pending?.deckId !== Number(deckId)) this.pending = null;
+    this.message = '';
+    this.render(this);
+  }
+
+  async start(value, quick = null) {
+    const token = this.getSession().token;
+    if (!token || this.busy) return;
+
+    // Los casos rápidos envían entradas inválidas de forma deliberada para verificar la API.
+    const deckId = Number(value);
+    if (quick !== 'missing' && (!Number.isSafeInteger(deckId) || deckId < 1)) {
+      this.message = 'Debes seleccionar un deck.';
+      this.render(this);
+      return;
+    }
+
+    const version = this.version;
+    const isCurrent = () => version === this.version && token === this.getSession().token;
+    const post = (key, body, expected) => this.send({ method: 'POST', path: '/api/v1/busquedas',
+      token, body, idempotencyKey: key, label: 'Buscar partida', expected, isCurrent });
+    const body = quick === 'missing' ? { context: 'RANKED' } : { deckId, context: 'RANKED' };
+    if (!quick && this.pending?.deckId !== deckId) this.pending = { deckId, key: this.newKey() };
+
+    // El bloqueo local evita el doble clic. La clave se conserva si el resultado de la solicitud es incierto.
+    this.busy = true;
+    this.message = '';
+    this.render(this);
+    const expected = quick === 'missing' ? { status: 400, type: 'MISSING_FIELD' }
+      : quick === 'foreign' ? { status: 404, type: 'DECK_NOT_FOUND' } : undefined;
+    let result = await post(quick ? this.newKey() : this.pending.key, body, expected);
+    if (!isCurrent()) return;
+    if (quick === 'twice' && establishedSearch(result)) {
+      // Una segunda clave comprueba que la API reutiliza la búsqueda existente con HTTP 200.
+      result = await post(this.newKey(), body, { status: 200 });
+      if (!isCurrent()) return;
+    }
+    this.busy = false;
+
+    // Los casos de error quedan en la pantalla para que se pueda inspeccionar la respuesta.
+    if (establishedSearch(result) && !expected) {
+      this.pending = null;
+      this.render(this);
+      this.openSearch(result.body.id);
+    } else {
+      this.message = result?.body?.detail || 'No se pudo iniciar la búsqueda. Puedes volver a intentarlo.';
+      this.render(this);
+    }
+    return result;
+  }
+}
+
+function establishedSearch(result) {
+  // Solo trasladar a la pantalla de estado un identificador confirmado por el alta.
+  return (result?.status === 200 || result?.status === 201)
+    && typeof result.body?.id === 'string' && uuid.test(result.body.id);
+}
+
 export class MatchSearchScreen {
   constructor({ send, render, openMatch, newKey,
     schedule = globalThis.setTimeout.bind(globalThis), unschedule = globalThis.clearTimeout.bind(globalThis) }) {
@@ -30,7 +107,7 @@ export class MatchSearchScreen {
     this.render(this);
   }
 
-  open(id) {
+  open(id, silent = false) {
     id = String(id ?? '').trim().toLowerCase();
     if (id === this.id && this.busy) return;
     if (id !== this.id) this.reset();
@@ -40,7 +117,7 @@ export class MatchSearchScreen {
       return;
     }
     this.id = id;
-    return this.request('GET');
+    return this.request('GET', null, silent);
   }
 
   cancel(quick = false) {

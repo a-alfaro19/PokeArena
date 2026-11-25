@@ -48,5 +48,11 @@ public enum ErrorType {
     SEARCH_ALREADY_MATCHED,
     SEARCH_NOT_OPEN,
     BOT_OFFER_NOT_AVAILABLE,
-    MATCH_PREPARATION_FAILED
+    MATCH_PREPARATION_FAILED,
+
+    // Alta de una búsqueda clasificatoria (historia 4.1.1).
+    INVALID_DECK,
+    ACTIVE_MATCH_EXISTS,
+    SEARCH_ALREADY_OPEN,
+    INSUFFICIENT_CUBES
 }
