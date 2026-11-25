@@ -85,9 +85,12 @@ public class StartMatchSearchUseCase {
             return keys.findPrevious(request, MatchSearchDetails.class)
                     .orElseGet(() -> existing(open.get(), deckId));
         }
-        matches.findActiveMatchId(playerId).ifPresent(matchId -> {
-            throw MatchSearchException.activeMatchExists(matchId);
-        });
+        var active = matches.findActiveMatchId(playerId);
+        if (active.isPresent()) {
+            // La primera lectura de la clave pudo ocurrir antes de que se confirmara el alta ya emparejada.
+            return keys.findPrevious(request, MatchSearchDetails.class)
+                    .orElseThrow(() -> MatchSearchException.activeMatchExists(active.get()));
+        }
         var player = players.findMatchmakingPlayer(playerId)
                 .orElseThrow(() -> new IllegalStateException("No se encontraron los datos del jugador."));
         rules.checkCubes(player.cubeBalance());
@@ -98,6 +101,11 @@ public class StartMatchSearchUseCase {
             return unitOfWork.execute(() -> {
                 var waiting = searches.insertWaiting(playerId, deckId, CONTEXT, player.elo(), now)
                         .orElseThrow(OpenSearchConflict::new);
+                // La espera anterior pudo liberar el índice al asignarse mientras este alta esperaba.
+                // Comprobar la partida tras el insert evita dejar una nueva espera abierta en ese caso.
+                matches.findActiveMatchId(playerId).ifPresent(matchId -> {
+                    throw MatchSearchException.activeMatchExists(matchId);
+                });
                 var details = MatchSearchDetails.from(waiting, false, pollSeconds);
                 keys.record(request, details);
                 return IdempotentResult.executed(request, details);
@@ -109,6 +117,9 @@ public class StartMatchSearchUseCase {
                     searches.findOpenByPlayer(playerId).map(search -> existing(search, deckId))
                             .orElseThrow(() -> new IllegalStateException(
                                     "La búsqueda que causó el conflicto ya no está disponible.", conflict)));
+        } catch (MatchSearchException failure) {
+            // Un reintento de la espera que se emparejó conserva su respuesta original.
+            return keys.findPrevious(request, MatchSearchDetails.class).orElseThrow(() -> failure);
         }
     }
 

@@ -239,6 +239,8 @@ El tamaño del deck (12) y la longitud máxima del nombre (40) son **constantes 
 
 Una clase de configuración (`MatchSettings`, `MatchmakingSettings`) lee estas propiedades y las entrega a los casos de uso y reglas; **el dominio recibe los valores por constructor**, no lee propiedades.
 
+Durante la integración por ramas, la tarea programada se mantiene desactivada hasta disponer de `V4`, `V5` y el preparador real de la US 48. El valor de habilitación indicado arriba corresponde al flujo integrado.
+
 ### 5.8 El Elo y los cubos ya existen
 
 `player.elo` (inicia en 0) y `player.cube_balance` ya existen en el esquema. No se agregan columnas a `player`. El Elo **no cambia** en este sprint (lo actualizan las recompensas, que son de otra historia). La apuesta de 4 cubos **se registra** en la partida pero **no se descuenta** del saldo: la liquidación es de otra historia.
@@ -424,8 +426,8 @@ Orden de las comprobaciones (importa para los criterios):
 | 5 | `PlayerCardRepository.findOwnedCards` y `DeckRules.validateForPlay(códigos, poseídas)`, que **ya existe** y devuelve un `Optional<String>` con el motivo (vacío si el deck es jugable): exactamente `DECK_SIZE` cartas distintas, todas poseídas. **Esta historia crea el tipo `INVALID_DECK` y lo lanza** con ese motivo | `INVALID_DECK` (con el motivo) |
 | 6 | `MatchSearchRepository.findOpenByPlayer`: si hay una abierta **del mismo deck y contexto**, se devuelve esa (la solicitud es idempotente); si es de otro deck u otro contexto | `SEARCH_ALREADY_OPEN` (con su id) |
 | 7 | `MatchRepository.findActiveMatchId`: partida activa | `ACTIVE_MATCH_EXISTS` |
-| 8 | `PlayerRepository.findById`: `cube_balance >= app.match.max-bet` | `INSUFFICIENT_CUBES` |
-| 9 | `UnitOfWork`: `MatchSearchRepository.insertWaiting` (Elo y hora de ahora) e `IdempotencyGuard.record` | |
+| 8 | `PlayerRepository.findMatchmakingPlayer`: `cube_balance >= app.match.max-bet` | `INSUFFICIENT_CUBES` |
+| 9 | `UnitOfWork`: `MatchSearchRepository.insertWaiting` (Elo y hora de ahora), verificar que no se haya confirmado una partida mientras se esperaba por el índice y ejecutar `IdempotencyGuard.record` | `ACTIVE_MATCH_EXISTS` si la asignación ganó la carrera |
 | 10 | Responde `201` (o `200` si devolvió la búsqueda existente) con `MatchSearchResponse` | |
 
 - **Doble clic, dos pestañas, reintento:** deja **una sola** búsqueda abierta. Si la restricción `uq_match_search_open` hace fallar el insert de la segunda solicitud, el caso de uso hace rollback y, **fuera de la transacción revertida**, aplica el mismo patrón que Crear deck (7.1): primero `IdempotencyGuard.findPrevious` (misma clave y huella: devuelve la respuesta guardada, el mismo 201; otra huella: `IDEMPOTENCY_KEY_REUSED`); si no hay respuesta previa, `findOpenByPlayer` y devuelve esa búsqueda (mismo deck y contexto) o `SEARCH_ALREADY_OPEN` (otro deck u otro contexto). El error nunca se guarda como respuesta idempotente.
@@ -441,9 +443,9 @@ En cada ejecución:
 
 1. **Expirar las inactivas.** `MatchSearchRepository.expireStale(límite, ahora)` pone `EXPIRED` a las `WAITING` cuyo `last_polled_at` sea anterior a `ahora - inactivity-timeout`. El cierre se registra con la hora del barrido y se conserva la última actividad. El método devuelve el número de filas expiradas. Una expirada **nunca** se empareja.
 2. **Repetir hasta `max-pairs-per-tick` veces**, y **cada pareja en su propia transacción** (`UnitOfWork.execute`):
-   1. `lockOldestWaiting(ahora, límiteDeInactividad)`: la búsqueda `WAITING` más antigua, no inactiva y con `not_before` vencido, con `FOR UPDATE SKIP LOCKED`. Si no hay, termina.
+   1. `lockOldestWaiting(ahora, límiteDeInactividad, cursor)`: la búsqueda `WAITING` más antigua después del cursor, no inactiva y con `not_before` vencido, con `FOR UPDATE SKIP LOCKED`. Si no hay, termina. El cursor comienza vacío en cada ciclo y avanza por `(created_at, id)` después de cada intento con una búsqueda A.
    2. `lockCandidates(A, ahora, límiteDeInactividad, max-elo-range, candidate-batch-size)`: hasta N candidatas `WAITING` (mismo contexto, otro jugador, no inactivas) con diferencia de Elo menor o igual al rango **máximo**, ordenadas por cercanía de Elo y antigüedad, con `FOR UPDATE SKIP LOCKED`.
-   3. `EloWindowRules.pickCompatible(A, candidatas, ahora)` (dominio, regla pura): devuelve la primera candidata cuya diferencia de Elo es menor o igual al rango efectivo. Si no hay, **la transacción termina sin cambios** (A sigue esperando).
+   3. `EloWindowRules.pickCompatible(A, candidatas, ahora)` (dominio, regla pura): devuelve la primera candidata cuya diferencia de Elo es menor o igual al rango efectivo. Si no hay, **la transacción termina sin cambios** (A sigue esperando) y el ciclo avanza a la siguiente búsqueda elegible.
    4. Si hay pareja: carga los códigos de ambos decks (`DeckRepository.findCardCodes`), llama a **`StartMatchUseCase`** (7.3) dentro de la misma transacción, y marca **ambas** búsquedas como `MATCHED` con el id de la partida (`markMatched`).
 3. **Si `StartMatchUseCase` lanza `LocationsUnavailableException`:** la transacción se revierte (no queda nada) y, en **otra** transacción, se registra en ambas búsquedas `notice = LOCATIONS_UNAVAILABLE` y `not_before = ahora + failure-retry-delay`. Ambos siguen en `WAITING` y vuelven a intentarse más tarde. Los jugadores ven el mensaje al consultar su búsqueda.
 4. **Cualquier otra excepción** durante una pareja revierte esa transacción completa: ninguna búsqueda queda `MATCHED` ni existe partida a medias.
@@ -943,7 +945,7 @@ UC->>SRCH: findOpenByPlayer(jugador);
 SRCH-->>UC: sin búsqueda abierta;
 UC->>MATCH: findActiveMatchId(jugador);
 MATCH-->>UC: sin partida activa;
-UC->>PLY: findById(jugador);
+UC->>PLY: findMatchmakingPlayer(jugador);
 PLY-->>UC: jugador con su Elo y su saldo de cubos;
 UC->>UC: MatchSearchRules.checkCubes(saldo, apuesta máxima);
 UC->>CLK: now();
@@ -952,6 +954,7 @@ UC->>UOW: execute(trabajo);
 Note over UC,SRCH: Dentro de la transacción;
 UC->>SRCH: insertWaiting(jugador, deck, contexto, Elo, hora);
 SRCH-->>UC: búsqueda en espera;
+Note over UC,MATCH: Repetir findActiveMatchId tras el insert. Si ya hay partida, revertir antes de guardar la clave;
 UC->>IDEM: record(respuesta);
 IDEM->>STORE: save(clave y respuesta);
 alt Sin choque con el índice único;
@@ -1003,36 +1006,54 @@ UC->>CLK: now();
 CLK-->>UC: hora actual;
 UC->>SRCH: expireStale(hora menos el tiempo de inactividad, hora);
 SRCH-->>UC: búsquedas inactivas marcadas EXPIRED;
-loop Mientras haya pareja y no se supere el máximo por ejecución;
+Note over UC: Cada ejecución reinicia el cursor de antigüedad;
+loop Hasta el máximo de intentos por ejecución;
+UC->>CLK: now();
+CLK-->>UC: hora de decisión;
 UC->>UOW: execute(emparejar una pareja);
 Note over UC,START: Una sola transacción por pareja;
-UC->>SRCH: lockOldestWaiting(hora, límite de inactividad) FOR UPDATE SKIP LOCKED;
+UC->>SRCH: lockOldestWaiting(hora, límite de inactividad, cursor) FOR UPDATE SKIP LOCKED;
 SRCH-->>UC: búsqueda A o ninguna;
 alt No hay búsqueda disponible;
-UC-->>JOB: termina la ejecución;
+UOW-->>UC: commit sin cambios;
+Note over UC: Termina la ejecución;
 else Hay una búsqueda A;
-UC->>SRCH: lockCandidates(A, hora, rango máximo, lote) FOR UPDATE SKIP LOCKED;
+UC->>SRCH: lockCandidates(A, hora, límite de inactividad, rango máximo, lote) FOR UPDATE SKIP LOCKED;
 SRCH-->>UC: candidatas con Elo cercano;
 UC->>RULES: pickCompatible(A, candidatas, hora);
 RULES-->>UC: búsqueda B o ninguna;
 alt No hay candidata compatible;
 UC->>UOW: commit sin cambios;
+Note over UC: A sigue en espera y el cursor avanza a partir de A;
 else Hay una candidata B;
-UC->>DECK: findCardCodes(deck de A y deck de B);
-DECK-->>UC: 12 códigos por cada deck;
+UC->>DECK: findCardCodes(deck de A);
+DECK-->>UC: códigos del deck de A;
+UC->>DECK: findCardCodes(deck de B);
+DECK-->>UC: códigos del deck de B;
 UC->>START: execute(MatchRequest con los dos asientos);
+alt Preparación correcta;
 START-->>UC: MatchStarted con el id de la partida (A.14);
-UC->>SRCH: markMatched(A, B, partida);
-SRCH-->>UC: ambas búsquedas en estado MATCHED;
-UC->>UOW: commit;
-end;
-end;
-end;
-opt StartMatchUseCase lanza LocationsUnavailableException;
-UC->>UOW: rollback de la pareja;
+UC->>SRCH: markMatched(A.id, partida, hora);
+SRCH-->>UC: A en estado MATCHED;
+UC->>SRCH: markMatched(B.id, partida, hora);
+SRCH-->>UC: B en estado MATCHED;
+UOW-->>UC: commit;
+else El preparador lanza LocationsUnavailableException;
+START-->>UC: faltan ubicaciones jugables;
+UOW-->>UC: rollback de la pareja;
+UC->>CLK: now();
+CLK-->>UC: hora para calcular el reintento;
 UC->>UOW: execute(registrar el aviso);
-UC->>SRCH: markNotice(A, B, LOCATIONS_UNAVAILABLE, no antes de hora más espera);
-Note over UC,SRCH: Ambos siguen en WAITING y se reintentan más tarde;
+UC->>SRCH: markNotice(A.id, B.id, próxima hora de intento);
+Note over UC,SRCH: Solo actualizar las filas que sigan WAITING y avanzar el cursor;
+SRCH-->>UC: cantidad de filas actualizadas;
+UOW-->>UC: commit del aviso;
+else Otra falla durante la preparación o asignación;
+UOW-->>UC: rollback de la pareja;
+UC-->>JOB: propaga la excepción para registrarla;
+end;
+end;
+end;
 end;
 ```
 

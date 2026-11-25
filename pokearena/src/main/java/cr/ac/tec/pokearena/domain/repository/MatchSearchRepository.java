@@ -1,6 +1,7 @@
 package cr.ac.tec.pokearena.domain.repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -24,6 +25,15 @@ public interface MatchSearchRepository {
 
     /** Expira esperas anteriores al corte exclusivo y registra el instante del barrido (A.10, mensaje 4). */
     int expireStale(Instant cutoff, Instant now);
+
+    /** Bloquea la espera elegible más antigua posterior al cursor de este ciclo (A.10). */
+    Optional<MatchSearch> lockOldestWaiting(Instant now, Instant cutoff, MatchSearch after);
+
+    /** Bloquea un lote de posibles rivales sin esperar por filas de otro emparejador (A.10). */
+    List<MatchSearch> lockCandidates(MatchSearch anchor, Instant now, Instant cutoff, int maxRange, int limit);
+
+    /** Registra el fallo de ubicaciones solo en las búsquedas que sigan abiertas (A.10). */
+    int markNotice(UUID first, UUID second, Instant retryAt);
 
     /** Lee la búsqueda del titular con bloqueo exclusivo hasta el fin de la transacción (A.12). */
     Optional<MatchSearch> lockById(UUID id, UUID playerId);

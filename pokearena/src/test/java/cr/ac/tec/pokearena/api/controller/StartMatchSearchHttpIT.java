@@ -1,9 +1,11 @@
 package cr.ac.tec.pokearena.api.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
@@ -19,12 +21,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import cr.ac.tec.pokearena.application.port.AuthenticatedUser;
 import cr.ac.tec.pokearena.application.port.TokenIssuer;
 import cr.ac.tec.pokearena.application.port.UnitOfWork;
 import cr.ac.tec.pokearena.application.usecase.PlayerAccountService;
 import cr.ac.tec.pokearena.domain.model.Role;
+import cr.ac.tec.pokearena.domain.repository.ActiveMatchLookup;
 import cr.ac.tec.pokearena.domain.repository.PlayerCardRepository;
 import cr.ac.tec.pokearena.domain.rule.DeckRules;
 import cr.ac.tec.pokearena.support.DeckHttp;
@@ -48,6 +52,7 @@ class StartMatchSearchHttpIT extends PostgresIntegrationTestBase {
     @Autowired private TokenIssuer tokens;
     @Autowired private UnitOfWork transactions;
     @Autowired private PlayerCardRepository playerCards;
+    @MockitoSpyBean private ActiveMatchLookup activeMatches;
 
     private DeckHttp api;
     private UUID player;
@@ -169,6 +174,20 @@ class StartMatchSearchHttpIT extends PostgresIntegrationTestBase {
         Result result = start("active", deckId);
         assertError(result, 409, "ACTIVE_MATCH_EXISTS");
         assertThat(result.body().get("detail").asString()).contains(active.toString());
+    }
+
+    @Test
+    @DisplayName("C.8-R3: una asignación que se confirma durante el alta revierte la nueva búsqueda")
+    void rejectsMatchCommittedDuringInsert() {
+        // Reproducir el cambio de estado entre la validación inicial y la lectura tras el insert.
+        UUID match = UUID.randomUUID();
+        doReturn(Optional.empty(), Optional.of(match), Optional.empty()).when(activeMatches).findActiveMatchId(player);
+        Result result = start("racing-match", deckId);
+        assertError(result, 409, "ACTIVE_MATCH_EXISTS");
+        assertThat(result.body().get("detail").asString()).contains(match.toString());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM match_search WHERE player_id = ?", Integer.class, player))
+                .isZero();
+        assertThat(start("racing-match", deckId).status()).isEqualTo(201);
     }
 
     @Test

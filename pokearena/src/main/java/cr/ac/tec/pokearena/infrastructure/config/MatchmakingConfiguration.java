@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 
+import cr.ac.tec.pokearena.application.dto.MatchmakingSettings;
 import cr.ac.tec.pokearena.application.port.Clock;
 import cr.ac.tec.pokearena.application.port.RandomSource;
 import cr.ac.tec.pokearena.application.port.StartMatch;
@@ -16,6 +17,7 @@ import cr.ac.tec.pokearena.application.usecase.BotDeckSelector;
 import cr.ac.tec.pokearena.application.usecase.CancelMatchSearchUseCase;
 import cr.ac.tec.pokearena.application.usecase.GetMatchSearchUseCase;
 import cr.ac.tec.pokearena.application.usecase.IdempotencyGuard;
+import cr.ac.tec.pokearena.application.usecase.RunMatchmakingUseCase;
 import cr.ac.tec.pokearena.application.usecase.StartMatchSearchUseCase;
 import cr.ac.tec.pokearena.domain.repository.ActiveMatchLookup;
 import cr.ac.tec.pokearena.domain.repository.CollectibleCardRepository;
@@ -29,6 +31,13 @@ import cr.ac.tec.pokearena.domain.rule.MatchSearchRules;
 /** Ensambla las reglas y los casos de uso de las búsquedas de partida (sección 7.2). */
 @Configuration
 public class MatchmakingConfiguration {
+
+    @Bean
+    public RunMatchmakingUseCase runMatchmakingUseCase(MatchSearchRepository searches, DeckRepository decks,
+            @Lazy StartMatch start, UnitOfWork transactions, Clock clock, MatchmakingSettings settings) {
+        // La implementación del preparador se instala al integrar la US 48.
+        return new RunMatchmakingUseCase(searches, decks, start, transactions, clock, settings);
+    }
 
     @Bean
     public StartMatchSearchUseCase startMatchSearchUseCase(IdempotencyGuard keys, DeckRepository decks,

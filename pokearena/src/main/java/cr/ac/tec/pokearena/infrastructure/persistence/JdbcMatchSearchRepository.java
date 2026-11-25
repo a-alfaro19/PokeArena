@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,7 +19,7 @@ import cr.ac.tec.pokearena.domain.model.MatchSearch;
 import cr.ac.tec.pokearena.domain.model.MatchSearchStatus;
 import cr.ac.tec.pokearena.domain.repository.MatchSearchRepository;
 
-/** Persistencia del alta (A.9), la consulta (A.11) y la salida de la búsqueda (A.12). */
+/** Persistencia del alta, del emparejamiento, de la consulta y de la salida (A.9 a A.12). */
 @Repository
 public class JdbcMatchSearchRepository implements MatchSearchRepository {
 
@@ -88,6 +89,52 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
     }
 
     @Override
+    public Optional<MatchSearch> lockOldestWaiting(Instant now, Instant cutoff, MatchSearch after) {
+        requireTransaction();
+        // A.10: el cursor incluye el id para avanzar incluso si varias búsquedas nacieron a la misma hora.
+        Timestamp afterCreated = after == null ? null : Timestamp.from(after.createdAt());
+        UUID afterId = after == null ? null : after.id();
+        return jdbc.query("""
+                SELECT * FROM match_search
+                WHERE status = 'WAITING' AND last_polled_at >= ?
+                  AND (not_before IS NULL OR not_before <= ?)
+                  AND (?::timestamptz IS NULL OR (created_at, id) > (?, ?))
+                ORDER BY created_at, id
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+                """, (rs, row) -> read(rs), Timestamp.from(cutoff), Timestamp.from(now), afterCreated,
+                afterCreated, afterId).stream().findFirst();
+    }
+
+    @Override
+    public List<MatchSearch> lockCandidates(MatchSearch anchor, Instant now, Instant cutoff, int maxRange, int limit) {
+        requireTransaction();
+        // A.10: SQL acota el lote por el rango máximo. Java aplica la ventana efectiva de cada jugador.
+        return jdbc.query("""
+                SELECT * FROM match_search
+                WHERE status = 'WAITING' AND player_id <> ? AND context = ? AND last_polled_at >= ?
+                  AND (not_before IS NULL OR not_before <= ?)
+                  AND abs(elo::bigint - ?) <= ?
+                ORDER BY abs(elo::bigint - ?), created_at, id
+                LIMIT ? FOR UPDATE SKIP LOCKED
+                """, (rs, row) -> read(rs), anchor.playerId(), anchor.context().name(), Timestamp.from(cutoff),
+                Timestamp.from(now), anchor.elo(), maxRange, anchor.elo(), limit);
+    }
+
+    @Override
+    public int markNotice(UUID first, UUID second, Instant retryAt) {
+        requireTransaction();
+        // A.10: esperar por orden de id evita cruces entre avisos y respeta un cierre ya confirmado.
+        return jdbc.update("""
+                WITH waiting AS (
+                    SELECT id FROM match_search WHERE id IN (?, ?) AND status = 'WAITING'
+                    ORDER BY id FOR UPDATE
+                )
+                UPDATE match_search s SET notice = 'LOCATIONS_UNAVAILABLE', not_before = greatest(s.not_before, ?)
+                FROM waiting WHERE s.id = waiting.id
+                """, first, second, Timestamp.from(retryAt));
+    }
+
+    @Override
     public Optional<MatchSearch> lockById(UUID id, UUID playerId) {
         requireTransaction();
         // A.12, mensaje 9: esperar al emparejador si ya adquirió el bloqueo.
@@ -99,7 +146,8 @@ public class JdbcMatchSearchRepository implements MatchSearchRepository {
     public MatchSearch markMatched(UUID id, UUID matchId, Instant now) {
         requireTransaction();
         return jdbc.query("""
-                UPDATE match_search SET status = 'MATCHED', match_id = ?, closed_at = ?
+                UPDATE match_search SET status = 'MATCHED', match_id = ?, closed_at = ?,
+                    notice = NULL, not_before = NULL
                 WHERE id = ? AND status = 'WAITING' RETURNING *
                 """, (rs, row) -> read(rs), matchId, Timestamp.from(now), id).stream().findFirst()
                 .orElseThrow(() -> new IllegalStateException("Se esperaba una búsqueda bloqueada en espera."));
